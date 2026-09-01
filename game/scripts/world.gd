@@ -121,6 +121,92 @@ func _serve(peer: int) -> void:
 	rpc_id(peer, "client_positions", snapshot)
 
 
+# ── бій ───────────────────────────────────────────────────────────────
+
+## Взяти ціль мишею. Клієнт лише каже, у кого влучив променем; чи має
+## він право її бачити, вирішує сервер.
+@rpc("any_peer", "call_remote", "reliable")
+func select_target(id: int) -> void:
+	if not Net.is_server:
+		return
+	var me := multiplayer.get_remote_sender_id()
+	if not avatars.has(me):
+		return
+	if id != 0 and not _seen.get(me, {}).has(id):
+		return  # цілі, якої не бачить, гравець узяти не може
+	avatars[me].target_id = id
+	rpc_id(me, "client_target", id)
+
+
+## Удар мишею — не через панель, щоб не залежати від її розкладки.
+@rpc("any_peer", "call_remote", "reliable")
+func strike() -> void:
+	if Net.is_server:
+		_attack(multiplayer.get_remote_sender_id())
+
+
+## Натиснута комірка панелі.
+@rpc("any_peer", "call_remote", "reliable")
+func use_slot(slot: int) -> void:
+	if not Net.is_server:
+		return
+	var me := multiplayer.get_remote_sender_id()
+	var a: Node = avatars.get(me)
+	if a == null or slot < 0 or slot >= a.BAR.size():
+		return
+	match a.BAR[slot]:
+		"attack":
+			_attack(me)
+		"next_player":
+			_cycle_target(me)
+		"next_mob":
+			pass  # монстри з'являться на кроці 9
+
+
+func _attack(me: int) -> void:
+	if not avatars.has(me):
+		return
+	var a: Node = avatars[me]
+	if a.attack_ready_in > 0.0:
+		return  # відкат ще не минув — натискання пропадає (П-35)
+	var victim: Node = avatars.get(a.target_id)
+	if victim == null or not victim.is_alive():
+		return
+	var dist: float = a.global_position.distance_to(victim.global_position)
+	if dist > a.ATTACK_RANGE:
+		rpc_id(me, "client_notice", "задалеко")
+		return
+
+	a.attack_ready_in = a.ATTACK_COOLDOWN
+	victim.hp = maxi(0, victim.hp - a.ATTACK_DAMAGE)
+	# Про зміну здоров'я знають лише ті, хто бачить постраждалого.
+	for peer in _seen:
+		if _seen[peer].has(a.target_id):
+			rpc_id(peer, "client_hp", a.target_id, victim.hp)
+	print("[бій] %d вдарив %d, лишилось %d" % [me, a.target_id, victim.hp])
+
+
+## «Наступний гравець»: перебирає видимих за віддаленістю, по колу.
+func _cycle_target(me: int) -> void:
+	var a: Node = avatars[me]
+	var seen: Dictionary = _seen.get(me, {})
+	var list: Array = []
+	for id in seen:
+		if id != me and avatars.has(id) and avatars[id].is_alive():
+			list.append(id)
+	if list.is_empty():
+		avatars[me].target_id = 0
+		rpc_id(me, "client_target", 0)
+		return
+	list.sort_custom(func(x, y):
+			return a.global_position.distance_to(avatars[x].global_position) \
+					< a.global_position.distance_to(avatars[y].global_position))
+	var at := list.find(a.target_id)
+	var next: int = list[(at + 1) % list.size()] if at != -1 else list[0]
+	avatars[me].target_id = next
+	rpc_id(me, "client_target", next)
+
+
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func submit_intent(intent: Vector2) -> void:
 	if not Net.is_server:
@@ -128,6 +214,55 @@ func submit_intent(intent: Vector2) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if avatars.has(id):
 		avatars[id].wanted = intent
+
+
+# ── клієнт: ввід ──────────────────────────────────────────────────────
+
+func _unhandled_input(event: InputEvent) -> void:
+	if Net.is_server:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var slot := _slot_of(event.keycode)
+		if slot != -1:
+			rpc_id(1, "use_slot", slot)
+	elif event is InputEventMouseButton and event.pressed \
+			and event.button_index == MOUSE_BUTTON_LEFT:
+		_click_at(event.position)
+
+
+func _slot_of(code: int) -> int:
+	if code >= KEY_1 and code <= KEY_7:
+		return code - KEY_1
+	return -1
+
+
+## Перший клік по цілі бере її, наступні по вже вибраній — б'ють (П-20).
+func _click_at(where: Vector2) -> void:
+	var me: Node = avatars.get(multiplayer.get_unique_id())
+	if me == null:
+		return
+	var cam: Camera3D = me.get_node("CameraRig/Camera3D")
+	var from := cam.project_ray_origin(where)
+	var query := PhysicsRayQueryParameters3D.create(
+			from, from + cam.project_ray_normal(where) * 200.0)
+	query.collision_mask = 2  # шар «істоти»
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var id := _id_of(hit["collider"])
+	if id == 0:
+		return
+	if me.target_id == id:
+		rpc_id(1, "strike")
+	else:
+		rpc_id(1, "select_target", id)
+
+
+func _id_of(node: Object) -> int:
+	for id in avatars:
+		if avatars[id] == node:
+			return id
+	return 0
 
 
 # ── клієнт ────────────────────────────────────────────────────────────
@@ -155,6 +290,24 @@ func client_vision(radius: float) -> void:
 	var me: Node = avatars.get(multiplayer.get_unique_id())
 	if me != null:
 		me.get_node("CameraRig").vision_radius = radius
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_target(id: int) -> void:
+	var me: Node = avatars.get(multiplayer.get_unique_id())
+	if me != null:
+		me.target_id = id
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_hp(id: int, hp: int) -> void:
+	if avatars.has(id):
+		avatars[id].hp = hp
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_notice(text: String) -> void:
+	print("[гра] ", text)
 
 
 @rpc("authority", "call_remote", "reliable")

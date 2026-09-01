@@ -14,6 +14,24 @@ const VISION_RADIUS := 18.0
 ## ніж з'являються.
 const VISION_HYSTERESIS := 1.12
 
+## ЗАГЛУШКИ до кроку 8, коли числа почнуть рахуватись зі статів.
+## Швидкість атаки за П-35 задають стати, а не темп кліків, тому удар
+## має відкат, і зайві натискання просто пропадають.
+const ATTACK_COOLDOWN := 1.2
+const ATTACK_RANGE := 2.5
+const ATTACK_DAMAGE := 7
+const MAX_HP := 100
+
+## Панель за П-20: сім комірок, куди призначаються дії. Уміння з'являться
+## пізніше, поки тут лише те, що вже вирішено — удар і вибір цілі.
+const BAR := ["attack", "next_player", "next_mob", "", "", "", ""]
+
+var hp := MAX_HP
+## Кого б'ємо. 0 — нікого.
+var target_id := 0
+## Скільки лишилось до наступного удару.
+var attack_ready_in := 0.0
+
 ## Куди персонаж біжить зараз. Камера бере це, щоб доводитись за рухом.
 var move_direction := Vector3.ZERO
 ## Намір, надісланий клієнтом. Заповнює сервер із мережі.
@@ -52,6 +70,11 @@ func server_step(delta: float) -> void:
 	velocity.x = dir.x * SPEED
 	velocity.z = dir.z * SPEED
 	move_and_slide()
+	attack_ready_in = maxf(0.0, attack_ready_in - delta)
+
+
+func is_alive() -> bool:
+	return hp > 0
 
 
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери

@@ -1,12 +1,15 @@
 extends CharacterBody3D
-
-## Тимчасовий рух для перевірки, що проєкт живий.
-##
-## Рух поки рахує КЛІЄНТ. За рішенням від 02.09.2026 сервер має бути
-## авторитетним — це крок 3 у П-52, тут його свідомо ще немає.
-## Керування камерою (П-47) — крок 2.
+## Тимчасовий рух для перевірки. Рух поки рахує КЛІЄНТ — авторитетний
+## сервер це крок 3 у П-52, тут його свідомо ще немає.
 
 const SPEED := 5.0
+
+## Напрямок бігу зараз. Камера бере його, щоб повільно доводитись
+## за рухом (П-47).
+var move_direction := Vector3.ZERO
+
+@onready var _rig: Node3D = $CameraRig
+
 
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
@@ -14,17 +17,27 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = 0.0
 
-	var dir := Vector3.ZERO
+	var input := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W):
-		dir.z -= 1.0
+		input.y -= 1.0
 	if Input.is_key_pressed(KEY_S):
-		dir.z += 1.0
+		input.y += 1.0
 	if Input.is_key_pressed(KEY_A):
-		dir.x -= 1.0
+		input.x -= 1.0
 	if Input.is_key_pressed(KEY_D):
-		dir.x += 1.0
+		input.x += 1.0
+	input = input.normalized()
 
-	dir = dir.normalized()
-	velocity.x = dir.x * SPEED
-	velocity.z = dir.z * SPEED
+	# Рух відносно камери, а не світових осей: із поверненою камерою
+	# «вперед» інакше вело б убік.
+	var cam := _rig.global_transform.basis
+	var forward := Vector3(-cam.z.x, 0.0, -cam.z.z).normalized()
+	var right := Vector3(cam.x.x, 0.0, cam.x.z).normalized()
+
+	move_direction = (right * input.x + forward * input.y)
+	if move_direction.length() > 0.0:
+		move_direction = move_direction.normalized()
+
+	velocity.x = move_direction.x * SPEED
+	velocity.z = move_direction.z * SPEED
 	move_and_slide()

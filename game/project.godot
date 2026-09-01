@@ -12,3 +12,8 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 [physics]
 
 3d/default_gravity=20.0
+
+[layer_names]
+
+3d_physics/layer_1="світ"
+3d_physics/layer_2="істоти"

@@ -46,7 +46,7 @@ func _on_joined(id: int) -> void:
 	var a := _spawn(id, Vector3(0, 1.5, 0))
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
 	rpc_id(id, "client_spawn", id, a.global_position)
-	rpc_id(id, "client_vision", a.VISION_RADIUS)
+	rpc_id(id, "client_vision", a.vision_radius())
 	_seen[id] = {id: true}
 	print("[світ] приєднався %d, усього %d" % [id, avatars.size()])
 
@@ -97,7 +97,7 @@ func _serve(peer: int) -> void:
 	if watcher == null:
 		return
 	var seen: Dictionary = _seen.get(peer, {})
-	var near: float = watcher.VISION_RADIUS
+	var near: float = watcher.vision_radius()
 	var far: float = near * watcher.VISION_HYSTERESIS
 
 	var snapshot := {}
@@ -172,23 +172,41 @@ func _enqueue(me: int, action: String) -> void:
 	a.queue.append(action)
 
 
-## Розбір черги. Викликається, коли персонаж вільний.
+## Розбір черги.
 ##
-## Дія, яку зараз виконати не можна, ВИКИДАЄТЬСЯ і черга йде далі — не
-## чекає (П-38). Тому за довгого відкату друге поспіль те саме вміння
-## пропадає, а те, що стоїть за ним, спрацьовує одразу.
+## Правило з П-38 і П-62 разом: шукаємо найпершу дію, готову ЗАРАЗ.
+## Усе, що стоїть перед нею на відкаті, викидається — саме тому в
+## `скіл1 скіл1 скіл2` другий скіл1 пропадає, а скіл2 спрацьовує.
+## Якщо ж готової немає жодної, черга НЕ спорожнюється: голова чекає
+## кінця відкату. Інакше п'ять натискань удару давали б один удар.
 func _pump(me: int) -> void:
 	var a: Node = avatars[me]
 	while a.busy_in <= 0.0 and not a.queue.is_empty():
-		var action: String = a.queue.pop_front()
-		match action:
+		var at := -1
+		for i in a.queue.size():
+			if _off_cooldown(a, a.queue[i]):
+				at = i
+				break
+		if at == -1:
+			return  # ніхто не готовий — чекаємо, чергу лишаємо цілою
+		for i in at:
+			a.queue.pop_front()  # застаріле на відкаті викидається
+		match a.queue.pop_front():
 			"attack":
 				if _attack(me):
-					a.busy_in = a.SWING_TIME
+					a.busy_in = a.stats.swing_time()
 			"next_player":
 				_cycle_target(me)
 			"next_mob":
 				pass  # монстри з'являться на кроці 9
+
+
+## Чи минув відкат саме цієї дії. Інші причини невдачі (немає цілі,
+## задалеко) сюди не входять — вони дають повідомлення й викидання.
+func _off_cooldown(a: Node, action: String) -> bool:
+	if action == "attack":
+		return a.attack_ready_in <= 0.0
+	return true
 
 
 ## Повертає true, якщо удар справді відбувся.
@@ -210,8 +228,10 @@ func _attack(me: int) -> bool:
 		rpc_id(me, "client_notice", "задалеко")
 		return false
 
-	a.attack_ready_in = a.ATTACK_COOLDOWN
-	victim.hp = maxi(0, victim.hp - a.ATTACK_DAMAGE)
+	a.attack_ready_in = a.stats.attack_cooldown()
+	var hit: int = Stats.damage_through(
+			a.stats.physical_attack(), victim.stats.physical_defence())
+	victim.hp = maxi(0, victim.hp - hit)
 	# Про зміну здоров'я знають лише ті, хто бачить постраждалого.
 	for peer in _seen:
 		if _seen[peer].has(a.target_id):

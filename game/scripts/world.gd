@@ -15,6 +15,9 @@ const TICK_HZ := 20.0
 const SMOOTHING := 14.0
 
 var avatars: Dictionary = {}
+## Кого кожне з'єднання зараз бачить: peer_id -> { чужий_id: true }.
+## Сервер веде це сам, бо саме звідси береться, кому що надсилати (П-43).
+var _seen: Dictionary = {}
 var _since_tick := 0.0
 
 
@@ -40,11 +43,11 @@ func announce_ready() -> void:
 
 
 func _on_joined(id: int) -> void:
-	# Спершу новачкові — усіх наявних, тоді всім — новачка.
-	for other in avatars:
-		rpc_id(id, "client_spawn", other, avatars[other].global_position)
 	var a := _spawn(id, Vector3(0, 1.5, 0))
-	rpc("client_spawn", id, a.global_position)
+	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
+	rpc_id(id, "client_spawn", id, a.global_position)
+	rpc_id(id, "client_vision", a.VISION_RADIUS)
+	_seen[id] = {id: true}
 	print("[світ] приєднався %d, усього %d" % [id, avatars.size()])
 
 
@@ -52,7 +55,10 @@ func _on_left(id: int) -> void:
 	if avatars.has(id):
 		avatars[id].queue_free()
 		avatars.erase(id)
-	rpc("client_despawn", id)
+	_seen.erase(id)
+	for peer in _seen:
+		if _seen[peer].erase(id):
+			rpc_id(peer, "client_despawn", id)
 	print("[світ] пішов %d, лишилось %d" % [id, avatars.size()])
 
 
@@ -77,12 +83,42 @@ func _process(delta: float) -> void:
 		return
 	_since_tick = 0.0
 
+	for peer in multiplayer.get_peers():
+		_serve(peer)
+
+
+## Що бачить одне з'єднання. Поява й зникнення йдуть надійним каналом,
+## позиції — ненадійним: загублений пакет позицій це смикання на кадр,
+## а загублена поява це вічний привид.
+func _serve(peer: int) -> void:
+	var watcher: Node3D = avatars.get(peer)
+	if watcher == null:
+		return
+	var seen: Dictionary = _seen.get(peer, {})
+	var near: float = watcher.VISION_RADIUS
+	var far: float = near * watcher.VISION_HYSTERESIS
+
 	var snapshot := {}
 	for id in avatars:
-		snapshot[id] = avatars[id].global_position
-	# Кожному окремо: тут на кроці 5 з'явиться відбір за зоною бачення.
-	for peer in multiplayer.get_peers():
-		rpc_id(peer, "client_positions", snapshot)
+		var other: Node3D = avatars[id]
+		var dist := watcher.global_position.distance_to(other.global_position)
+		# Поріг залежить від того, чи бачили досі: інакше на самій межі
+		# персонаж блимав би щокадру.
+		var visible: bool = dist <= (far if seen.has(id) else near)
+		if id == peer:
+			visible = true
+
+		if visible:
+			if not seen.has(id):
+				seen[id] = true
+				rpc_id(peer, "client_spawn", id, other.global_position)
+			snapshot[id] = other.global_position
+		elif seen.has(id):
+			seen.erase(id)
+			rpc_id(peer, "client_despawn", id)
+
+	_seen[peer] = seen
+	rpc_id(peer, "client_positions", snapshot)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
@@ -110,6 +146,15 @@ func client_spawn(id: int, pos: Vector3) -> void:
 	var a := _spawn(id, pos)
 	if id == multiplayer.get_unique_id():
 		a.become_local()
+
+
+## Скільки бачить мій персонаж. Камері це потрібно, щоб не відмотуватись
+## далі за зону бачення (П-47).
+@rpc("authority", "call_remote", "reliable")
+func client_vision(radius: float) -> void:
+	var me: Node = avatars.get(multiplayer.get_unique_id())
+	if me != null:
+		me.get_node("CameraRig").vision_radius = radius
 
 
 @rpc("authority", "call_remote", "reliable")

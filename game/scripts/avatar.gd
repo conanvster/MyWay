@@ -6,6 +6,13 @@ extends CharacterBody3D
 ## вигадує: передбачення руху це окреме питання (П-55).
 
 const SPEED := 5.0
+## Радіус, у якому персонаж бачить інших (П-40). Тримає СЕРВЕР — це
+## частина правил гри, а не налаштування клієнта. Поки стала; на кроці 8
+## її почне рахувати стат Чуття, а дебафи — знижувати.
+const VISION_RADIUS := 18.0
+## Щоб на самій межі персонажі не блимали, зникають вони трохи далі,
+## ніж з'являються.
+const VISION_HYSTERESIS := 1.12
 
 ## Куди персонаж біжить зараз. Камера бере це, щоб доводитись за рухом.
 var move_direction := Vector3.ZERO
@@ -51,10 +58,12 @@ func server_step(delta: float) -> void:
 ## робить клієнт, бо тільки він знає, куди дивиться.
 func sample_intent() -> Vector2:
 	var input := Vector2.ZERO
+	# input.y — це «скільки вперед», тому W додатний. Множиться на вектор
+	# forward, і зі знаком навпаки W вів би назад.
 	if Input.is_key_pressed(KEY_W):
-		input.y -= 1.0
-	if Input.is_key_pressed(KEY_S):
 		input.y += 1.0
+	if Input.is_key_pressed(KEY_S):
+		input.y -= 1.0
 	if Input.is_key_pressed(KEY_A):
 		input.x -= 1.0
 	if Input.is_key_pressed(KEY_D):

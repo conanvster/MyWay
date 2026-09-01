@@ -78,14 +78,23 @@ func _process(delta: float) -> void:
 	# Доведення за бігом — тільки коли гравець не наводить камеру сам.
 	var dir: Vector3 = _target.get("move_direction")
 	if not free_aim and dir != null and dir.length() > 0.1:
-		var wanted := atan2(-dir.x, -dir.z)
-		yaw = lerp_angle(yaw, wanted, 1.0 - exp(-DRIFT_SPEED * delta))
+		# Доводимось тільки коли біжимо ВПЕРЕД. Якби доводились і на
+		# приставному кроці, вийшло б коло: камера крутиться -> «вбік»
+		# показує в новий бік -> персонаж завертає. Тимчасово, П-57.
+		var ahead := -global_transform.basis.z
+		if dir.dot(Vector3(ahead.x, 0.0, ahead.z).normalized()) > 0.3:
+			var wanted := atan2(-dir.x, -dir.z)
+			yaw = lerp_angle(yaw, wanted, 1.0 - exp(-DRIFT_SPEED * delta))
 
 	pitch = clamp(pitch, deg_to_rad(PITCH_MIN), deg_to_rad(PITCH_MAX))
 	distance = clamp(distance, DISTANCE_MIN, max_distance())
 
 	var pivot: Vector3 = _target.global_position + Vector3.UP * pivot_height
 	global_position = pivot
+	# Поворот треба класти на сам вузол: із нього аватар бере осі, щоб
+	# рахувати рух відносно камери. Доки він лишався в самій лише
+	# змінній, «вперед» завжди означало світове -Z.
+	global_rotation = Vector3(0.0, yaw, 0.0)
 
 	var offset := Vector3(
 			sin(yaw) * cos(pitch),

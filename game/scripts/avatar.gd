@@ -31,6 +31,12 @@ func become_local() -> void:
 	$CameraRig/Camera3D.current = true
 
 
+func die() -> void:
+	super()
+	# Гравцеві дається час на оживлення, монстрові — ні (П-70).
+	corpse_left = CORPSE_PLAYER
+
+
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери
 ## робить клієнт, бо тільки він знає, куди дивиться.
 func sample_intent() -> Vector2:

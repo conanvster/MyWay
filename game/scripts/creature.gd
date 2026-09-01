@@ -18,6 +18,11 @@ const QUEUE_MAX := 5
 ## 3-5 і 15-30 секунд.
 const CORPSE_SHORT := 4.0
 const CORPSE_LONG := 20.0
+## Труп гравця лежить незрівнянно довше за монстрячий: до 20 хвилин,
+## щоб хтось устиг його оживити (П-70).
+const CORPSE_PLAYER := 1200.0
+## З яким запасом здоров'я гравець підводиться (П-69).
+const REVIVE_SHARE := 0.30
 
 var stats := Stats.new()
 var hp := 0

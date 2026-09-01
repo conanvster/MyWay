@@ -235,7 +235,8 @@ func _clear_corpses() -> void:
 		if id < 0:
 			_remove(id)
 		else:
-			c.hp = c.stats.max_hp()
+			# Не оживили за 20 хвилин — підводиться сам, із 30% (П-69, П-70).
+			c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
 			c.global_position = Vector3(0, 1.5, 0)
 			for peer in _seen:
 				if _seen[peer].has(id):
@@ -331,7 +332,8 @@ func _attack(me: int) -> bool:
 	print("[бій] %d вдарив %d, лишилось %d" % [me, a.target_id, victim.hp])
 	if victim.hp <= 0:
 		victim.die()
-		print("[бій] %d загинув" % a.target_id)
+		print("[бій] %d загинув, труп лежатиме %.0f с"
+				% [a.target_id, victim.corpse_left])
 		for peer in _seen:
 			if _seen[peer].has(a.target_id):
 				rpc_id(peer, "client_died", a.target_id)

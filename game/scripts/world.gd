@@ -66,6 +66,8 @@ func _physics_process(delta: float) -> void:
 	if Net.is_server:
 		for a in avatars.values():
 			a.server_step(delta)
+		for id in avatars:
+			_pump(id)
 		return
 
 	var me: Node = avatars.get(multiplayer.get_unique_id())
@@ -142,7 +144,7 @@ func select_target(id: int) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func strike() -> void:
 	if Net.is_server:
-		_attack(multiplayer.get_remote_sender_id())
+		_enqueue(multiplayer.get_remote_sender_id(), "attack")
 
 
 ## Натиснута комірка панелі.
@@ -154,28 +156,59 @@ func use_slot(slot: int) -> void:
 	var a: Node = avatars.get(me)
 	if a == null or slot < 0 or slot >= a.BAR.size():
 		return
-	match a.BAR[slot]:
-		"attack":
-			_attack(me)
-		"next_player":
-			_cycle_target(me)
-		"next_mob":
-			pass  # монстри з'являться на кроці 9
+	var action: String = a.BAR[slot]
+	if action != "":
+		_enqueue(me, action)
 
 
-func _attack(me: int) -> void:
-	if not avatars.has(me):
+## Натискання стає в чергу. Переповнену чергу зайве натискання не
+## розпихає — воно просто гине (П-38).
+func _enqueue(me: int, action: String) -> void:
+	var a: Node = avatars.get(me)
+	if a == null:
 		return
+	if a.queue.size() >= a.QUEUE_MAX:
+		return
+	a.queue.append(action)
+
+
+## Розбір черги. Викликається, коли персонаж вільний.
+##
+## Дія, яку зараз виконати не можна, ВИКИДАЄТЬСЯ і черга йде далі — не
+## чекає (П-38). Тому за довгого відкату друге поспіль те саме вміння
+## пропадає, а те, що стоїть за ним, спрацьовує одразу.
+func _pump(me: int) -> void:
+	var a: Node = avatars[me]
+	while a.busy_in <= 0.0 and not a.queue.is_empty():
+		var action: String = a.queue.pop_front()
+		match action:
+			"attack":
+				if _attack(me):
+					a.busy_in = a.SWING_TIME
+			"next_player":
+				_cycle_target(me)
+			"next_mob":
+				pass  # монстри з'являться на кроці 9
+
+
+## Повертає true, якщо удар справді відбувся.
+func _attack(me: int) -> bool:
+	if not avatars.has(me):
+		return false
 	var a: Node = avatars[me]
 	if a.attack_ready_in > 0.0:
-		return  # відкат ще не минув — натискання пропадає (П-35)
+		return false  # відкат не минув — дія викидається (П-35, П-38)
 	var victim: Node = avatars.get(a.target_id)
-	if victim == null or not victim.is_alive():
-		return
+	if victim == null:
+		rpc_id(me, "client_notice", "немає цілі")
+		return false
+	if not victim.is_alive():
+		rpc_id(me, "client_notice", "неможливо застосувати на даному типі цілі")
+		return false
 	var dist: float = a.global_position.distance_to(victim.global_position)
 	if dist > a.ATTACK_RANGE:
 		rpc_id(me, "client_notice", "задалеко")
-		return
+		return false
 
 	a.attack_ready_in = a.ATTACK_COOLDOWN
 	victim.hp = maxi(0, victim.hp - a.ATTACK_DAMAGE)
@@ -184,6 +217,7 @@ func _attack(me: int) -> void:
 		if _seen[peer].has(a.target_id):
 			rpc_id(peer, "client_hp", a.target_id, victim.hp)
 	print("[бій] %d вдарив %d, лишилось %d" % [me, a.target_id, victim.hp])
+	return true
 
 
 ## «Наступний гравець»: перебирає видимих за віддаленістю, по колу.

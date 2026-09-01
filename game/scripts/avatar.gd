@@ -26,6 +26,18 @@ const MAX_HP := 100
 ## пізніше, поки тут лише те, що вже вирішено — удар і вибір цілі.
 const BAR := ["attack", "next_player", "next_mob", "", "", "", ""]
 
+## Черга дій за П-38: 4-6 натискань. Не скидається ані за часом, ані
+## при зміні цілі. Точне число підбирається при налаштуванні.
+const QUEUE_MAX := 5
+## Скільки персонаж зайнятий після удару, перш ніж почне наступну дію.
+## Заглушка до кроку 8: замах теж має рахуватись зі статів.
+const SWING_TIME := 0.35
+
+## Що чекає на виконання. Тримає СЕРВЕР.
+var queue: Array[String] = []
+## Доки персонаж зайнятий попередньою дією.
+var busy_in := 0.0
+
 var hp := MAX_HP
 ## Кого б'ємо. 0 — нікого.
 var target_id := 0
@@ -71,6 +83,7 @@ func server_step(delta: float) -> void:
 	velocity.z = dir.z * SPEED
 	move_and_slide()
 	attack_ready_in = maxf(0.0, attack_ready_in - delta)
+	busy_in = maxf(0.0, busy_in - delta)
 
 
 func is_alive() -> bool:

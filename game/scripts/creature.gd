@@ -13,8 +13,16 @@ const VISION_HYSTERESIS := 1.12
 ## Черга дій за П-38: 4-6 натискань.
 const QUEUE_MAX := 5
 
+## Скільки лежить труп (П-45). Без застосованого вміння — коротко,
+## із застосованим — довго. Числа взяті з середини погоджених меж
+## 3-5 і 15-30 секунд.
+const CORPSE_SHORT := 4.0
+const CORPSE_LONG := 20.0
+
 var stats := Stats.new()
 var hp := 0
+## Скільки труп ще лежатиме. 0 у живого.
+var corpse_left := 0.0
 
 ## Куди істота біжить зараз. Камера бере це, щоб доводитись за рухом.
 var move_direction := Vector3.ZERO
@@ -34,7 +42,35 @@ func _ready() -> void:
 		hp = stats.max_hp()
 
 
+func die() -> void:
+	hp = 0
+	corpse_left = CORPSE_SHORT
+	queue.clear()
+	wanted = Vector2.ZERO
+	target_id = 0
+
+
+## Вміння, застосоване до трупа, продовжує йому строк (П-45).
+func extend_corpse() -> void:
+	corpse_left = maxf(corpse_left, CORPSE_LONG)
+
+
+func is_corpse() -> bool:
+	return hp <= 0 and corpse_left > 0.0
+
+
+## Труп лягає. Викликає клієнт — це суто вигляд.
+func lay_down() -> void:
+	var mesh := get_node_or_null("Mesh")
+	if mesh != null:
+		mesh.rotation = Vector3(PI / 2.0, 0.0, 0.0)
+		mesh.position = Vector3(0.0, -0.5, 0.0)
+
+
 func server_step(delta: float) -> void:
+	if not is_alive():
+		corpse_left = maxf(0.0, corpse_left - delta)
+		return
 	if not is_on_floor():
 		velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity") * delta
 	else:

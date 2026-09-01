@@ -77,6 +77,7 @@ func _physics_process(delta: float) -> void:
 				_mob_think(id)
 			else:
 				_pump(id)
+		_clear_corpses()
 		return
 
 	var me: Node = creatures.get(multiplayer.get_unique_id())
@@ -157,8 +158,9 @@ func strike() -> void:
 
 
 ## Натиснута комірка панелі.
+## `shift` за П-45 перемикає перебір цілей на трупи.
 @rpc("any_peer", "call_remote", "reliable")
-func use_slot(slot: int) -> void:
+func use_slot(slot: int, shift: bool = false) -> void:
 	if not Net.is_server:
 		return
 	var me := multiplayer.get_remote_sender_id()
@@ -166,8 +168,11 @@ func use_slot(slot: int) -> void:
 	if a == null or slot < 0 or slot >= a.BAR.size():
 		return
 	var action: String = a.BAR[slot]
-	if action != "":
-		_enqueue(me, action)
+	if action == "":
+		return
+	if shift and action.begins_with("next_"):
+		action += "_corpse"
+	_enqueue(me, action)
 
 
 ## Натискання стає в чергу. Переповнену чергу зайве натискання не
@@ -208,9 +213,42 @@ func _pump(me: int) -> void:
 				if _attack(me):
 					a.busy_in = a.stats.swing_time()
 			"next_player":
-				_cycle_target(me, false)
+				_cycle_target(me, false, false)
 			"next_mob":
-				_cycle_target(me, true)
+				_cycle_target(me, true, false)
+			"next_player_corpse":
+				_cycle_target(me, false, true)
+			"next_mob_corpse":
+				_cycle_target(me, true, true)
+			"corpse_skill":
+				_corpse_skill(me)
+
+
+## Трупи, яким вийшов строк, зникають. Монстр просто прибирається;
+## гравець піднімається на місці появи — втрати за смерть (П-27) ще не
+## зроблені, тож поки це заглушка, див. П-69.
+func _clear_corpses() -> void:
+	for id in creatures.keys():
+		var c: Node = creatures[id]
+		if c.is_alive() or c.corpse_left > 0.0:
+			continue
+		if id < 0:
+			_remove(id)
+		else:
+			c.hp = c.stats.max_hp()
+			c.global_position = Vector3(0, 1.5, 0)
+			for peer in _seen:
+				if _seen[peer].has(id):
+					rpc_id(peer, "client_revive", id, c.hp)
+
+
+func _remove(id: int) -> void:
+	if creatures.has(id):
+		creatures[id].queue_free()
+		creatures.erase(id)
+	for peer in _seen:
+		if _seen[peer].erase(id):
+			rpc_id(peer, "client_despawn", id)
 
 
 ## Монстр стоїть і б'є того, хто підійшов (П-66 — про переслідування).
@@ -230,6 +268,21 @@ func _mob_think(id: int) -> void:
 	var d: float = m.global_position.distance_to(creatures[victim].global_position)
 	if d <= m.ATTACK_RANGE:
 		_attack(id)
+
+
+## Заглушка замість справжніх умінь по трупах — продовжує строк.
+## Заодно показує правило П-42: до живого таке вміння не застосовне.
+func _corpse_skill(me: int) -> void:
+	var a: Node = creatures[me]
+	var t: Node = creatures.get(a.target_id)
+	if t == null:
+		_notice(me, "немає цілі")
+		return
+	if not t.is_corpse():
+		_notice(me, "неможливо застосувати на даному типі цілі")
+		return
+	t.extend_corpse()
+	print("[труп] %d продовжено до %.0f с" % [a.target_id, t.corpse_left])
 
 
 ## Чи минув відкат саме цієї дії. Інші причини невдачі (немає цілі,
@@ -276,7 +329,8 @@ func _attack(me: int) -> bool:
 		if _seen[peer].has(a.target_id):
 			rpc_id(peer, "client_hp", a.target_id, victim.hp)
 	print("[бій] %d вдарив %d, лишилось %d" % [me, a.target_id, victim.hp])
-	if not victim.is_alive():
+	if victim.hp <= 0:
+		victim.die()
 		print("[бій] %d загинув" % a.target_id)
 		for peer in _seen:
 			if _seen[peer].has(a.target_id):
@@ -286,12 +340,17 @@ func _attack(me: int) -> bool:
 
 ## Перебирає видимі цілі за віддаленістю, по колу. Монстри й гравці —
 ## окремі дії за П-31, тому й переліки окремі.
-func _cycle_target(me: int, mobs: bool) -> void:
+func _cycle_target(me: int, mobs: bool, corpses: bool) -> void:
 	var a: Node = creatures[me]
 	var seen: Dictionary = _seen.get(me, {})
 	var list: Array = []
 	for id in seen:
-		if id == me or not creatures.has(id) or not creatures[id].is_alive():
+		if id == me or not creatures.has(id):
+			continue
+		var c: Node = creatures[id]
+		# Звичайний перебір трупи пропускає: у бою ціль потрібна швидко,
+		# і чіплятись за мертвих — найгірше, що може статись (П-45).
+		if c.is_corpse() != corpses:
 			continue
 		if (id < 0) == mobs:
 			list.append(id)
@@ -325,7 +384,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var slot := _slot_of(event.keycode)
 		if slot != -1:
-			rpc_id(1, "use_slot", slot)
+			rpc_id(1, "use_slot", slot, event.shift_pressed)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
 		_click_at(event.position)
@@ -411,6 +470,13 @@ func client_hp(id: int, hp: int) -> void:
 func client_died(id: int) -> void:
 	if creatures.has(id):
 		creatures[id].hp = 0
+		creatures[id].lay_down()
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_revive(id: int, hp: int) -> void:
+	if creatures.has(id):
+		creatures[id].hp = hp
 
 
 @rpc("authority", "call_remote", "reliable")

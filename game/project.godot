@@ -13,6 +13,10 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 
 3d/default_gravity=20.0
 
+[autoload]
+
+Net="*res://scripts/net.gd"
+
 [layer_names]
 
 3d_physics/layer_1="світ"

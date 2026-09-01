@@ -10,7 +10,7 @@ extends Creature
 ## `corpse_skill` — заглушка замість справжніх умінь по трупах
 ## (оживити, підірвати). Вона лише продовжує трупу строк, щоб правило
 ## з П-45 було на чому перевірити. Які саме вміння це робитимуть — П-68.
-const BAR := ["attack", "next_player", "next_mob", "corpse_skill", "", "", ""]
+const BAR := ["attack", "next_player", "next_mob", "corpse_skill", "taunt", "", ""]
 
 var is_local := false
 

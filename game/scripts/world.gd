@@ -11,7 +11,16 @@ const AVATAR := preload("res://scenes/avatar.tscn")
 const MOB := preload("res://scenes/mob.tscn")
 ## Монстри живуть у від'ємних номерах, гравці — у додатних (номер
 ## з'єднання). Так одна таблиця тримає і тих, і тих.
-const MOB_SPOTS := [Vector3(8, 1.5, -8), Vector3(-6, 1.5, 10), Vector3(14, 1.5, 4)]
+##
+## Кожен рядок — місце появи. Вид визначає, хто кого чує на поміч.
+const MOB_SPOTS := [
+	{"home": Vector3(8, 1.5, -8), "kind": 1, "aggressive": true},
+	{"home": Vector3(11, 1.5, -5), "kind": 1, "aggressive": true},
+	{"home": Vector3(-6, 1.5, 10), "kind": 2, "aggressive": false},
+]
+## Через скільки монстр з'являється знову, і наскільки випадково.
+const RESPAWN_AFTER := 12.0
+const RESPAWN_SPREAD := 4.0
 ## Скільки разів на секунду сервер розсилає позиції.
 const TICK_HZ := 20.0
 ## Наскільки швидко клієнт підтягує чужі капсули до надісланої позиції.
@@ -23,13 +32,17 @@ var creatures: Dictionary = {}
 ## Сервер веде це сам, бо саме звідси береться, кому що надсилати (П-43).
 var _seen: Dictionary = {}
 var _since_tick := 0.0
+## Гнізда монстрів: звідки й коли з'являється наступний.
+var _slots: Array = []
+var _last_mob_id := 0
 
 
 func _ready() -> void:
 	if Net.is_server:
 		multiplayer.peer_disconnected.connect(_on_left)
 		for i in MOB_SPOTS.size():
-			_spawn(-(i + 1), MOB_SPOTS[i])
+			_slots.append({"spot": i, "id": 0, "in": 0.0})
+			_respawn(i)
 		print("[світ] сервер чекає гравців, монстрів %d" % MOB_SPOTS.size())
 	else:
 		# Спавн просимо самі, коли сцена вже здатна приймати виклики.
@@ -74,10 +87,11 @@ func _physics_process(delta: float) -> void:
 			a.server_step(delta)
 		for id in creatures:
 			if id < 0:
-				_mob_think(id)
+				_mob_think(id, delta)
 			else:
 				_pump(id)
 		_clear_corpses()
+		_tick_respawn(delta)
 		return
 
 	var me: Node = creatures.get(multiplayer.get_unique_id())
@@ -222,6 +236,8 @@ func _pump(me: int) -> void:
 				_cycle_target(me, true, true)
 			"corpse_skill":
 				_corpse_skill(me)
+			"taunt":
+				_taunt(me)
 
 
 ## Трупи, яким вийшов строк, зникають. Монстр просто прибирається;
@@ -243,6 +259,33 @@ func _clear_corpses() -> void:
 					rpc_id(peer, "client_revive", id, c.hp)
 
 
+## Монстр з'являється у своєму місці з невеликим розкидом (П-66).
+func _respawn(slot: int) -> void:
+	var spot: Dictionary = MOB_SPOTS[slot]
+	var home: Vector3 = spot["home"]
+	var a := randf() * TAU
+	var r := randf() * 2.5
+	_last_mob_id += 1
+	var id := -_last_mob_id
+	var m := _spawn(id, home + Vector3(cos(a) * r, 0.0, sin(a) * r))
+	m.setup(home, spot["kind"], spot["aggressive"])
+	_slots[slot]["id"] = id
+	_slots[slot]["in"] = 0.0
+
+
+func _tick_respawn(delta: float) -> void:
+	for slot in _slots:
+		if slot["id"] != 0 and creatures.has(slot["id"]):
+			continue
+		if slot["in"] <= 0.0:
+			slot["in"] = RESPAWN_AFTER + randf() * RESPAWN_SPREAD
+			slot["id"] = 0
+			continue
+		slot["in"] -= delta
+		if slot["in"] <= 0.0:
+			_respawn(_slots.find(slot))
+
+
 func _remove(id: int) -> void:
 	if creatures.has(id):
 		creatures[id].queue_free()
@@ -252,23 +295,82 @@ func _remove(id: int) -> void:
 			rpc_id(peer, "client_despawn", id)
 
 
-## Монстр стоїть і б'є того, хто підійшов (П-66 — про переслідування).
-func _mob_think(id: int) -> void:
+## Поведінка монстра за П-66.
+func _mob_think(id: int, delta: float) -> void:
 	var m: Node = creatures[id]
 	if not m.is_alive():
 		return
+
 	var players := {}
 	for other in creatures:
-		if other > 0:
+		if other > 0 and creatures[other].is_alive():
 			players[other] = creatures[other]
-	var victim: int = m.pick_victim(players)
-	m.target_id = victim
-	if victim == 0:
+
+	# Відбіг задалеко від дому — розвертається й геть забуває кривдника.
+	if m.too_far_from_home():
+		m.forget()
+		m.target_id = 0
+		m.head_to(m.home, 1.0)
 		return
-	# Монстр стоїть, тож б'є лише того, хто сам підійшов на дальність.
-	var d: float = m.global_position.distance_to(creatures[victim].global_position)
-	if d <= m.ATTACK_RANGE:
+
+	# Кого ненавидить найбільше; якщо нікого — агресивний виглядає жертву.
+	var victim: int = m.top_threat(players)
+	if victim == 0:
+		victim = m.notice(players, delta)
+		if victim != 0:
+			m.add_threat(victim, 1.0)
+
+	if victim == 0:
+		m.target_id = 0
+		m.wander(delta)
+		return
+
+	# Уперше завів ціль — гукає своїх (П-66).
+	if not m._had_target:
+		m._had_target = true
+		_call_for_help(id, victim)
+
+	m.target_id = victim
+	var target: Node3D = creatures[victim]
+	var d: float = m.global_position.distance_to(target.global_position)
+	if d > m.ATTACK_RANGE:
+		m.head_to(target.global_position, 1.0)
+	else:
+		m.wanted = Vector2.ZERO
 		_attack(id)
+
+
+## Монстр гукає своїх — тільки того самого виду й тільки поблизу.
+func _call_for_help(id: int, victim: int) -> void:
+	var m: Node = creatures[id]
+	var called := 0
+	for other in creatures:
+		if other >= 0:
+			continue
+		var o: Node = creatures[other]
+		if o.is_alive() and o.hears(m, m.global_position):
+			o.add_threat(victim, 1.0)
+			called += 1
+	if called > 0:
+		print("[монстр] %d покликав своїх: %d" % [id, called])
+
+
+## Уміння «агресія»: піднімає загрозу так, щоб монстр перемкнувся.
+func _taunt(me: int) -> void:
+	var a: Node = creatures[me]
+	var t: Node = creatures.get(a.target_id)
+	if t == null or a.target_id >= 0:
+		_notice(me, "неможливо застосувати на даному типі цілі")
+		return
+	if not t.is_alive():
+		_notice(me, "неможливо застосувати на даному типі цілі")
+		return
+	# Стати вище за найбільшу теперішню загрозу, а не додати трохи.
+	var most := 0.0
+	for id in t.threat:
+		most = maxf(most, t.threat[id])
+	t.add_threat(me, most - t.threat.get(me, 0.0) + 20.0)
+	print("[монстр] %d перемкнувся на %d" % [a.target_id, me])
 
 
 ## Заглушка замість справжніх умінь по трупах — продовжує строк.
@@ -325,6 +427,9 @@ func _attack(me: int) -> bool:
 	var hit: int = Stats.damage_through(
 			a.stats.physical_attack(), victim.stats.physical_defence())
 	victim.hp = maxi(0, victim.hp - hit)
+	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
+	if a.target_id < 0 and me > 0:
+		victim.add_threat(me, hit + victim.THREAT_PER_HIT)
 	# Про зміну здоров'я знають лише ті, хто бачить постраждалого.
 	for peer in _seen:
 		if _seen[peer].has(a.target_id):

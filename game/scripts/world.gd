@@ -8,13 +8,17 @@ extends Node3D
 ## синхронізації розсилають усім однаково і для цього не годяться.
 
 const AVATAR := preload("res://scenes/avatar.tscn")
+const MOB := preload("res://scenes/mob.tscn")
+## Монстри живуть у від'ємних номерах, гравці — у додатних (номер
+## з'єднання). Так одна таблиця тримає і тих, і тих.
+const MOB_SPOTS := [Vector3(8, 1.5, -8), Vector3(-6, 1.5, 10), Vector3(14, 1.5, 4)]
 ## Скільки разів на секунду сервер розсилає позиції.
 const TICK_HZ := 20.0
 ## Наскільки швидко клієнт підтягує чужі капсули до надісланої позиції.
 ## Це згладжування картинки, а не передбачення руху (П-55).
 const SMOOTHING := 14.0
 
-var avatars: Dictionary = {}
+var creatures: Dictionary = {}
 ## Кого кожне з'єднання зараз бачить: peer_id -> { чужий_id: true }.
 ## Сервер веде це сам, бо саме звідси береться, кому що надсилати (П-43).
 var _seen: Dictionary = {}
@@ -24,7 +28,9 @@ var _since_tick := 0.0
 func _ready() -> void:
 	if Net.is_server:
 		multiplayer.peer_disconnected.connect(_on_left)
-		print("[світ] сервер чекає гравців")
+		for i in MOB_SPOTS.size():
+			_spawn(-(i + 1), MOB_SPOTS[i])
+		print("[світ] сервер чекає гравців, монстрів %d" % MOB_SPOTS.size())
 	else:
 		# Спавн просимо самі, коли сцена вже здатна приймати виклики.
 		# Якби сервер спавнив за подією з'єднання, повідомлення могло б
@@ -48,29 +54,32 @@ func _on_joined(id: int) -> void:
 	rpc_id(id, "client_spawn", id, a.global_position)
 	rpc_id(id, "client_vision", a.vision_radius())
 	_seen[id] = {id: true}
-	print("[світ] приєднався %d, усього %d" % [id, avatars.size()])
+	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
 
 
 func _on_left(id: int) -> void:
-	if avatars.has(id):
-		avatars[id].queue_free()
-		avatars.erase(id)
+	if creatures.has(id):
+		creatures[id].queue_free()
+		creatures.erase(id)
 	_seen.erase(id)
 	for peer in _seen:
 		if _seen[peer].erase(id):
 			rpc_id(peer, "client_despawn", id)
-	print("[світ] пішов %d, лишилось %d" % [id, avatars.size()])
+	print("[світ] пішов %d, лишилось %d" % [id, creatures.size()])
 
 
 func _physics_process(delta: float) -> void:
 	if Net.is_server:
-		for a in avatars.values():
+		for a in creatures.values():
 			a.server_step(delta)
-		for id in avatars:
-			_pump(id)
+		for id in creatures:
+			if id < 0:
+				_mob_think(id)
+			else:
+				_pump(id)
 		return
 
-	var me: Node = avatars.get(multiplayer.get_unique_id())
+	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null and me.is_local:
 		rpc_id(1, "submit_intent", me.sample_intent())
 
@@ -93,7 +102,7 @@ func _process(delta: float) -> void:
 ## позиції — ненадійним: загублений пакет позицій це смикання на кадр,
 ## а загублена поява це вічний привид.
 func _serve(peer: int) -> void:
-	var watcher: Node3D = avatars.get(peer)
+	var watcher: Node3D = creatures.get(peer)
 	if watcher == null:
 		return
 	var seen: Dictionary = _seen.get(peer, {})
@@ -101,8 +110,8 @@ func _serve(peer: int) -> void:
 	var far: float = near * watcher.VISION_HYSTERESIS
 
 	var snapshot := {}
-	for id in avatars:
-		var other: Node3D = avatars[id]
+	for id in creatures:
+		var other: Node3D = creatures[id]
 		var dist := watcher.global_position.distance_to(other.global_position)
 		# Поріг залежить від того, чи бачили досі: інакше на самій межі
 		# персонаж блимав би щокадру.
@@ -132,11 +141,11 @@ func select_target(id: int) -> void:
 	if not Net.is_server:
 		return
 	var me := multiplayer.get_remote_sender_id()
-	if not avatars.has(me):
+	if not creatures.has(me):
 		return
 	if id != 0 and not _seen.get(me, {}).has(id):
 		return  # цілі, якої не бачить, гравець узяти не може
-	avatars[me].target_id = id
+	creatures[me].target_id = id
 	rpc_id(me, "client_target", id)
 
 
@@ -153,7 +162,7 @@ func use_slot(slot: int) -> void:
 	if not Net.is_server:
 		return
 	var me := multiplayer.get_remote_sender_id()
-	var a: Node = avatars.get(me)
+	var a: Node = creatures.get(me)
 	if a == null or slot < 0 or slot >= a.BAR.size():
 		return
 	var action: String = a.BAR[slot]
@@ -164,7 +173,7 @@ func use_slot(slot: int) -> void:
 ## Натискання стає в чергу. Переповнену чергу зайве натискання не
 ## розпихає — воно просто гине (П-38).
 func _enqueue(me: int, action: String) -> void:
-	var a: Node = avatars.get(me)
+	var a: Node = creatures.get(me)
 	if a == null:
 		return
 	if a.queue.size() >= a.QUEUE_MAX:
@@ -180,7 +189,10 @@ func _enqueue(me: int, action: String) -> void:
 ## Якщо ж готової немає жодної, черга НЕ спорожнюється: голова чекає
 ## кінця відкату. Інакше п'ять натискань удару давали б один удар.
 func _pump(me: int) -> void:
-	var a: Node = avatars[me]
+	var a: Node = creatures[me]
+	if not a.is_alive():
+		a.queue.clear()  # мертвий не діє
+		return
 	while a.busy_in <= 0.0 and not a.queue.is_empty():
 		var at := -1
 		for i in a.queue.size():
@@ -196,9 +208,28 @@ func _pump(me: int) -> void:
 				if _attack(me):
 					a.busy_in = a.stats.swing_time()
 			"next_player":
-				_cycle_target(me)
+				_cycle_target(me, false)
 			"next_mob":
-				pass  # монстри з'являться на кроці 9
+				_cycle_target(me, true)
+
+
+## Монстр стоїть і б'є того, хто підійшов (П-66 — про переслідування).
+func _mob_think(id: int) -> void:
+	var m: Node = creatures[id]
+	if not m.is_alive():
+		return
+	var players := {}
+	for other in creatures:
+		if other > 0:
+			players[other] = creatures[other]
+	var victim: int = m.pick_victim(players)
+	m.target_id = victim
+	if victim == 0:
+		return
+	# Монстр стоїть, тож б'є лише того, хто сам підійшов на дальність.
+	var d: float = m.global_position.distance_to(creatures[victim].global_position)
+	if d <= m.ATTACK_RANGE:
+		_attack(id)
 
 
 ## Чи минув відкат саме цієї дії. Інші причини невдачі (немає цілі,
@@ -209,23 +240,31 @@ func _off_cooldown(a: Node, action: String) -> bool:
 	return true
 
 
+## Повідомлення в чат. Монстри не з'єднання, їм слати нікуди.
+func _notice(id: int, text: String) -> void:
+	if id > 0:
+		rpc_id(id, "client_notice", text)
+
+
 ## Повертає true, якщо удар справді відбувся.
 func _attack(me: int) -> bool:
-	if not avatars.has(me):
+	if not creatures.has(me):
 		return false
-	var a: Node = avatars[me]
+	var a: Node = creatures[me]
+	if not a.is_alive():
+		return false
 	if a.attack_ready_in > 0.0:
 		return false  # відкат не минув — дія викидається (П-35, П-38)
-	var victim: Node = avatars.get(a.target_id)
+	var victim: Node = creatures.get(a.target_id)
 	if victim == null:
-		rpc_id(me, "client_notice", "немає цілі")
+		_notice(me, "немає цілі")
 		return false
 	if not victim.is_alive():
-		rpc_id(me, "client_notice", "неможливо застосувати на даному типі цілі")
+		_notice(me, "неможливо застосувати на даному типі цілі")
 		return false
 	var dist: float = a.global_position.distance_to(victim.global_position)
 	if dist > a.ATTACK_RANGE:
-		rpc_id(me, "client_notice", "задалеко")
+		_notice(me, "задалеко")
 		return false
 
 	a.attack_ready_in = a.stats.attack_cooldown()
@@ -237,27 +276,35 @@ func _attack(me: int) -> bool:
 		if _seen[peer].has(a.target_id):
 			rpc_id(peer, "client_hp", a.target_id, victim.hp)
 	print("[бій] %d вдарив %d, лишилось %d" % [me, a.target_id, victim.hp])
+	if not victim.is_alive():
+		print("[бій] %d загинув" % a.target_id)
+		for peer in _seen:
+			if _seen[peer].has(a.target_id):
+				rpc_id(peer, "client_died", a.target_id)
 	return true
 
 
-## «Наступний гравець»: перебирає видимих за віддаленістю, по колу.
-func _cycle_target(me: int) -> void:
-	var a: Node = avatars[me]
+## Перебирає видимі цілі за віддаленістю, по колу. Монстри й гравці —
+## окремі дії за П-31, тому й переліки окремі.
+func _cycle_target(me: int, mobs: bool) -> void:
+	var a: Node = creatures[me]
 	var seen: Dictionary = _seen.get(me, {})
 	var list: Array = []
 	for id in seen:
-		if id != me and avatars.has(id) and avatars[id].is_alive():
+		if id == me or not creatures.has(id) or not creatures[id].is_alive():
+			continue
+		if (id < 0) == mobs:
 			list.append(id)
 	if list.is_empty():
-		avatars[me].target_id = 0
+		creatures[me].target_id = 0
 		rpc_id(me, "client_target", 0)
 		return
 	list.sort_custom(func(x, y):
-			return a.global_position.distance_to(avatars[x].global_position) \
-					< a.global_position.distance_to(avatars[y].global_position))
+			return a.global_position.distance_to(creatures[x].global_position) \
+					< a.global_position.distance_to(creatures[y].global_position))
 	var at := list.find(a.target_id)
 	var next: int = list[(at + 1) % list.size()] if at != -1 else list[0]
-	avatars[me].target_id = next
+	creatures[me].target_id = next
 	rpc_id(me, "client_target", next)
 
 
@@ -266,8 +313,8 @@ func submit_intent(intent: Vector2) -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
-	if avatars.has(id):
-		avatars[id].wanted = intent
+	if creatures.has(id):
+		creatures[id].wanted = intent
 
 
 # ── клієнт: ввід ──────────────────────────────────────────────────────
@@ -292,7 +339,7 @@ func _slot_of(code: int) -> int:
 
 ## Перший клік по цілі бере її, наступні по вже вибраній — б'ють (П-20).
 func _click_at(where: Vector2) -> void:
-	var me: Node = avatars.get(multiplayer.get_unique_id())
+	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me == null:
 		return
 	var cam: Camera3D = me.get_node("CameraRig/Camera3D")
@@ -313,8 +360,8 @@ func _click_at(where: Vector2) -> void:
 
 
 func _id_of(node: Object) -> int:
-	for id in avatars:
-		if avatars[id] == node:
+	for id in creatures:
+		if creatures[id] == node:
 			return id
 	return 0
 
@@ -323,14 +370,14 @@ func _id_of(node: Object) -> int:
 
 func _smooth(delta: float) -> void:
 	var k := 1.0 - exp(-SMOOTHING * delta)
-	for id in avatars:
-		var a: Node3D = avatars[id]
+	for id in creatures:
+		var a: Node3D = creatures[id]
 		a.global_position = a.global_position.lerp(a.server_position, k)
 
 
 @rpc("authority", "call_remote", "reliable")
 func client_spawn(id: int, pos: Vector3) -> void:
-	if avatars.has(id):
+	if creatures.has(id):
 		return
 	var a := _spawn(id, pos)
 	if id == multiplayer.get_unique_id():
@@ -341,22 +388,29 @@ func client_spawn(id: int, pos: Vector3) -> void:
 ## далі за зону бачення (П-47).
 @rpc("authority", "call_remote", "reliable")
 func client_vision(radius: float) -> void:
-	var me: Node = avatars.get(multiplayer.get_unique_id())
+	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null:
 		me.get_node("CameraRig").vision_radius = radius
 
 
 @rpc("authority", "call_remote", "reliable")
 func client_target(id: int) -> void:
-	var me: Node = avatars.get(multiplayer.get_unique_id())
+	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null:
 		me.target_id = id
 
 
 @rpc("authority", "call_remote", "reliable")
 func client_hp(id: int, hp: int) -> void:
-	if avatars.has(id):
-		avatars[id].hp = hp
+	if creatures.has(id):
+		creatures[id].hp = hp
+
+
+## Ціль загинула. Труп, його строк і вміння по трупах — крок 10.
+@rpc("authority", "call_remote", "reliable")
+func client_died(id: int) -> void:
+	if creatures.has(id):
+		creatures[id].hp = 0
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -366,25 +420,25 @@ func client_notice(text: String) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func client_despawn(id: int) -> void:
-	if avatars.has(id):
-		avatars[id].queue_free()
-		avatars.erase(id)
+	if creatures.has(id):
+		creatures[id].queue_free()
+		creatures.erase(id)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")
 func client_positions(snapshot: Dictionary) -> void:
 	for id in snapshot:
-		if avatars.has(id):
-			avatars[id].server_position = snapshot[id]
+		if creatures.has(id):
+			creatures[id].server_position = snapshot[id]
 
 
 # ── спільне ───────────────────────────────────────────────────────────
 
 func _spawn(id: int, pos: Vector3) -> Node3D:
-	var a := AVATAR.instantiate()
-	a.name = "Avatar%d" % id
+	var a: Node3D = MOB.instantiate() if id < 0 else AVATAR.instantiate()
+	a.name = ("Mob%d" % -id) if id < 0 else ("Avatar%d" % id)
 	add_child(a)
 	a.global_position = pos
 	a.server_position = pos
-	avatars[id] = a
+	creatures[id] = a
 	return a

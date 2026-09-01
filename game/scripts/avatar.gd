@@ -1,47 +1,13 @@
-extends CharacterBody3D
-## Персонаж.
+extends Creature
+## Персонаж гравця.
 ##
-## Рух рахує ТІЛЬКИ сервер (П-08). Клієнт надсилає намір — куди хоче
-## бігти — і малює те, що сервер відповів. Своєї позиції клієнт не
-## вигадує: передбачення руху це окреме питання (П-55).
+## Клієнт надсилає намір — куди хоче бігти — і малює те, що сервер
+## відповів. Своєї позиції клієнт не вигадує: передбачення руху це
+## окреме питання (П-55).
 
-## Радіус, у якому персонаж бачить інших (П-40). Тримає СЕРВЕР — це
-## частина правил гри, а не налаштування клієнта. Рахується зі стата
-## Чуття, дебафи на чутливість його знижують.
-## Щоб на самій межі персонажі не блимали, зникають вони трохи далі,
-## ніж з'являються.
-const VISION_HYSTERESIS := 1.12
-
-## Дальність удару від статів не залежить — її задасть зброя.
-const ATTACK_RANGE := 2.5
-
-## Усе інше рахується зі статів (крок 8). Тримає сервер.
-var stats := Stats.new()
-
-## Панель за П-20: сім комірок, куди призначаються дії. Уміння з'являться
-## пізніше, поки тут лише те, що вже вирішено — удар і вибір цілі.
+## Панель за П-20: сім комірок, куди призначаються дії. Уміння
+## з'являться пізніше; поки тут лише те, що вже вирішено (П-58).
 const BAR := ["attack", "next_player", "next_mob", "", "", "", ""]
-
-## Черга дій за П-38: 4-6 натискань. Не скидається ані за часом, ані
-## при зміні цілі. Точне число підбирається при налаштуванні.
-const QUEUE_MAX := 5
-## Що чекає на виконання. Тримає СЕРВЕР.
-var queue: Array[String] = []
-## Доки персонаж зайнятий попередньою дією.
-var busy_in := 0.0
-
-var hp := 0
-## Кого б'ємо. 0 — нікого.
-var target_id := 0
-## Скільки лишилось до наступного удару.
-var attack_ready_in := 0.0
-
-## Куди персонаж біжить зараз. Камера бере це, щоб доводитись за рухом.
-var move_direction := Vector3.ZERO
-## Намір, надісланий клієнтом. Заповнює сервер із мережі.
-var wanted := Vector2.ZERO
-## Куди сервер сказав стати. Клієнт плавно підтягується сюди.
-var server_position := Vector3.ZERO
 
 var is_local := false
 
@@ -49,8 +15,7 @@ var is_local := false
 
 
 func _ready() -> void:
-	if hp == 0:
-		hp = stats.max_hp()
+	super()
 	# Камера є в кожного аватара, але працює тільки у свого.
 	_rig.set_process(false)
 	_rig.set_process_unhandled_input(false)
@@ -61,32 +26,6 @@ func become_local() -> void:
 	_rig.set_process(true)
 	_rig.set_process_unhandled_input(true)
 	$CameraRig/Camera3D.current = true
-
-
-## Крок руху. Викликає лише сервер.
-func server_step(delta: float) -> void:
-	if not is_on_floor():
-		velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity") * delta
-	else:
-		velocity.y = 0.0
-
-	# Обрізаємо довжину: інакше підроблений намір дав би надшвидкість.
-	var dir := Vector3(wanted.x, 0.0, wanted.y).limit_length(1.0)
-	move_direction = dir
-	var speed := stats.move_speed()
-	velocity.x = dir.x * speed
-	velocity.z = dir.z * speed
-	move_and_slide()
-	attack_ready_in = maxf(0.0, attack_ready_in - delta)
-	busy_in = maxf(0.0, busy_in - delta)
-
-
-func is_alive() -> bool:
-	return hp > 0
-
-
-func vision_radius() -> float:
-	return stats.vision_radius()
 
 
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери

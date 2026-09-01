@@ -12,6 +12,10 @@ extends Node3D
 ## Упор у геометрію — за П-39: тверді перешкоди підтягують камеру до
 ## гравця, косметичні (трава, дерева) не мають тіла зіткнення взагалі,
 ## тому промінь їх не помічає.
+##
+## За П-54 підтяг має нижню межу: ближче за MIN_PULL камеру не тиснемо,
+## бо в кадр перестає влазити персонаж. Якщо на цій відстані перешкода
+## все одно заступає — робимо її напівпрозорою.
 
 ## Заглушка замість стата Чуття.
 @export var vision_radius: float = 18.0
@@ -29,11 +33,19 @@ const ZOOM_STEP := 1.0
 const DRIFT_SPEED := 1.2
 ## Запас, щоб камера не влипала в саму стіну.
 const WALL_MARGIN := 0.3
+## Ближче цього камеру не підтягуємо: далі кадр стає непридатним (П-54).
+const MIN_PULL := 2.5
+## Наскільки прозорою робиться перешкода, що лишилась на дорозі.
+const BLOCKER_FADE := 0.65
 
 var yaw: float = 0.0
 var pitch: float = deg_to_rad(50.0)
 var distance: float = 10.0
 var free_aim: bool = false
+
+## Меші, яким зараз піднято прозорість. Треба, щоб повернути їх назад,
+## коли перешкода перестала заступати.
+var _faded: Array[GeometryInstance3D] = []
 
 @onready var _camera: Camera3D = $Camera3D
 @onready var _target: Node3D = get_parent()
@@ -79,7 +91,7 @@ func _process(delta: float) -> void:
 			sin(yaw) * cos(pitch),
 			sin(pitch),
 			cos(yaw) * cos(pitch)) * distance
-	_camera.global_position = _clear_of_walls(pivot, pivot + offset)
+	_camera.global_position = _place_camera(pivot, offset)
 	_camera.look_at(pivot, Vector3.UP)
 
 
@@ -88,13 +100,40 @@ func max_distance() -> float:
 	return maxf(DISTANCE_MIN, vision_radius * DISTANCE_OF_VISION)
 
 
-## Тверда перешкода між гравцем і камерою підтягує камеру (П-39).
-func _clear_of_walls(from: Vector3, to: Vector3) -> Vector3:
-	var query := PhysicsRayQueryParameters3D.create(from, to)
+## Тверда перешкода підтягує камеру (П-39), але не ближче за MIN_PULL;
+## те, що заступає навіть звідти, стає напівпрозорим (П-54).
+func _place_camera(pivot: Vector3, offset: Vector3) -> Vector3:
+	var dir := offset.normalized()
+	var query := PhysicsRayQueryParameters3D.create(pivot, pivot + offset)
 	# Тільки шар «світ». Косметика тіл зіткнення не має і сюди не потрапляє.
 	query.collision_mask = 1
 	query.exclude = [_target.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+
 	if hit.is_empty():
-		return to
-	return hit["position"] + (from - to).normalized() * WALL_MARGIN
+		_fade_blocker(null)
+		return pivot + offset
+
+	var free_room := pivot.distance_to(hit["position"]) - WALL_MARGIN
+	if free_room < MIN_PULL:
+		# Тиснути далі нема куди — прибираємо перешкоду з очей.
+		_fade_blocker(hit["collider"])
+		return pivot + dir * MIN_PULL
+
+	_fade_blocker(null)
+	return pivot + dir * free_room
+
+
+## Піднімає прозорість мешів перешкоди й повертає назад ті, що звільнились.
+func _fade_blocker(blocker: Object) -> void:
+	var wanted: Array[GeometryInstance3D] = []
+	if blocker is Node:
+		for n in (blocker as Node).find_children("*", "GeometryInstance3D", true, false):
+			wanted.append(n)
+
+	for g in _faded:
+		if is_instance_valid(g) and not wanted.has(g):
+			g.transparency = 0.0
+	for g in wanted:
+		g.transparency = BLOCKER_FADE
+	_faded = wanted

@@ -107,6 +107,8 @@ func clear_corpses() -> Array:
 var skills := SkillBook.new()
 ## Повага, рівні й винагорода за різницю рівнів (крок 3).
 var progress := Progress.new()
+## Речі: бази й афікси (крок 4).
+var goods := ItemBook.new()
 
 
 ## Застосувати скіл. Повертає true, якщо він справді спрацював.
@@ -282,6 +284,15 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		_link.notice(victim_id, "втрачено %d поваги" % lost)
 		print("[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
+		# І частина речей (друга половина П-27). Поки вони просто
+		# зникають: «на землі» вимагає предметів у світі, яких ще немає —
+		# записано в П-112.
+		var gone_all: Array = progress.lose_items(victim, goods)
+		for gone: String in gone_all:
+			_link.notice(victim_id, "загублено: %s" % gone)
+			print("[смерть] %d загубив %s" % [victim_id, gone])
+		if not gone_all.is_empty():
+			_link.bag(victim_id, victim)
 	print("[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
@@ -309,6 +320,7 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 				% [killer.level, killer.stat_points])
 		print("[рівень] %d узяв %d рівень" % [me, killer.level])
 
+	var had: int = killer.things.size() + killer.items.size()
 	for row: Dictionary in victim.drop_table:
 		if randf() > float(row.get("шанс", 0.0)) * mult:
 			continue
@@ -316,8 +328,30 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 				int(row.get("до", 1)))
 		if count <= 0:
 			continue
-		killer.give_item(row["що"], count)
-		_link.notice(me, "здобуто: %s ×%d" % [row["що"], count])
+		_give(me, killer, str(row["що"]), count)
+	if killer.things.size() + killer.items.size() != had:
+		_link.bag(me, killer)
+
+
+## Покласти здобуте. Складані речі йдуть кількістю, поодинокі — кожна
+## окремо, і на кожну кидаються свої афікси (П-83).
+func _give(me: int, who: Node, name: String, count: int) -> void:
+	if not goods.has(name) or goods.is_stackable(name):
+		who.give_item(name, count)
+		_link.notice(me, "здобуто: %s ×%d" % [name, count])
+		return
+	for i in count:
+		var item: Item = goods.make(name)
+		if item == null:
+			continue
+		var at: int = who.add_thing(item)
+		_link.notice(me, "здобуто: %s" % item.title())
+		# Порожній слот заповнюється сам: новачкові не треба шукати, де
+		# вдягається перша в житті куртка. Зайняте не чіпаємо — вибір
+		# лишається за гравцем.
+		if item.slot != "" and not who.gear.has(item.slot):
+			who.equip(at)
+			_link.notice(me, "вдягнено: %s" % item.title())
 
 
 func _roll(pair: Array) -> int:

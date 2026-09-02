@@ -48,6 +48,7 @@ var _cast_fill: ColorRect
 var _cast_text: Label
 var _respect_fill: ColorRect
 var _level_text: Label
+var _bag_text: Label
 var _cast_left := 0.0
 var _cast_full := 0.0
 var _messages: VBoxContainer
@@ -66,6 +67,7 @@ func setup(world: Node) -> void:
 	_build_target()
 	_build_panel()
 	_build_cast()
+	_build_bag()
 	_build_messages()
 
 
@@ -180,6 +182,28 @@ func _build_cast() -> void:
 	_cast_fill = _plate(Vector2(0, 16), CAST_COLOR, _cast_box)
 	_cast_text = _text(12, _cast_box)
 	_cast_text.position = Vector2(6, 0)
+
+
+## Торба — праворуч. Показує вдягнене й решту; міняється рідко, тож
+## приходить окремим повідомленням, а не щотіку (крок 4).
+func _build_bag() -> void:
+	_bag_text = _text(12, _root)
+	_bag_text.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_bag_text.position = Vector2(-250, 70)
+	_bag_text.size = Vector2(240, 300)
+	_bag_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+
+func show_bag(worn: Array, carried: Array) -> void:
+	var lines: Array = []
+	if not worn.is_empty():
+		lines.append("вдягнене")
+		lines.append_array(worn)
+	if not carried.is_empty():
+		lines.append("")
+		lines.append("у торбі")
+		lines.append_array(carried)
+	_bag_text.text = "\n".join(lines)
 
 
 ## Рядок повідомлень — ліворуч унизу. Старі зникають самі.

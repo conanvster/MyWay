@@ -77,6 +77,53 @@ func death_loss(who: Node) -> int:
 	return loss
 
 
+## Що впало з гравця, коли він загинув (друга половина П-27).
+##
+## Ранжовано: ресурси йдуть найлегше, здобуте важче, вдягнене майже
+## ніколи. Кидається на КОЖНУ річ окремо, тож утрата завжди часткова —
+## саме це й називається «частина речей».
+##
+## Числа — пропозиція П-112. Множник штрафу за позначку вбивці (П-64)
+## сюди ще не входить: його числа чекають у П-88.
+##
+## Повертає перелік того, що зникло, — щоб сказати гравцеві словами.
+func lose_items(who: Node, goods: Object) -> Array:
+	var chances: Dictionary = grid.get("втрата речей", {})
+	if chances.is_empty():
+		return []
+	var lost: Array = []
+
+	for name in who.items.keys():
+		var kind: String = goods.kind_of(name) if goods != null else "ресурс"
+		if kind == "гроші":
+			continue                      # гроші поки не губляться
+		var chance: float = float(chances.get(
+				"ресурси" if kind == "ресурс" else "лут", 0.0))
+		var count: int = int(who.items[name])
+		var gone := 0
+		for i in count:
+			if randf() < chance:
+				gone += 1
+		if gone > 0:
+			lost.append("%s ×%d" % [name, gone])
+			if gone >= count:
+				who.items.erase(name)
+			else:
+				who.items[name] = count - gone
+
+	# Поодинокі перебираємо з кінця: `drop_thing` зсуває номери.
+	for at in range(who.things.size() - 1, -1, -1):
+		var worn: bool = who.is_worn(at)
+		var chance: float = float(chances.get(
+				"вдягнене" if worn else "лут", 0.0))
+		if randf() >= chance:
+			continue
+		var item: Item = who.drop_thing(at)
+		if item != null:
+			lost.append(item.title() + (" (був удягнений)" if worn else ""))
+	return lost
+
+
 ## Частка поточного рівня, від 0 до 1 — для смуги в HUD.
 func share_of_level(who: Node) -> float:
 	return clampf(float(who.respect)

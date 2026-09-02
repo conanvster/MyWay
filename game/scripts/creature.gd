@@ -82,9 +82,13 @@ var stat_points := 0
 ## Раса й стать: від них залежить і сітка поваги, і базові стати (П-89).
 var race := "людина"
 var sex := "чоловік"
-## Речі: ім'я -> скільки. Руни живуть тут-таки, поки немає інвентаря
-## (крок 4). Заглушка навмисно проста: правила рун від неї не залежать.
+## СКЛАДАНІ речі: ім'я -> скільки. Гроші, ресурси, руни, витратне.
 var items: Dictionary = {}
+## ПООДИНОКІ речі: зброя, обладунки, амулети. У кожної свої афікси, тож
+## кількістю їх не порахувати (крок 4).
+var things: Array[Item] = []
+## Що вдягнене: слот -> номер у `things`.
+var gear: Dictionary = {}
 
 ## Вивчені скіли: ключ -> рівень усередині грейду (П-106).
 var learned: Dictionary = {}
@@ -121,8 +125,76 @@ func _ready() -> void:
 
 ## Перерахувати чинні стати. Кликати після кожної зміни станів або
 ## базових статів; сам бій цього не робить — він просто читає `stats`.
+## Чинні стати = базові ПЛЮС спорядження, а вже потім помножені на
+## стани. Порядок саме такий (крок 2.1): спорядження додає, стани
+## множать — інакше баф +20% давав би різне залежно від того, у якому
+## порядку його повісили.
 func refresh_stats() -> void:
-	stats = states.applied_to(base_stats)
+	var dressed := Stats.new()
+	dressed.strength = base_stats.strength + _gear_bonus("сила")
+	dressed.agility = base_stats.agility + _gear_bonus("спритність")
+	dressed.stamina = base_stats.stamina + _gear_bonus("витривалість")
+	dressed.intellect = base_stats.intellect + _gear_bonus("інтелект")
+	dressed.sense = base_stats.sense + _gear_bonus("чуття")
+	dressed.cooldown_cut = base_stats.cooldown_cut
+	dressed.cast_speed_bonus = base_stats.cast_speed_bonus
+	dressed.concentration_bonus = base_stats.concentration_bonus
+	stats = states.applied_to(dressed)
+
+
+## Скільки цього стата дає вдягнене. Стати речей названі українською —
+## так їх пишуть у `дані/речі.json`, і так їх читає людина.
+func _gear_bonus(stat: String) -> int:
+	var total := 0
+	for slot in gear:
+		var at: int = gear[slot]
+		if at >= 0 and at < things.size():
+			total += int(things[at].stats.get(stat, 0))
+	return total
+
+
+## Узяти поодиноку річ. Повертає її номер в інвентарі.
+func add_thing(item: Item) -> int:
+	things.append(item)
+	return things.size() - 1
+
+
+## Вдягти. Що вже стояло в цьому слоті — знімається саме собою.
+func equip(at: int) -> String:
+	if at < 0 or at >= things.size():
+		return "такої речі немає"
+	var item: Item = things[at]
+	if item.slot == "":
+		return "%s не вдягається" % item.title()
+	gear[item.slot] = at
+	refresh_stats()
+	return ""
+
+
+func unequip(slot: String) -> void:
+	if gear.erase(slot):
+		refresh_stats()
+
+
+func is_worn(at: int) -> bool:
+	return gear.values().has(at)
+
+
+## Викинути поодиноку річ. Номери зсуваються, тож вдягнене переписуємо.
+func drop_thing(at: int) -> Item:
+	if at < 0 or at >= things.size():
+		return null
+	var item: Item = things[at]
+	things.remove_at(at)
+	var fixed := {}
+	for slot in gear:
+		var was: int = gear[slot]
+		if was == at:
+			continue
+		fixed[slot] = was - 1 if was > at else was
+	gear = fixed
+	refresh_stats()
+	return item
 
 
 ## Повісити баф або дебаф і одразу перерахувати стати.

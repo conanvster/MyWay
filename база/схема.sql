@@ -19,8 +19,10 @@ CREATE TABLE IF NOT EXISTS game.characters (
     x           real    NOT NULL DEFAULT 0,
     y           real    NOT NULL DEFAULT 1.5,
     z           real    NOT NULL DEFAULT 0,
-    skills      jsonb   NOT NULL DEFAULT '{}'::jsonb,
-    items       jsonb   NOT NULL DEFAULT '{}'::jsonb,
+    skills      jsonb   NOT NULL DEFAULT '{}'::jsonb,   -- вивчене: ключ -> рівень
+    items       jsonb   NOT NULL DEFAULT '{}'::jsonb,   -- складані: ім'я -> скільки
+    things      jsonb   NOT NULL DEFAULT '[]'::jsonb,   -- поодинокі, з афіксами
+    gear        jsonb   NOT NULL DEFAULT '{}'::jsonb,   -- слот -> номер у things
     saved_at    timestamptz NOT NULL DEFAULT now()
 );
 

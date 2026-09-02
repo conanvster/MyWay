@@ -9,9 +9,13 @@ extends RefCounted
 ## проти «attack». Уміння даються всім і рівнів не мають, скіли вчаться
 ## рунами — це різні речі (погоджено 02.09.2026).
 const SKILL_PREFIX := "скіл:"
+## Так у панелі стоїть витратна річ: «річ:кристал душі».
+const ITEM_PREFIX := "річ:"
 
 var _creatures: Dictionary
 var _vision: Vision
+## Речі: потрібні, щоб знати, що робить витратне (крок 4).
+var goods := ItemBook.new()
 var _combat: Combat
 var _link: Messenger
 
@@ -111,6 +115,42 @@ func pump(me: int) -> void:
 				# новий скіл — це рядок у дані/скіли.json (крок 2.2).
 				if action.begins_with(SKILL_PREFIX):
 					_combat.cast(me, action.substr(SKILL_PREFIX.length()))
+				elif action.begins_with(ITEM_PREFIX):
+					use_item(me, action.substr(ITEM_PREFIX.length()))
+
+
+## Ужити витратну річ (крок 4). Кристали душі повертають ману: звичайний
+## якусь кількість, великий половину від ТІЄЇ, ЯКОЇ БРАКУЄ, благословенний
+## усю (слова замовника).
+func use_item(me: int, name: String) -> bool:
+	var a: Node = _creatures.get(me)
+	if a == null or not a.is_alive():
+		return false
+	if not a.has_item(name):
+		_link.notice(me, "немає: %s" % name)
+		return false
+	var deed: Dictionary = goods.base_of(name).get("дія", {})
+	if deed.is_empty():
+		_link.notice(me, "%s ні на що не годиться" % name)
+		return false
+
+	var full: int = a.stats.max_mp()
+	var back := 0
+	if deed.has("мана"):
+		back = int(deed["мана"])
+	elif deed.has("мана частка нестачі"):
+		back = roundi((full - a.mp) * float(deed["мана частка нестачі"]))
+	elif deed.has("мана частка максимуму"):
+		back = roundi(full * float(deed["мана частка максимуму"]))
+	if back <= 0:
+		_link.notice(me, "мана й так повна")
+		return false
+
+	a.take_item(name)
+	a.mp = mini(full, a.mp + back)
+	_link.notice(me, "%s: мани +%d" % [name, back])
+	_link.bag(me, a)
+	return true
 
 
 ## Чи минув відкат саме цієї дії. Інші причини невдачі (немає цілі,

@@ -112,13 +112,32 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"z": who.global_position.z,
 		"skills": who.learned,
 		"items": who.items,
+		"things": _things_row(who),
+		"gear": who.gear,
 	}
 
 
+## Поодинокі речі зберігаються з афіксами: інакше після перезапуску
+## «гострий меч вовчої зграї» став би звичайним мечем.
+static func _things_row(who: Node) -> Array:
+	var out: Array = []
+	for item: Item in who.things:
+		out.append(item.to_row())
+	return out
+
+
 ## Зворотне: покласти прочитане в істоту.
-static func apply_row(who: Node, row: Dictionary) -> void:
+## Речі відтворюються з книги: без неї повернеться саме ім'я бази, а
+## афікси зникнуть — тому книга передається окремим доводом.
+static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	if row.is_empty():
 		return
+	if goods != null:
+		who.things.clear()
+		for thing: Dictionary in row.get("things", []):
+			var item: Item = Item.from_row(thing, goods)
+			if item != null:
+				who.things.append(item)
 	who.level = int(row.get("level", who.level))
 	who.respect = int(row.get("respect", who.respect))
 	who.experience = int(row.get("experience", who.experience))
@@ -130,6 +149,7 @@ static func apply_row(who: Node, row: Dictionary) -> void:
 	# порівняння з цілим потім давало б несподіванки.
 	who.learned = _whole(row.get("skills", {}))
 	who.items = _whole(row.get("items", {}))
+	who.gear = _whole(row.get("gear", {}))
 	who.place_at(Vector3(float(row.get("x", 0.0)), float(row.get("y", 1.5)),
 			float(row.get("z", 0.0))), 0.0)
 	# Здоров'я й ману ставимо після позиції: `place_at` їх не чіпає, але

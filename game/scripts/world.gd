@@ -59,7 +59,9 @@ func _ready() -> void:
 	combat = Combat.new(creatures, link)
 	combat.skills = data.skills
 	combat.progress = Progress.new(data.levels)
+	combat.goods = data.items
 	actions = Actions.new(creatures, vision, combat, link)
+	actions.goods = data.items
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
 	view = ClientView.new(creatures, self, link)
@@ -236,7 +238,8 @@ func _on_joined(id: int) -> void:
 		store.loaded.connect(func(name: String, row: Dictionary) -> void:
 				if name != _names.get(id, "") or not creatures.has(id):
 					return
-				Store.apply_row(creatures[id], row)
+				Store.apply_row(creatures[id], row, data.items)
+				creatures[id].refresh_stats()
 				if row.is_empty():
 					print("[база] %s новий, починає з нуля" % name)
 				else:
@@ -255,6 +258,7 @@ func _on_joined(id: int) -> void:
 	rpc_id(id, "client_vision", a.vision_radius())
 	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
 	rpc_id(id, "client_bar", PackedStringArray(a.bar))
+	link.bag(id, a)
 	vision.watch(id)
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
 
@@ -354,6 +358,13 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 func client_cast_end(id: int, done: bool) -> void:
 	if hud != null:
 		hud.cast_ended(id, done)
+
+
+## Торба: вдягнене й решта. Шлеться після кожної зміни.
+@rpc("authority", "call_remote", "reliable")
+func client_bag(worn: PackedStringArray, carried: PackedStringArray) -> void:
+	if hud != null:
+		hud.show_bag(Array(worn), Array(carried))
 
 
 ## Число шкоди над головою.

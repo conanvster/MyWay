@@ -13,6 +13,7 @@ const MOBS_PATH := "res://дані/монстри.json"
 const BAR_PATH := "res://дані/панель.json"
 const SKILLS_PATH := "res://дані/скіли.json"
 const LEVELS_PATH := "res://дані/рівні.json"
+const ITEMS_PATH := "res://дані/речі.json"
 ## Як часто перевіряти, чи файли змінились.
 const WATCH_EVERY := 2.0
 
@@ -27,6 +28,8 @@ var skills := SkillBook.new()
 var starting_skills: Dictionary = {}
 ## Сітка поваги й множники за різницю рівнів (крок 3).
 var levels: Dictionary = {}
+## Речі: бази й таблиця афіксів (крок 4).
+var items := ItemBook.new()
 
 var _stamps: Dictionary = {}
 var _since_check := 0.0
@@ -60,6 +63,13 @@ func load_all() -> bool:
 	else:
 		ok = false
 
+	var read_items: Variant = _read(ITEMS_PATH)
+	if read_items is Dictionary:
+		items.load_from(read_items)
+		print("[дані] речей: %d" % items.count())
+	else:
+		ok = false
+
 	var read_bar: Variant = _read(BAR_PATH)
 	if read_bar is Dictionary and read_bar.has("панель"):
 		bar.assign(read_bar["панель"])
@@ -82,7 +92,7 @@ func poll(delta: float) -> bool:
 		return false
 	_since_check = 0.0
 	var changed := false
-	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH, LEVELS_PATH]:
+	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH, LEVELS_PATH, ITEMS_PATH]:
 		var stamp := _stamp(path)
 		if stamp != 0 and _stamps.get(path, 0) != stamp:
 			changed = true

@@ -15,6 +15,14 @@ func _init(creatures: Dictionary = {}, link: Messenger = null) -> void:
 	_link = link if link != null else Messenger.new()
 
 
+## Обидва тепер у бою, і той, хто сидів, підводиться (П-101).
+func _mark_fight(a: Node, victim: Node) -> void:
+	a.in_fight = a.FIGHT_TIME
+	victim.in_fight = victim.FIGHT_TIME
+	victim.sit(false)
+	a.sit(false)
+
+
 ## Повертає true, якщо удар справді відбувся.
 func attack(me: int) -> bool:
 	if not _creatures.has(me):
@@ -52,6 +60,7 @@ func attack(me: int) -> bool:
 		power *= 1.0 + Stats.back_bonus_against(victim.stats)
 	var hit: int = Stats.damage_through(power, victim.stats.physical_defence())
 	victim.hp = maxi(0, victim.hp - hit)
+	_mark_fight(a, victim)
 	_try_interrupt(victim, a.target_id, hit)
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
 	if a.target_id < 0 and me > 0:
@@ -253,6 +262,7 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 	var id: int = _id_of(victim)
 	var hit: int = Stats.damage_through(power, victim.stats.magical_defence())
 	victim.hp = maxi(0, victim.hp - hit)
+	_mark_fight(a, victim)
 	_try_interrupt(victim, id, hit)
 	if id < 0 and me > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)

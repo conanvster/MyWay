@@ -12,6 +12,14 @@ const ATTACK_RANGE := 2.5
 const VISION_HYSTERESIS := 1.12
 ## Черга дій за П-38: 4-6 натискань.
 const QUEUE_MAX := 5
+
+## Відновлення здоров'я й мани (числа — пропозиція П-101), частка
+## максимуму за секунду:
+const REGEN_FIGHT := 0.01    ## у бою
+const REGEN_REST := 0.02     ## стоячи, поза боєм
+const REGEN_SIT := 0.06      ## сидячи — утричі швидше, ніж стоячи
+## Скільки після удару вважається «в бою».
+const FIGHT_TIME := 3.0
 ## Правило повороту (П-85, погоджено 02.09.2026):
 ##
 ##   є ціль (аґро)  — розвертається до неї МИТТЮ, обійти не вийде;
@@ -62,6 +70,15 @@ var wanted := Vector2.ZERO
 var server_position := Vector3.ZERO
 
 var target_id := 0
+## Рівень персонажа: його дає ПОВАГА (крок 3). Поки не росте, але скіли
+## вже питають, бо вчаться з певного рівня.
+var level := 1
+## Досвід — валюта на навчання скілів (не повага, яка дає рівні).
+var experience := 0
+## Речі: ім'я -> скільки. Руни живуть тут-таки, поки немає інвентаря
+## (крок 4). Заглушка навмисно проста: правила рун від неї не залежать.
+var items: Dictionary = {}
+
 ## Вивчені скіли: ключ -> рівень усередині грейду (П-106).
 var learned: Dictionary = {}
 ## Відкати скілів: ключ -> скільки секунд лишилось.
@@ -76,6 +93,14 @@ var casting_full := 0.0
 ## Кого мітив, коли починав. Ціль могли змінити посеред читання, а скіл
 ## має влучити в того, на кого його починали (П-42).
 var casting_target := 0
+## Скільки ще лічиться «в бою»: оновлюється кожним ударом по тобі й твоїм.
+var in_fight := 0.0
+## Сидить: відновлює швидше, але встає від першого ж удару (П-101).
+var sitting := false
+## Залишки, що не дотягли до цілої одиниці. Без них при 1% на секунду й
+## тіку 1/60 не відновлювалось би нічого взагалі: roundi(0,016) = 0.
+var _hp_left := 0.0
+var _mp_left := 0.0
 var queue: Array[String] = []
 
 
@@ -101,6 +126,7 @@ func add_state(state: State) -> void:
 
 func die() -> void:
 	hp = 0
+	sitting = false
 	stop_cast()
 	corpse_left = CORPSE_SHORT
 	queue.clear()
@@ -182,6 +208,8 @@ func server_step(delta: float) -> void:
 
 	attack_ready_in = maxf(0.0, attack_ready_in - delta)
 	busy_in = maxf(0.0, busy_in - delta)
+	in_fight = maxf(0.0, in_fight - delta)
+	_regen(delta)
 
 	for key in skill_ready_in.keys():
 		var left: float = skill_ready_in[key] - delta
@@ -204,10 +232,54 @@ func skill_ready(key: String) -> bool:
 	return not skill_ready_in.has(key)
 
 
+func has_item(name: String) -> bool:
+	return name == "" or int(items.get(name, 0)) > 0
+
+
+## Забрати одну штуку. Руна витрачається при використанні (П-50).
+func take_item(name: String) -> void:
+	if name == "":
+		return
+	var left: int = int(items.get(name, 0)) - 1
+	if left > 0:
+		items[name] = left
+	else:
+		items.erase(name)
+
+
+func give_item(name: String, count: int = 1) -> void:
+	items[name] = int(items.get(name, 0)) + count
+
+
 ## Вивчити скіл одразу потрібного рівня. Руни й досвід — крок 2.5; поки
 ## це шлях, яким скіл потрапляє в істоту (і в монстра теж).
 func learn(key: String, level: int = 1) -> void:
 	learned[key] = level
+
+
+## Відновлення здоров'я й мани. Швидкість залежить від того, чи ти в бою
+## і чи сидиш (П-93, П-101). Монстри користуються тим самим кодом —
+## у них це «здоров'я потроху відновлюється» з П-109.
+func _regen(delta: float) -> void:
+	if not is_alive():
+		return
+	var rate := REGEN_FIGHT
+	if in_fight <= 0.0:
+		rate = REGEN_SIT if sitting else REGEN_REST
+	_hp_left += stats.max_hp() * rate * delta
+	_mp_left += stats.max_mp() * rate * delta
+	if _hp_left >= 1.0:
+		hp = mini(stats.max_hp(), hp + int(_hp_left))
+		_hp_left -= int(_hp_left)
+	if _mp_left >= 1.0:
+		mp = mini(stats.max_mp(), mp + int(_mp_left))
+		_mp_left -= int(_mp_left)
+
+
+## Сісти або встати. Сидячи відновлюєшся втричі швидше, але від першого
+## удару підводишся.
+func sit(down: bool) -> void:
+	sitting = down and is_alive()
 
 
 func is_casting() -> bool:

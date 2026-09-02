@@ -107,6 +107,7 @@ func _physics_process(delta: float) -> void:
 			remove(id)
 		spawner.tick(delta)
 		_tick_sanctuaries()
+		_tick_water(delta)
 		if store != null and store.due(delta):
 			_save_everyone()
 		# Числа правляться в дані/*.json під час гри: помітив зміну —
@@ -309,6 +310,38 @@ func use_slot(slot: int, shift: bool = false) -> void:
 		actions.use_slot(multiplayer.get_remote_sender_id(), slot, shift)
 
 
+## Під водою (П-61). Рівень моря знає краєвид — він його й будував.
+func _tick_water(delta: float) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("sea_level"):
+		return
+	var sea: float = land.sea_level()
+	var sea_data: Dictionary = data.map.get("море", {})
+	var holds: float = float(sea_data.get("дихання", 25.0))
+	var harm: float = float(sea_data.get("шкода за секунду", 0.04))
+	for id in creatures:
+		var who: Node = creatures[id]
+		# Під водою вважається той, у кого голова нижче поверхні.
+		var under: bool = who.global_position.y + 0.9 < sea
+		var was_breath: float = who.breath
+		if who.breathe(delta, under, holds, harm):
+			link.notice(id, "захлинаєшся!")
+			if not who.is_alive():
+				print("[море] %d утонув" % id)
+				_link_death(id, who)
+		elif under and was_breath > 0.0 and who.breath <= 0.0:
+			link.notice(id, "повітря скінчилось")
+
+
+## Смерть без убивці: утоплення. Труп і втрати ті самі, що й у бою.
+func _link_death(id: int, who: Node) -> void:
+	who.die()
+	link.to_watchers(id, &"client_died", [id])
+	if id > 0:
+		var lost: int = combat.progress.death_loss(who)
+		link.notice(id, "втрачено %d поваги" % lost)
+
+
 ## Святині: місця, де відновлюють швидко (П-113). Перевіряємо щокадру —
 ## їх одиниці, а гравців десяток.
 func _tick_sanctuaries() -> void:
@@ -342,7 +375,7 @@ func _zones() -> Array:
 
 
 func _on_joined(id: int) -> void:
-	var a := spawn(id, Vector3(0, 1.5, 0))
+	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 1.5, 0))
 	a.account = _signed.get(id, {}).get("логін", "")
 	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
 	# базу, а база не жде гру.
@@ -443,6 +476,10 @@ func client_vision(radius: float) -> void:
 	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null:
 		me.get_node("CameraRig").vision_radius = radius
+	# Туман ховає рівно ту межу, за яку сервер уже нічого не шле (П-65).
+	var land: Node = get_node_or_null("Landscape")
+	if land != null:
+		land.fog_to_vision(radius)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -560,6 +597,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 # ── спільне: істоти у сцені ───────────────────────────────────────────
+
+## Висота землі в точці — питає спавнер, щоб не садити монстрів у ґрунт.
+func ground_at(x: float, z: float) -> float:
+	var land: Node = get_node_or_null("Landscape")
+	return land.height_at(x, z) if land != null \
+			and land.has_method("height_at") else 0.0
+
 
 ## Створити істоту й внести в таблицю. Вузли — робота світу, тому
 ## створення й знищення лишається тут, а модулі про сцену не знають.

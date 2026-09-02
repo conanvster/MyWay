@@ -108,6 +108,9 @@ var casting_full := 0.0
 var casting_target := 0
 ## Скільки ще лічиться «в бою»: оновлюється кожним ударом по тобі й твоїм.
 var in_fight := 0.0
+## Скільки ще можна не дихати. Під водою спадає, на повітрі вертається
+## (П-61). Нижче нуля — тоне.
+var breath := 0.0
 ## Наскільки швидко відновлює святиня, у якій стоїш. 0 — не в святині.
 var in_sanctuary := 0.0
 ## Сидить: відновлює швидше, але встає від першого ж удару (П-101).
@@ -116,6 +119,7 @@ var sitting := false
 ## тіку 1/60 не відновлювалось би нічого взагалі: roundi(0,016) = 0.
 var _hp_left := 0.0
 var _mp_left := 0.0
+var _drown_left := 0.0
 var queue: Array[String] = []
 
 
@@ -338,6 +342,37 @@ func give_item(name: String, count: int = 1) -> void:
 ## це шлях, яким скіл потрапляє в істоту (і в монстра теж).
 func learn(key: String, level: int = 1) -> void:
 	learned[key] = level
+
+
+## Під водою. Дихання спадає, а коли скінчилось — здоров'я тане (П-61).
+##
+## Числа приходять іззовні: скільки триматися й скільки втрачати за
+## секунду — це баланс, а не властивість істоти.
+##
+## Повертає true, якщо цієї миті гравець захлинувся, — щоб світ міг
+## сказати про це словами.
+func breathe(delta: float, under_water: bool, holds: float,
+		harm: float) -> bool:
+	if not is_alive():
+		return false
+	if not under_water:
+		# На повітрі дихання вертається вчетверо швидше, ніж витрачалось:
+		# виринув — і майже одразу можеш пірнати знову.
+		breath = minf(holds, breath + delta * 4.0)
+		return false
+	breath -= delta
+	if breath > 0.0:
+		return false
+	# Шкода накопичується дробом, а не округлюється щоразу вгору.
+	# Інакше нижня межа «одна одиниця за виклик» при 60 кадрах на секунду
+	# дає 60 за секунду замість чотирьох — спіймано пробою.
+	_drown_left += stats.max_hp() * harm * delta
+	if _drown_left < 1.0:
+		return false
+	var was: int = hp
+	hp = maxi(0, hp - int(_drown_left))
+	_drown_left -= int(_drown_left)
+	return was > 0 and hp < was
 
 
 ## Відновлення здоров'я й мани. Швидкість залежить від того, чи ти в бою

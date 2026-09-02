@@ -56,6 +56,11 @@ func respawn(slot: int) -> int:
 	_last_mob_id += 1
 	var id := -_last_mob_id
 	var at := zone.random_point()
+	# Поставити на землю: зона намальована в редакторі площиною, а земля
+	# під нею горбкувата (крок 6). Без цього монстр з'являється в ґрунті
+	# або в повітрі.
+	if _world != null and _world.has_method("ground_at"):
+		at.y = _world.ground_at(at.x, at.z) + 1.0
 	var m: Node = _world.spawn(id, at)
 	m.setup(at, zone.kind, zone.aggressive, _data.for_kind(zone.kind))
 	_slots[slot]["id"] = id

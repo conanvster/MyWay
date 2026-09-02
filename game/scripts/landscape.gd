@@ -50,8 +50,14 @@ func _sky() -> void:
 	# Легкий туман удалині: гори на краю світу мають танути, а не стояти
 	# картонкою. Справжній туман зони бачення — П-65, це не він.
 	air.fog_enabled = true
-	air.fog_light_color = Color("#a8b6c2")
+	air.fog_mode = Environment.FOG_MODE_DEPTH
+	air.fog_depth_begin = 40.0
+	air.fog_depth_end = 130.0
+	air.fog_sky_affect = 0.25
+	air.fog_light_color = Color(str(data.get("туман", {})
+			.get("колір", "#a8b6c2")))
 	air.fog_density = 0.0025
+	_air = air
 
 	var holder := WorldEnvironment.new()
 	holder.name = "Небо"
@@ -96,14 +102,123 @@ func _solid(where: Vector3, mesh: Mesh, shape: Shape3D, color: String,
 	return body
 
 
+## Висота землі в точці. Шум двома шарами: великі пагорби плюс дрібні
+## нерівності. Місто вирівнюється до нуля — на схилі не постоїш.
+## Небо й туман: тримаємо, щоб міняти дальність тумана під зону бачення.
+var _air: Environment
+var _noise: FastNoiseLite
+var _city_at := Vector3.ZERO
+var _city_flat := 0.0
+
+
+func height_at(x: float, z: float) -> float:
+	if _noise == null:
+		return 0.0
+	var earth: Dictionary = data.get("земля", {})
+	var high := _noise.get_noise_2d(x, z) * float(earth.get("розмах", 7.0))
+	# Дрібні нерівності, щоб схили не були гладкі, як стіл.
+	high += _noise.get_noise_2d(x * 3.1, z * 3.1) * 0.8
+	var far: float = Vector2(x - _city_at.x, z - _city_at.z).length()
+	if far < _city_flat:
+		return 0.0
+	# М'який перехід від міста до пагорбів: інакше на межі стіна.
+	var edge: float = float(data.get("земля", {}).get("поле", 14))
+	if far < _city_flat + edge:
+		high *= (far - _city_flat) / edge
+	return high
+
+
+## Земля з рельєфом: сітка вершин, висота з шуму, і та сама висота —
+## у форму зіткнення. `HeightMapShape3D` бере рівно ті самі числа, тож
+## картинка й те, по чому ходять, не розходяться.
 func _ground() -> void:
+	var earth: Dictionary = data.get("земля", {})
+	var side: float = float(earth.get("сторона", 240))
+	var step: float = float(earth.get("крок", 4))
+	var city: Dictionary = data.get("місто", {})
+	_city_at = _point(city.get("центр", [0, 0, 0]))
+	_city_flat = float(city.get("радіус", 26))
+
+	_noise = FastNoiseLite.new()
+	_noise.seed = SEED
+	_noise.frequency = float(earth.get("частота", 0.012))
+
+	var points := int(side / step) + 1
+	var heights := PackedFloat32Array()
+	heights.resize(points * points)
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for iz in points:
+		for ix in points:
+			var x := -side * 0.5 + ix * step
+			var z := -side * 0.5 + iz * step
+			heights[iz * points + ix] = height_at(x, z)
+	# Дві трикутні грані на кожну клітинку сітки.
+	for iz in points - 1:
+		for ix in points - 1:
+			var a := Vector3(-side * 0.5 + ix * step,
+					heights[iz * points + ix], -side * 0.5 + iz * step)
+			var b := Vector3(a.x + step, heights[iz * points + ix + 1], a.z)
+			var c := Vector3(a.x, heights[(iz + 1) * points + ix], a.z + step)
+			var d := Vector3(a.x + step,
+					heights[(iz + 1) * points + ix + 1], a.z + step)
+			for corner: Vector3 in [a, c, b, b, c, d]:
+				surface.add_vertex(corner)
+	surface.generate_normals()
+
+	var body := StaticBody3D.new()
+	body.name = "Земля"
+	add_child(body)
+	var view := MeshInstance3D.new()
+	view.name = "Меш"
+	view.mesh = surface.commit()
+	view.set_surface_override_material(0,
+			_paint(str(earth.get("колір", "#4a5c3a"))))
+	body.add_child(view)
+
+	var shape := HeightMapShape3D.new()
+	shape.map_width = points
+	shape.map_depth = points
+	shape.map_data = heights
+	var wall := CollisionShape3D.new()
+	wall.name = "Рельєф"
+	wall.shape = shape
+	# Форма міряє в клітинках по одиниці, а наша клітинка — `крок`.
+	wall.scale = Vector3(step, 1.0, step)
+	body.add_child(wall)
+
+	_sea()
+
+
+## Море: рівна вода на своєму рівні. Усе, що нижче, — під водою (П-61).
+func _sea() -> void:
+	var sea: Dictionary = data.get("море", {})
+	if sea.is_empty():
+		return
 	var side: float = float(data.get("земля", {}).get("сторона", 240))
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(side, 1, side)
-	var shape := BoxShape3D.new()
-	shape.size = mesh.size
-	_solid(Vector3(0, -0.5, 0), mesh, shape,
-			str(data.get("земля", {}).get("колір", "#4a5c3a")), "Земля")
+	var water := PlaneMesh.new()
+	water.size = Vector2(side * 1.4, side * 1.4)
+	var top := MeshInstance3D.new()
+	top.name = "Море"
+	top.mesh = water
+	var paint := _paint(str(sea.get("колір", "#25506b")))
+	paint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	paint.albedo_color.a = 0.72
+	paint.metallic = 0.3
+	paint.roughness = 0.15
+	top.set_surface_override_material(0, paint)
+	top.position = Vector3(0, float(sea.get("рівень", -2.2)), 0)
+	add_child(top)
+
+
+## Поставити точку на землю: висота береться з того самого рельєфу, по
+## якому ходять. Без цього дерева на схилі висіли б у повітрі.
+func _on_ground(point: Vector3) -> Vector3:
+	return Vector3(point.x, height_at(point.x, point.z) + point.y, point.z)
+
+
+func sea_level() -> float:
+	return float(data.get("море", {}).get("рівень", -2.2))
 
 
 ## Місто: брук, будинки з дахами й мешканці.
@@ -123,11 +238,11 @@ func _city() -> void:
 	stone.mesh = road
 	stone.set_surface_override_material(0,
 			_paint(str(city.get("колір бруку", "#6e6459"))))
-	stone.position = center + Vector3(0, 0.06, 0)
+	stone.position = _on_ground(center) + Vector3(0, 0.06, 0)
 	add_child(stone)
 
 	for house: Dictionary in city.get("будинки", []):
-		_house(_point(house["де"]), _point(house["розмір"]),
+		_house(_on_ground(_point(house["де"])), _point(house["розмір"]),
 				str(house.get("колір", "#8a6a4a")),
 				str(house.get("дах", "#6b3f2f")))
 
@@ -164,7 +279,7 @@ func _dweller(who: Dictionary) -> void:
 	body.who = str(who.get("хто", "мешканець"))
 	body.craft = str(who.get("ремесло", ""))
 	body.tint = Color(str(who.get("колір", "#75706a")))
-	body.position = _point(who["де"]) + Vector3(0, 1.0, 0)
+	body.position = _on_ground(_point(who["де"])) + Vector3(0, 1.0, 0)
 	# Шар «мешканці» (третій, тобто 4): промінь миші шукає і його теж,
 	# інакше клік по мешканцеві пролітає крізь нього — на цьому й
 	# спіймався замовник під час першої ж проби.
@@ -192,7 +307,8 @@ func _forest() -> void:
 	for i in int(wood.get("дерев", 40)):
 		var angle := randf() * TAU
 		var far := radius * sqrt(randf())
-		var at := center + Vector3(cos(angle) * far, 0.0, sin(angle) * far)
+		var at := _on_ground(center + Vector3(cos(angle) * far, 0.0,
+				sin(angle) * far))
 		_tree(at, randf_range(float(heights[0]), float(heights[1])),
 				str(wood.get("стовбур", "#5b4632")),
 				str(wood.get("крона", "#2f5e33")))
@@ -233,10 +349,32 @@ func _mountains() -> void:
 		var shape := CylinderShape3D.new()
 		shape.radius = radius * 0.7
 		shape.height = height
-		_solid(_point(hill["де"]) + Vector3(0, height * 0.5, 0), mesh, shape,
+		_solid(_on_ground(_point(hill["де"])) + Vector3(0, height * 0.5, 0),
+				mesh, shape,
 				str(hill.get("колір", "#6a6f74")), "Гора")
 
 
 static func _point(from: Variant) -> Vector3:
 	var list: Array = from
 	return Vector3(float(list[0]), float(list[1]), float(list[2]))
+
+
+## Туман по зоні бачення (П-65).
+##
+## Сервер шле лише те, що гравець бачить, — за межею просто порожнеча.
+## Туман має ховати рівно цю межу: інакше або видно, як істоти
+## з'являються з нізвідки, або туман з'їдає те, що ще видно.
+func fog_to_vision(radius: float) -> void:
+	if _air == null:
+		return
+	var spare: float = float(data.get("туман", {}).get("запас", 1.15))
+	# Туман ЗА ВІДСТАННЮ, а не за щільністю: у нього є початок і кінець,
+	# і кінець можна поставити рівно на межу бачення. Щільнісний туман
+	# такого не вміє — перша спроба з ним залила все молоком уже за
+	# п'ять кроків.
+	_air.fog_mode = Environment.FOG_MODE_DEPTH
+	_air.fog_depth_end = radius * spare
+	_air.fog_depth_begin = _air.fog_depth_end * 0.45
+	_air.fog_depth_curve = 1.4
+	# Небо туман не чіпає: інакше зникає обрій, і світ стає коробкою.
+	_air.fog_sky_affect = 0.25

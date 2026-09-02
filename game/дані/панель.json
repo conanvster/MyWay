@@ -1,0 +1,5 @@
+{
+  "_про": "Розкладка панелі 1-7 за замовчуванням (П-58). Порожній рядок — вільна комірка. Назви дій поки ті, що вміє actions.gd: attack, next_player, next_mob, corpse_skill, taunt. З кроком 2 сюди підуть імена вмінь.",
+
+  "панель": ["attack", "next_player", "next_mob", "corpse_skill", "taunt", "", ""]
+}

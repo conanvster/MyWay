@@ -4,27 +4,29 @@ extends Creature
 ## Поведінка за П-66: блукає біля свого місця, пасивний або агресивний,
 ## аґро веде таблиця загрози (П-71), при нападі кличе своїх на поміч.
 ##
-## Числа поки з пропозиції в П-72 — вони для налаштування, важливий
-## вигляд самих правил.
+## Числа — не сталі, а поля: їх роздає `дані/монстри.json` через
+## `apply_tuning`, і сервер перечитує файл на ходу (крок 1.2). Значення
+## нижче — запасні, на випадок, коли даних немає; вони ті самі, з якими
+## гра жила до кроку 1.2, і взяті з пропозиції П-72.
 
 ## З якої відстані агресивний узагалі помічає гравця.
-const NOTICE_RANGE := 15.0
+var notice_range := 15.0
 ## Скільки монстр «думає» перед нападом: на самому краю і впритул.
 ## Між ними — лінійно, тому що ближче гравець, то швидше реакція.
-const REACT_FAR := 2.0
-const REACT_NEAR := 0.2
+var react_far := 2.0
+var react_near := 0.2
 ## Далі цього від свого місця монстр не жене: розвертається й забуває.
 ## Прив'язано до того, наскільки далеко його самого видно, щоб не
 ## виходило, ніби гравця б'є хтось невидимий.
-const LEASH := 22.0
+var leash := 22.0
 ## На якій відстані чути поклик на поміч.
-const HELP_RANGE := 12.0
+var help_range := 12.0
 ## Наскільки далеко від свого місця відходить, коли блукає.
-const WANDER_RADIUS := 6.0
+var wander_radius := 6.0
 ## Частка швидкості під час блукання: монстр саме «повільно блукає».
-const WANDER_PACE := 0.3
+var wander_pace := 0.3
 ## Скільки загрози додає удар понад завдану шкоду.
-const THREAT_PER_HIT := 1.0
+var threat_per_hit := 1.0
 
 ## Місце, де монстр з'явився, і куди повертається.
 var home := Vector3.ZERO
@@ -41,16 +43,42 @@ var _wander_wait := 0.0
 var _had_target := false
 
 
-func setup(at: Vector3, of_kind: int, is_aggressive: bool) -> void:
+func setup(at: Vector3, of_kind: int, is_aggressive: bool,
+		tuning: Dictionary = {}) -> void:
 	home = at
 	kind = of_kind
 	aggressive = is_aggressive
 	_wander_to = at
-	# Заглушка до балансування: трохи слабший за гравця.
+	# Заглушка до балансування: трохи слабший за гравця. Числа з даних,
+	# якщо вони є.
 	stats.strength = 7
 	stats.stamina = 4
 	stats.agility = 7
+	apply_tuning(tuning)
 	hp = stats.max_hp()
+
+
+## Роздати числа з `дані/монстри.json`. Викликається і при появі, і коли
+## сервер помітив, що файл змінили: тоді монстр міняє вдачу на ходу.
+##
+## Здоров'я тут НЕ перераховується: живому монстрові посеред бою це
+## додало б або відібрало життя без причини. Нові стати діють із
+## наступної появи.
+func apply_tuning(tuning: Dictionary) -> void:
+	if tuning.is_empty():
+		return
+	notice_range = tuning.get("помічає", notice_range)
+	react_far = tuning.get("реакція_далеко", react_far)
+	react_near = tuning.get("реакція_близько", react_near)
+	leash = tuning.get("повідець", leash)
+	help_range = tuning.get("поклик", help_range)
+	wander_radius = tuning.get("блукання_радіус", wander_radius)
+	wander_pace = tuning.get("блукання_темп", wander_pace)
+	threat_per_hit = tuning.get("загроза_за_удар", threat_per_hit)
+	var from_data: Dictionary = tuning.get("стати", {})
+	stats.strength = from_data.get("сила", stats.strength)
+	stats.stamina = from_data.get("витривалість", stats.stamina)
+	stats.agility = from_data.get("спритність", stats.agility)
 
 
 func add_threat(id: int, amount: float) -> void:
@@ -83,7 +111,7 @@ func notice(players: Dictionary, delta: float) -> int:
 	if not aggressive:
 		return 0
 	var near := 0
-	var near_dist := NOTICE_RANGE
+	var near_dist := notice_range
 	for id in players:
 		var p: Node3D = players[id]
 		if not p.is_alive():
@@ -96,7 +124,7 @@ func notice(players: Dictionary, delta: float) -> int:
 		_react_left = 0.0
 		return 0
 	if _react_left <= 0.0:
-		_react_left = lerpf(REACT_NEAR, REACT_FAR, near_dist / NOTICE_RANGE)
+		_react_left = lerpf(react_near, react_far, near_dist / notice_range)
 	_react_left -= delta
 	if _react_left > 0.0:
 		return 0
@@ -109,12 +137,12 @@ func wander(delta: float) -> void:
 	if _wander_wait <= 0.0 and global_position.distance_to(_wander_to) < 1.0:
 		_wander_wait = randf_range(2.0, 5.0)
 		var a := randf() * TAU
-		var r := randf() * WANDER_RADIUS
+		var r := randf() * wander_radius
 		_wander_to = home + Vector3(cos(a) * r, 0.0, sin(a) * r)
 	if _wander_wait > 0.0:
 		wanted = Vector2.ZERO
 		return
-	head_to(_wander_to, WANDER_PACE)
+	head_to(_wander_to, wander_pace)
 
 
 func head_to(point: Vector3, pace: float) -> void:
@@ -128,10 +156,17 @@ func head_to(point: Vector3, pace: float) -> void:
 
 
 func too_far_from_home() -> bool:
-	return home.distance_to(global_position) > LEASH
+	return home.distance_to(global_position) > leash
 
 
 ## Чи це свій: поклик на поміч чують лише монстри того самого виду.
+##
+## Відстань міряється від ТОГО, ХТО ЧУЄ (`self`), до місця поклику. Тут
+## була вада: міряли `other.global_position.distance_to(from)`, тобто
+## відстань того, хто кличе, до самого себе — завжди нуль. help_range не
+## діяв узагалі, збігалась уся мапа. Проба цього не бачила, бо обидва
+## монстри виду 1 у MOB_SPOTS стоять за 4,24 один від одного — ближче за
+## help_range, і хибний код давав той самий результат, що й правильний.
 func hears(other: Node, from: Vector3) -> bool:
 	return other != self and other.kind == kind \
-			and other.global_position.distance_to(from) <= HELP_RANGE
+			and global_position.distance_to(from) <= help_range

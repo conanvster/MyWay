@@ -94,6 +94,7 @@ func _physics_process(delta: float) -> void:
 		for id in combat.clear_corpses():
 			remove(id)
 		spawner.tick(delta)
+		_tick_sanctuaries()
 		if store != null and store.due(delta):
 			_save_everyone()
 		# Числа правляться в дані/*.json під час гри: помітив зміну —
@@ -218,6 +219,28 @@ func strike() -> void:
 func use_slot(slot: int, shift: bool = false) -> void:
 	if Net.is_server:
 		actions.use_slot(multiplayer.get_remote_sender_id(), slot, shift)
+
+
+## Святині: місця, де відновлюють швидко (П-113). Перевіряємо щокадру —
+## їх одиниці, а гравців десяток.
+func _tick_sanctuaries() -> void:
+	var places := find_children("*", "Sanctuary", true, false)
+	if places.is_empty():
+		return
+	for id in creatures:
+		if id < 0:
+			continue
+		var who: Node3D = creatures[id]
+		var rate := 0.0
+		for place: Sanctuary in places:
+			if not place.has_point(who.global_position):
+				continue
+			if who.in_fight > 0.0 and not place.in_fight:
+				continue
+			rate = maxf(rate, place.restore)
+		if rate > 0.0 and who.in_sanctuary <= 0.0:
+			link.notice(id, "святиня: тут відновлюєшся швидко")
+		who.in_sanctuary = rate
 
 
 ## Зони появи — вузли `MobZone` у сцені. Їх малюють у редакторі, тому

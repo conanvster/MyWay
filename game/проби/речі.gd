@@ -38,6 +38,7 @@ func _go() -> void:
 	await _crystals(data)
 	await _drop(data)
 	await _death_loss(data)
+	await _sanctuary()
 	quit()
 
 
@@ -186,3 +187,37 @@ func _death_loss(data: GameData) -> void:
 	print("    вдягненого %d з %d (%.0f%% вижило, чекали 98%%)"
 			% [kept["вдягнене"], runs, 100.0 * kept["вдягнене"] / runs])
 	print("  гроші не губляться жодного разу")
+
+
+## Святиня (П-113): місце, де відновлюють швидко.
+func _sanctuary() -> void:
+	print("\n— святиня (П-113) —")
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await process_frame
+	var places := main.find_children("*", "Sanctuary", true, false)
+	print("  святинь у сцені: %d" % places.size())
+	if places.is_empty():
+		main.queue_free()
+		return
+	var place: Node3D = places[0]
+	print("  відновлює %.0f%% максимуму за секунду, у бою: %s"
+			% [place.restore * 100.0, place.in_fight])
+	print("  центр %s: усередині %s" % [place.global_position,
+			place.has_point(place.global_position)])
+	print("  за 20 кроків убік: усередині %s"
+			% place.has_point(place.global_position + Vector3(20, 0, 0)))
+
+	var hero: Node3D = AVATAR.instantiate()
+	root.add_child(hero)
+	await process_frame
+	hero.hp = 20
+	hero.mp = 5
+	hero.in_sanctuary = place.restore
+	for i in 60 * 3:
+		hero.global_position = Vector3(0, 1.5, 0)
+		hero.server_step(1.0 / 60.0)
+	print("  три секунди в святині: здоров'я 20 -> %d, мана 5 -> %d"
+			% [hero.hp, hero.mp])
+	hero.queue_free()
+	main.queue_free()

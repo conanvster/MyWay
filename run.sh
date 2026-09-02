@@ -4,6 +4,7 @@
 #   ./run.sh          редактор
 #   ./run.sh --run    одразу гру (клієнт до 127.0.0.1)
 #   ./run.sh --демо   гру в режимі показу: сама бере ціль, б'є і знімає екран
+#   ./run.sh --парад  парад істот: усі види в ряд, знімок у user://
 #
 # Сервер піднімається окремо: ./run-server.sh
 #
@@ -41,6 +42,7 @@ case "${1:-}" in
     --run)  exec godot --path "$proj" ;;
     --демо) exec godot --path "$proj" -- --демо ;;
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
+    --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --демо-акаунт)   exec godot --path "$proj" -- --демо --акаунт конан --пароль таємниця --персонаж Вовкодав-2 ;;
     *)      exec godot --path "$proj" -e ;;
 esac

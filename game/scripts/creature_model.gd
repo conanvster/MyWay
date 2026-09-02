@@ -15,6 +15,8 @@ extends Node3D
 const IDLE := "idle"
 const WALK := "walk"
 const SWING := "swing"
+## Скільки метрів заввишки сама фігурка.
+const TALL := 1.66
 
 var tint := Color(0.7, 0.7, 0.72)
 var body_height := 1.0
@@ -53,7 +55,10 @@ func build() -> void:
 	_parts["нога права"] = _hinge(Vector3(0.15, 0.64, 0),
 			Vector3(0.18, 0.62, 0.18), paint, "НогаПрава")
 
-	scale = Vector3(body_height, body_height, body_height)
+	# Фігурка сама заввишки TALL метрів; «зріст» у даних — теж метри, тож
+	# масштаб це їхнє відношення. Так фігурка й готова модель міряються
+	# однаково.
+	scale = Vector3.ONE * (body_height / TALL)
 	_build_animations()
 
 
@@ -170,7 +175,7 @@ func dress(color: Color, height: float) -> void:
 			for child in part.get_children():
 				if child is MeshInstance3D:
 					child.set_surface_override_material(0, paint)
-	scale = Vector3(body_height, body_height, body_height)
+	scale = Vector3.ONE * (body_height / TALL)
 
 
 ## Іде чи стоїть. Швидкість підганяє темп кроку: біжить — швидше.

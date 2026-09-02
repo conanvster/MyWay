@@ -31,7 +31,7 @@ func _ready() -> void:
 	super()
 	var body := model()
 	if body != null:
-		body.dress(Color("#d8c04a"), 1.0)
+		body.dress(Color("#d8c04a"), 1.75)
 	# Камера є в кожного аватара, але працює тільки у свого.
 	_rig.set_process(false)
 	_rig.set_process_unhandled_input(false)

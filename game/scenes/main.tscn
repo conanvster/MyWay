@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
 [ext_resource type="Script" path="res://scripts/mob_zone.gd" id="2_zone"]
@@ -36,6 +36,14 @@ radius = 14.0
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_shore"]
 height = 2.0
 radius = 13.0
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_cave"]
+height = 2.0
+radius = 10.0
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_lair"]
+height = 3.0
+radius = 12.0
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_world")
@@ -139,3 +147,24 @@ aggressive = false
 
 [node name="Shape" type="CollisionShape3D" parent="MobZones/Grove"]
 shape = SubResource("CylinderShape3D_shore")
+
+[node name="Cave" type="Area3D" parent="MobZones"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -18, 1.5, -44)
+script = ExtResource("2_zone")
+kind = 9
+count = 5
+aggressive = true
+
+[node name="Shape" type="CollisionShape3D" parent="MobZones/Cave"]
+shape = SubResource("CylinderShape3D_cave")
+
+[node name="Lair" type="Area3D" parent="MobZones"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -70, 1.5, -70)
+script = ExtResource("2_zone")
+kind = 10
+count = 1
+aggressive = true
+respawn_after = 120.0
+
+[node name="Shape" type="CollisionShape3D" parent="MobZones/Lair"]
+shape = SubResource("CylinderShape3D_lair")

@@ -39,7 +39,10 @@ func build() -> void:
 	var body: Node3D = scene.instantiate()
 	body.name = "Тіло"
 	add_child(body)
-	scale = Vector3(height, height, height)
+	# Моделі з наборів приходять кожна у своєму масштабі: свиня виходила
+	# завбільшки з будинок, а імп — із долоню. Тому «зріст» означає
+	# МЕТРИ, а модель підганяється під нього за власною висотою.
+	_fit(body)
 
 	_player = body.find_child("AnimationPlayer", true, false)
 	_skeleton = body.find_child("*Skeleton3D*", true, false)
@@ -54,24 +57,47 @@ func build() -> void:
 				_bones[name] = at
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
 	if _player != null:
-		_play_if_has(["Idle", "idle", "Idle_A"])
+		_play_if_has(["Idle"])
 
 
-## Пофарбувати. У готових моделей уже свої текстури, тож фарба лише
-## підмішується — інакше з вовка вийшла б однотонна пляма.
+## Пофарбувати. У готових моделей свої кольори, тож фарбу не чіпаємо —
+## міняється тільки зріст, і той у метрах.
 func dress(color: Color, size: float) -> void:
 	tint = color
 	height = size
-	scale = Vector3(size, size, size)
+	_fit(get_node_or_null("Тіло"))
+
+
+## Підігнати модель під потрібну висоту в метрах.
+func _fit(body: Node) -> void:
+	if body == null:
+		return
+	body.scale = Vector3.ONE
+	var box := AABB()
+	var first := true
+	for child in body.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = child
+		if mesh.mesh == null:
+			continue
+		var part: AABB = mesh.global_transform * mesh.mesh.get_aabb()
+		box = part if first else box.merge(part)
+		first = false
+	var tall: float = box.size.y if not first else 1.0
+	if tall < 0.01:
+		return
+	var times := height / tall
+	body.scale = Vector3(times, times, times)
+	# Ставимо на землю: у наборах початок то в ногах, то посередині.
+	body.position.y = -box.position.y * times
 
 
 func animate(speed: float) -> void:
 	_speed = speed
 	if _player != null:
 		if speed > 0.35:
-			_play_if_has(["Walk", "walk", "Run", "Walk_A"])
+			_play_if_has(["Walk", "Running", "Run", "Flying"])
 		else:
-			_play_if_has(["Idle", "idle", "Idle_A"])
+			_play_if_has(["Idle"])
 		return
 	_swing_bones(speed)
 
@@ -79,7 +105,7 @@ func animate(speed: float) -> void:
 func swing() -> void:
 	_swing_left = SWING_TIME
 	if _player != null:
-		_play_if_has(["Attack", "attack", "Punch", "Attack_A"], false)
+		_play_if_has(["Attack", "Punch"], false)
 
 
 func _process(delta: float) -> void:
@@ -111,12 +137,22 @@ func _bend(name: String, by: float) -> void:
 			_rest[name] * Quaternion(Vector3.RIGHT, by))
 
 
+## Знайти рух за частиною імені.
+##
+## У наборах імена з приставкою від скелета: «Armature|Idle»,
+## «SkeletonArmature|Skeleton_Running», «BatArmature|Bat_Flying». Точного
+## збігу шукати марно — беремо за кінцівкою імені.
 func _play_if_has(names: Array, loop: bool = true) -> void:
 	if _player == null:
 		return
-	for name: String in names:
-		if _player.has_animation(name):
+	var have := _player.get_animation_list()
+	for want: String in names:
+		for name: String in have:
+			if not name.to_lower().ends_with(want.to_lower()):
+				continue
 			if _player.current_animation == name and loop:
 				return
 			_player.play(name)
+			_player.get_animation(name).loop_mode = Animation.LOOP_LINEAR \
+					if loop else Animation.LOOP_NONE
 			return

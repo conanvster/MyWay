@@ -101,11 +101,8 @@ func entered_world() -> void:
 
 
 func _me() -> Node:
-	# Без живого з'єднання номера немає, і питати його — помилка в журнал
-	# щокадру. Спіймано, коли сервер упав раніше за клієнт.
-	if _world.multiplayer.multiplayer_peer == null \
-			or _world.multiplayer.multiplayer_peer.get_connection_status() \
-			!= MultiplayerPeer.CONNECTION_CONNECTED:
+	# Без живого з'єднання номера немає, і питати його — помилка щокадру.
+	if not Net.connected():
 		return null
 	return _creatures.get(_world.multiplayer.get_unique_id())
 
@@ -144,7 +141,27 @@ func demo(delta: float) -> void:
 		if far < best:
 			best = far
 			closest = _creatures[id]
-	me.walk_to = closest.global_position if closest != null else Vector3.ZERO
+	if closest != null:
+		me.walk_to = closest.global_position
+	else:
+		# Жодного монстра не видно — і не дивно: зона бачення 18 метрів,
+		# а зони появи за містом. Тоді йдемо до найближчої зони: вона є в
+		# сцені й у клієнта теж.
+		me.walk_to = _nearest_zone(me.global_position)
+
+
+## Осередок найближчої зони появи. Порожній вектор — зон немає.
+func _nearest_zone(from: Vector3) -> Vector3:
+	var found := Vector3.ZERO
+	var best := 1e9
+	for zone in _world.find_children("*", "MobZone", true, false):
+		var far: float = from.distance_to(zone.global_position)
+		# Прийшли — беремо наступну за віддаленістю, щоб не тупцювати.
+		if far < 6.0 or far >= best:
+			continue
+		best = far
+		found = zone.global_position
+	return found
 
 	# Тицяємо в землю тим самим шляхом, що й людина мишею: інакше
 	# клік нічим не перевірити — рук у проби немає.

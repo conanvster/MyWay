@@ -15,6 +15,15 @@ set -uo pipefail
 cd "$(dirname "$0")"
 mkdir -p .logs
 
+# Скільки вікон гри вже відкрито. Кожне тримає всі моделі, тож на трьох
+# забутих вікнах машина починає свопитись — перевірено 02.09.2026.
+open_now=$(pgrep -cf "godot --path .*game" || true)
+if [ "${open_now:-0}" -ge 2 ] && [ "${1:-}" != "--stop" ]; then
+    echo "‼ уже відкрито $open_now вікон гри." >&2
+    echo "  Закрий зайві або зупини все: ./play.sh --stop" >&2
+    exit 1
+fi
+
 if [ "${1:-}" = "--stop" ]; then
     for name in "godot --headless" "postgrest"; do
         pkill -f "$name" 2>/dev/null && echo "зупинено: $name"

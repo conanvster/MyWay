@@ -57,6 +57,13 @@ func _ready() -> void:
 		join()
 
 
+## Чи є живе з'єднання. Питати номер без нього — помилка щокадру.
+func connected() -> bool:
+	var peer := multiplayer.multiplayer_peer
+	return peer != null and peer.get_connection_status() \
+			== MultiplayerPeer.CONNECTION_CONNECTED
+
+
 ## Підняти з'єднання. Для сервера це слухати порт, для клієнта — стукати.
 func join() -> bool:
 	if joined:

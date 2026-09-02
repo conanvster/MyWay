@@ -126,6 +126,11 @@ func _physics_process(delta: float) -> void:
 					% spawner.apply_tuning())
 		return
 
+	# Без живого з'єднання номера немає, і питати його — помилка в журнал
+	# ЩОКАДРУ. На порожньому сервері таких рядків набігло 6801 за хвилину,
+	# і серед них не було видно нічого іншого.
+	if not Net.connected():
+		return
 	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null and me.is_local:
 		rpc_id(1, "submit_intent", me.sample_intent())

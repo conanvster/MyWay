@@ -37,6 +37,7 @@ var _demo_left := DEMO_START
 var _demo_step := 0
 var _shot_left := DEMO_START + 2.0
 var _click_left := DEMO_START + 1.0
+var _fps_left := DEMO_START + 2.0
 
 
 ## Екран входу. Є лише доти, доки не обрано персонажа (крок 5).
@@ -155,6 +156,13 @@ func demo(delta: float) -> void:
 		# Знімок одразу по кліку: помітка гасне за дві секунди, і в
 		# звичайний лад знімків вона просто не потрапляла.
 		_shot_left = 0.25
+
+	# Раз на п'ять секунд кажемо, скільки кадрів на секунду: без цього
+	# «швидше чи повільніше» лишається відчуттям, а не числом.
+	_fps_left -= delta
+	if _fps_left <= 0.0:
+		_fps_left = 5.0
+		print("[кадри] %d за секунду" % Engine.get_frames_per_second())
 
 	_shot_left -= delta
 	if _shot_left <= 0.0:

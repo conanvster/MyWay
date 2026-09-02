@@ -95,6 +95,11 @@ func _ready() -> void:
 		# прийти раніше, ніж клієнт готовий, і загубитись.
 		multiplayer.connected_to_server.connect(
 				func() -> void: rpc_id(1, "announce_ready", Net.character))
+		multiplayer.connection_failed.connect(
+				func() -> void: print("[мережа] ‼ сервер не відповів"))
+		# І аж ТЕПЕР стукаємо: доки була стартова сторінка, світу не було,
+		# і пакети шукали б вузол, якого не існує.
+		Net.join()
 
 
 func _physics_process(delta: float) -> void:

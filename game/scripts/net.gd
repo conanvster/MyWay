@@ -24,6 +24,10 @@ var account := ""
 var password := ""
 
 
+## Чи вже з'єднані. Клієнт з'єднується не одразу, а коли заходить у світ.
+var joined := false
+
+
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	if args.has("--server"):
@@ -44,12 +48,28 @@ func _ready() -> void:
 	if at != -1 and at + 1 < args.size():
 		password = args[at + 1]
 
+	# Сервер слухає одразу. КЛІЄНТ — ні: доки людина на стартовій
+	# сторінці, світу в нього ще немає, і надіслані туди пакети шукають
+	# вузол «Main», якого не існує. У журналі це виглядало так:
+	# «Node not found: Main» десятками рядків. Тому клієнт з'єднується
+	# аж тоді, коли зайшов у світ, — через `join()`.
+	if is_server:
+		join()
+
+
+## Підняти з'єднання. Для сервера це слухати порт, для клієнта — стукати.
+func join() -> bool:
+	if joined:
+		return true
 	var peer := ENetMultiplayerPeer.new()
 	var err := (peer.create_server(PORT, MAX_PLAYERS) if is_server
 			else peer.create_client(host, PORT))
 	if err != OK:
 		push_error("мережу підняти не вдалось: %s" % error_string(err))
-		return
+		print("[мережа] ‼ не вдалось: %s" % error_string(err))
+		return false
 	multiplayer.multiplayer_peer = peer
+	joined = true
 	print("[мережа] ", "сервер на порту %d" % PORT if is_server
 			else "клієнт до %s:%d" % [host, PORT])
+	return true

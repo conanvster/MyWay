@@ -180,5 +180,22 @@ func _start_db() -> void:
 	_log.text = "базу піднято, чекаю відповіді…"
 
 
+## Зайти у світ.
+##
+## `change_scene_to_file` тут не годиться: він звільняє поточну сцену
+## просто в мить виклику, а ми — усередині `_ready` або сигналу, коли
+## дерево саме додає вузли. Godot тоді каже «Parent node is busy
+## adding/removing children», і ні відкладений виклик, ні очікування
+## кадру цього не рятують.
+##
+## Тому світ **додається** в корінь сам, а сторінка прибирає себе
+## `queue_free` — він відкладений за побудовою й безпечний завжди.
 func _enter_world() -> void:
-	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	var scene: PackedScene = load("res://scenes/main.tscn")
+	if scene == null:
+		return
+	var world: Node = scene.instantiate()
+	world.tree_entered.connect(func() -> void:
+			get_tree().current_scene = world
+			queue_free(), CONNECT_ONE_SHOT)
+	get_tree().root.add_child.call_deferred(world)

@@ -41,5 +41,6 @@ case "${1:-}" in
     --run)  exec godot --path "$proj" ;;
     --демо) exec godot --path "$proj" -- --демо ;;
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
+    --демо-акаунт)   exec godot --path "$proj" -- --демо --акаунт конан --пароль таємниця --персонаж Вовкодав-2 ;;
     *)      exec godot --path "$proj" -e ;;
 esac

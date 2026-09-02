@@ -15,10 +15,14 @@ var bar: Array[String] = ["attack", "next_player", "next_mob",
 		"corpse_skill", "taunt", "", ""]
 
 var is_local := false
-## Куди йти в режимі показу (`--демо`). Порожній вектор — керує людина.
-## Потрібне тільки для знімків: сам намір іде тими самими шляхами, що й
-## від клавіш, і сервер перевіряє його так само.
-var demo_to := Vector3.ZERO
+## Куди йти, коли ведуть мишею: клік по землі ставить сюди точку, і
+## персонаж іде до неї сам. Порожній вектор — веде клавіатура.
+##
+## Намір іде тими самими шляхами, що й від клавіш, і сервер перевіряє
+## його так само: миша не дає нічого, чого не дають WASD.
+var walk_to := Vector3.ZERO
+## Наскільки близько треба підійти, щоб рахувати, що дійшов.
+const ARRIVED := 0.8
 
 @onready var _rig: Node3D = $CameraRig
 
@@ -46,15 +50,6 @@ func die() -> void:
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери
 ## робить клієнт, бо тільки він знає, куди дивиться.
 func sample_intent() -> Vector2:
-	if demo_to != Vector3.ZERO:
-		var to := demo_to - global_position
-		to.y = 0.0
-		var walk := Vector2(to.x, to.z)
-		if walk.length() < 1.6:
-			return Vector2.ZERO
-		move_direction = Vector3(to.x, 0.0, to.z).normalized()
-		return walk.normalized()
-
 	var input := Vector2.ZERO
 	# input.y — це «скільки вперед», тому W додатний. Множиться на вектор
 	# forward, і зі знаком навпаки W вів би назад.
@@ -66,6 +61,20 @@ func sample_intent() -> Vector2:
 		input.x -= 1.0
 	if Input.is_key_pressed(KEY_D):
 		input.x += 1.0
+	# Клавіатура старша за мишу: щойно натиснув WASD — наказ іти
+	# скасовується. Інакше персонаж пручався б і йшов у свою точку.
+	if input != Vector2.ZERO:
+		walk_to = Vector3.ZERO
+	elif walk_to != Vector3.ZERO:
+		var to := walk_to - global_position
+		to.y = 0.0
+		if to.length() <= ARRIVED:
+			walk_to = Vector3.ZERO
+			move_direction = Vector3.ZERO
+			return Vector2.ZERO
+		move_direction = to.normalized()
+		return Vector2(move_direction.x, move_direction.z)
+
 	input = input.normalized()
 
 	var cam := _rig.global_transform.basis

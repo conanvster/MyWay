@@ -18,6 +18,10 @@ var character := "Мандрівник"
 ## Адреса PostgREST: `-- --база http://127.0.0.1:3000`. Порожня — гра йде
 ## без збереження й каже про це вголос.
 var db := ""
+## Акаунт і пароль із рядка запуску: `-- --акаунт конан --пароль таємниця`.
+## Порожні — клієнт покаже екран входу й чекатиме на людину.
+var account := ""
+var password := ""
 
 
 func _ready() -> void:
@@ -33,6 +37,12 @@ func _ready() -> void:
 	at = args.find("--база")
 	if at != -1 and at + 1 < args.size():
 		db = args[at + 1]
+	at = args.find("--акаунт")
+	if at != -1 and at + 1 < args.size():
+		account = args[at + 1]
+	at = args.find("--пароль")
+	if at != -1 and at + 1 < args.size():
+		password = args[at + 1]
 
 	var peer := ENetMultiplayerPeer.new()
 	var err := (peer.create_server(PORT, MAX_PLAYERS) if is_server

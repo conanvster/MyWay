@@ -95,10 +95,47 @@ func save_character(name: String, row: Dictionary) -> void:
 			HTTPClient.METHOD_POST, JSON.stringify(row))
 
 
+## Виклик функції в базі: `POST /rpc/ім_я`. Так ходять акаунти (крок 5) —
+## перевірка пароля робиться в самому Postgres, а сюди приходить лише
+## відповідь.
+##
+## Пароль летить від клієнта до сервера гри, а звідти в базу. Поки все на
+## одній машині, це не діра; коли сервер вийде назовні, з'єднання має
+## стати захищеним — записано в П-114.
+signal answered(name: String, reply: Dictionary)
+
+
+func call_rpc(name: String, args: Dictionary) -> void:
+	if not works():
+		answered.emit(name, {"ok": false, "why": "бази немає"})
+		return
+	var request := HTTPRequest.new()
+	add_child(request)
+	request.request_completed.connect(
+			func(result: int, code: int, _headers: PackedStringArray,
+					body: PackedByteArray) -> void:
+				request.queue_free()
+				var reply := {}
+				if code == 200:
+					var parsed: Variant = JSON.parse_string(
+							body.get_string_from_utf8())
+					if parsed is Dictionary:
+						reply = parsed
+				else:
+					push_error("[база] %s: код %d" % [name, code])
+					print("[база] ‼ %s не вдалось, код %d" % [name, code])
+					reply = {"ok": false, "why": "база не відповіла"}
+				answered.emit(name, reply))
+	request.request("%s/rpc/%s" % [base_url, name],
+			PackedStringArray(["Content-Type: application/json"]),
+			HTTPClient.METHOD_POST, JSON.stringify(args))
+
+
 ## Що саме зберігається. Позиція теж: гравець має з'явитись там, де вийшов.
 static func row_of(name: String, who: Node) -> Dictionary:
 	return {
 		"name": name,
+		"account": who.account,
 		"level": who.level,
 		"respect": who.respect,
 		"experience": who.experience,

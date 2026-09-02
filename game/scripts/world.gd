@@ -44,8 +44,15 @@ var view: ClientView
 var hud: HUD
 ## Збереження персонажів через PostgREST (крок 3). Є лише на сервері.
 var store: Store
-## Хто під яким іменем грає: peer_id -> ім'я в базі.
+## Хто під яким іменем грає: peer_id -> ім'я персонажа в базі.
 var _names: Dictionary = {}
+## Хто увійшов: peer_id -> { логін, пароль, персонажі }.
+##
+## Пароль тримається в пам'яті сервера на час сеансу, бо функції бази
+## перевіряють його щоразу. Це компроміс, і він записаний у П-114:
+## правильніше видавати ключ сеансу, але для гри на одній машині з
+## десятьма друзями зайвий шар нічого не купує.
+var _signed: Dictionary = {}
 
 var _since_tick := 0.0
 
@@ -174,12 +181,88 @@ func _slot_cooldowns(me: Node) -> PackedFloat32Array:
 
 # ── сервер: що надходить від клієнтів ─────────────────────────────────
 
+## Увійти в гру без бази: як було до кроку 5. Якщо база є, цей шлях
+## закритий — інакше можна було б зайти чужим персонажем, назвавши ім'я.
 @rpc("any_peer", "call_remote", "reliable")
 func announce_ready(character: String = "") -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
+	if store != null and store.works():
+		rpc_id(id, "client_sign_needed")
+		return
 	_names[id] = character if character != "" else "Гравець-%d" % id
+	_on_joined(id)
+
+
+## Крок 5: вхід за акаунтом. Пароль перевіряє сама база (bcrypt), сервер
+## гри його не знає й не зберігає ніде, крім пам'яті сеансу.
+@rpc("any_peer", "call_remote", "reliable")
+func sign_in(login: String, password: String, register: bool = false) -> void:
+	if not Net.is_server or store == null or not store.works():
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if creatures.has(id):
+		return                       # уже в грі — удруге входити нема куди
+	store.answered.connect(func(name: String, reply: Dictionary) -> void:
+			if not multiplayer.get_peers().has(id):
+				return
+			if not bool(reply.get("ok", false)):
+				rpc_id(id, "client_sign_failed",
+						str(reply.get("why", "не вдалось")))
+				return
+			_signed[id] = {"логін": login, "пароль": password,
+					"персонажі": reply.get("characters", [])}
+			rpc_id(id, "client_characters",
+					JSON.stringify(_signed[id]["персонажі"]))
+			print("[акаунт] %s увійшов, персонажів %d"
+					% [login, _signed[id]["персонажі"].size()]),
+			CONNECT_ONE_SHOT)
+	store.call_rpc("register" if register else "login",
+			{"login": login, "password": password})
+
+
+## Створити персонажа на своєму акаунті.
+@rpc("any_peer", "call_remote", "reliable")
+func create_character(name: String, race: String, sex: String) -> void:
+	if not Net.is_server or store == null:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if not _signed.has(id):
+		return
+	var who: Dictionary = _signed[id]
+	store.answered.connect(func(_rpc: String, reply: Dictionary) -> void:
+			if not bool(reply.get("ok", false)):
+				rpc_id(id, "client_sign_failed",
+						str(reply.get("why", "не вдалось")))
+				return
+			who["персонажі"].append({"name": name, "level": 1,
+					"race": race, "sex": sex})
+			rpc_id(id, "client_characters", JSON.stringify(who["персонажі"]))
+			print("[акаунт] %s створив персонажа %s" % [who["логін"], name]),
+			CONNECT_ONE_SHOT)
+	store.call_rpc("new_character", {"login": who["логін"],
+			"password": who["пароль"], "name": name, "race": race, "sex": sex})
+
+
+## Обрати персонажа й нарешті зайти у світ.
+@rpc("any_peer", "call_remote", "reliable")
+func enter_world(character: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if not _signed.has(id) or creatures.has(id):
+		return
+	# Чужим персонажем не зайти: беремо лише з переліку свого акаунта.
+	var mine := false
+	for who: Dictionary in _signed[id]["персонажі"]:
+		if str(who.get("name", "")) == character:
+			mine = true
+			break
+	if not mine:
+		rpc_id(id, "client_sign_failed", "це не твій персонаж")
+		return
+	_names[id] = character
 	_on_joined(id)
 
 
@@ -260,6 +343,7 @@ func _zones() -> Array:
 
 func _on_joined(id: int) -> void:
 	var a := spawn(id, Vector3(0, 1.5, 0))
+	a.account = _signed.get(id, {}).get("логін", "")
 	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
 	# базу, а база не жде гру.
 	if store != null and store.works():
@@ -267,6 +351,13 @@ func _on_joined(id: int) -> void:
 				if name != _names.get(id, "") or not creatures.has(id):
 					return
 				Store.apply_row(creatures[id], row, data.items)
+				# Стартові скіли даються ПІСЛЯ читання: інакше прочитане
+				# з бази («скілів немає») затирає їх, і новий персонаж
+				# заходить у світ ні з чим. Спіймано на живому прогоні.
+				if creatures[id].learned.is_empty():
+					for key in data.starting_skills:
+						creatures[id].learn(key,
+								int(data.starting_skills[key]))
 				creatures[id].refresh_stats()
 				if row.is_empty():
 					print("[база] %s новий, починає з нуля" % name)
@@ -295,6 +386,7 @@ func _on_left(id: int) -> void:
 	# Зберегти ДО того, як істота зникне: інакше зберігати вже нічого.
 	_save_one(id)
 	_names.erase(id)
+	_signed.erase(id)
 	vision.drop_watcher(id)
 	remove(id)
 	print("[світ] пішов %d, лишилось %d" % [id, creatures.size()])
@@ -310,6 +402,7 @@ func client_spawn(id: int, pos: Vector3, look: float) -> void:
 	a.place_at(pos, look)
 	if id == multiplayer.get_unique_id():
 		a.become_local()
+		view.entered_world()
 		hud = HUD.new()
 		hud.setup(self)
 		add_child(hud)
@@ -321,6 +414,26 @@ func client_spawn(id: int, pos: Vector3, look: float) -> void:
 func client_place(id: int, pos: Vector3, look: float) -> void:
 	if creatures.has(id):
 		creatures[id].place_at(pos, look)
+
+
+## Сервер каже: без входу не пустимо (крок 5).
+@rpc("authority", "call_remote", "reliable")
+func client_sign_needed() -> void:
+	if view != null:
+		view.ask_sign_in()
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_sign_failed(why: String) -> void:
+	if view != null:
+		view.sign_failed(why)
+
+
+## Перелік персонажів акаунта — рядком JSON, бо це вкладені словники.
+@rpc("authority", "call_remote", "reliable")
+func client_characters(list: String) -> void:
+	if view != null:
+		view.show_characters(JSON.parse_string(list))
 
 
 ## Скільки бачить мій персонаж. Камері це потрібно, щоб не відмотуватись

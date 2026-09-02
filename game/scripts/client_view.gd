@@ -16,6 +16,7 @@ const SMOOTHING := 14.0
 const DEMO_START := 3.0    ## скільки чекати, поки з'явиться світ
 const DEMO_EVERY := 0.9    ## як часто натискати
 const DEMO_SHOT := 2.5     ## як часто знімати екран
+const DEMO_CLICK := 6.0    ## як часто тицяти в землю, щоб бачити помітку
 
 var _creatures: Dictionary
 ## Вузол світу: потрібен для променя миші та номера свого з'єднання.
@@ -35,6 +36,67 @@ var _demo := false
 var _demo_left := DEMO_START
 var _demo_step := 0
 var _shot_left := DEMO_START + 2.0
+var _click_left := DEMO_START + 1.0
+
+
+## Екран входу. Є лише доти, доки не обрано персонажа (крок 5).
+var _sign: SignScreen
+
+
+## Сервер сказав, що без акаунта не пустить.
+func ask_sign_in() -> void:
+	if _sign != null:
+		return
+	# Якщо акаунт названо в рядку запуску — заходимо самі, без екрана.
+	# Це для проб і для показу; людина однаково бачить екран.
+	if Net.account != "":
+		_link.to_server(&"sign_in", [Net.account, Net.password, false])
+		return
+	_sign = SignScreen.new()
+	_world.add_child(_sign)
+	_sign.setup()
+	_sign.wants_sign_in.connect(func(login: String, password: String,
+			register: bool) -> void:
+		_link.to_server(&"sign_in", [login, password, register]))
+	_sign.wants_new_character.connect(func(name: String, race: String,
+			sex: String) -> void:
+		_link.to_server(&"create_character", [name, race, sex]))
+	_sign.wants_enter.connect(func(character: String) -> void:
+		_link.to_server(&"enter_world", [character]))
+
+
+func sign_failed(why: String) -> void:
+	print("[вхід] ", why)
+	if _sign != null:
+		_sign.failed(why)
+
+
+func show_characters(list: Variant) -> void:
+	if list is not Array:
+		return
+	# Той самий шлях без рук: обираємо названого персонажа, а якщо його
+	# ще немає — створюємо й заходимо.
+	if Net.account != "" and _sign == null:
+		for who: Dictionary in list:
+			if str(who.get("name", "")) == Net.character:
+				_link.to_server(&"enter_world", [Net.character])
+				return
+		_link.to_server(&"create_character",
+				[Net.character, "людина", "чоловік"])
+		return
+	if _sign != null:
+		_sign.show_characters(list)
+
+
+func _process_sign() -> void:
+	pass
+
+
+## Персонаж з'явився — екран прибираємо.
+func entered_world() -> void:
+	if _sign != null:
+		_sign.done()
+		_sign = null
 
 
 func _me() -> Node:
@@ -68,7 +130,18 @@ func demo(delta: float) -> void:
 		if far < best:
 			best = far
 			closest = _creatures[id]
-	me.demo_to = closest.global_position if closest != null else Vector3.ZERO
+	me.walk_to = closest.global_position if closest != null else Vector3.ZERO
+
+	# Тицяємо в землю тим самим шляхом, що й людина мишею: інакше
+	# клік нічим не перевірити — рук у проби немає.
+	_click_left -= delta
+	if _click_left <= 0.0:
+		_click_left = DEMO_CLICK
+		var screen: Vector2 = _world.get_viewport().get_visible_rect().size
+		click_at(Vector2(screen.x * 0.5, screen.y * 0.72))
+		# Знімок одразу по кліку: помітка гасне за дві секунди, і в
+		# звичайний лад знімків вона просто не потрапляла.
+		_shot_left = 0.25
 
 	_shot_left -= delta
 	if _shot_left <= 0.0:
@@ -133,6 +206,7 @@ func click_at(where: Vector2) -> void:
 	var space := _world.get_world_3d().direct_space_state
 	var hit: Dictionary = space.intersect_ray(query)
 	if hit.is_empty():
+		walk_toward(where)
 		return
 	var body: Object = hit["collider"]
 	if body is NPC:
@@ -145,10 +219,62 @@ func click_at(where: Vector2) -> void:
 	var id := id_of(body)
 	if id == 0:
 		return
+
 	if me.target_id == id:
 		_link.to_server(&"strike")
 	else:
 		_link.to_server(&"select_target", [id])
+
+
+## Клік по землі — наказ іти. Другий промінь, уже по світу: перший шукав
+## істот і мешканців, цей шукає, куди саме ткнули.
+func walk_toward(where: Vector2) -> void:
+	var me: Node = _me()
+	if me == null or not me.is_alive():
+		return
+	var cam: Camera3D = me.get_node("CameraRig/Camera3D")
+	var from := cam.project_ray_origin(where)
+	var query := PhysicsRayQueryParameters3D.create(
+			from, from + cam.project_ray_normal(where) * 400.0)
+	query.collision_mask = 1  # шар «світ»: земля, будинки, гори
+	var hit: Dictionary = _world.get_world_3d().direct_space_state \
+			.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var point: Vector3 = hit["position"]
+	me.walk_to = point
+	_mark(point)
+
+
+## Помітка на землі: куди наказано йти. Гасне за дві секунди — стільки
+## просив замовник, і саме стільки треба, щоб оком помітити, куди тицьнув.
+const MARK_TIME := 2.0
+
+
+func _mark(point: Vector3) -> void:
+	var ring := MeshInstance3D.new()
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.45
+	mesh.outer_radius = 0.75
+	mesh.rings = 20
+	ring.mesh = mesh
+	var paint := StandardMaterial3D.new()
+	paint.albedo_color = Color(1.0, 0.85, 0.35, 0.95)
+	# Світиться сама й не ховається за землею: інакше на брукові її
+	# майже не видно.
+	paint.emission_enabled = true
+	paint.emission = Color(1.0, 0.8, 0.3)
+	paint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	paint.no_depth_test = true
+	ring.set_surface_override_material(0, paint)
+	ring.position = point + Vector3(0, 0.08, 0)
+	_world.add_child(ring)
+
+	var fade := _world.create_tween()
+	fade.set_parallel(true)
+	fade.tween_property(paint, "albedo_color:a", 0.0, MARK_TIME)
+	fade.tween_property(ring, "scale", Vector3(1.6, 1.0, 1.6), MARK_TIME)
+	fade.chain().tween_callback(ring.queue_free)
 
 
 func id_of(node: Object) -> int:

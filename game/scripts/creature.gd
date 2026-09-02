@@ -34,6 +34,9 @@ const REVIVE_SHARE := 0.30
 
 var stats := Stats.new()
 var hp := 0
+## Мана. Витрачати її поки нічим — заглушка до вмінь (крок 2.2), але HUD
+## показує справжнє число, а не намальоване.
+var mp := 0
 ## Скільки труп ще лежатиме. 0 у живого.
 var corpse_left := 0.0
 
@@ -60,6 +63,8 @@ var queue: Array[String] = []
 func _ready() -> void:
 	if hp == 0:
 		hp = stats.max_hp()
+	if mp == 0:
+		mp = stats.max_mp()
 
 
 func die() -> void:

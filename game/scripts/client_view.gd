@@ -9,6 +9,14 @@ extends RefCounted
 ## Це згладжування картинки, а не передбачення руху (П-55, П-82).
 const SMOOTHING := 14.0
 
+## Режим показу: клієнт сам бере ціль і б'є, щоб можна було зняти HUD у
+## бою. Це НЕ лазівка: він шле рівно ті самі повідомлення, що й людина
+## клавішами, і сервер перевіряє їх так само. Вмикається аргументом:
+##     godot --path game -- --демо
+const DEMO_START := 3.0    ## скільки чекати, поки з'явиться світ
+const DEMO_EVERY := 0.9    ## як часто натискати
+const DEMO_SHOT := 2.5     ## як часто знімати екран
+
 var _creatures: Dictionary
 ## Вузол світу: потрібен для променя миші та номера свого з'єднання.
 var _world: Node3D
@@ -20,6 +28,13 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_creatures = creatures
 	_world = world
 	_link = link if link != null else Messenger.new(world)
+	_demo = OS.get_cmdline_user_args().has("--демо")
+
+
+var _demo := false
+var _demo_left := DEMO_START
+var _demo_step := 0
+var _shot_left := DEMO_START + 2.0
 
 
 func _me() -> Node:
@@ -36,6 +51,25 @@ func smooth(delta: float) -> void:
 		a.rotation.y = lerp_angle(a.rotation.y, a.server_facing, k)
 
 
+## Показ: спершу взяти найближчого монстра (комірка 3), далі бити.
+func demo(delta: float) -> void:
+	if not _demo or _me() == null:
+		return
+	_shot_left -= delta
+	if _shot_left <= 0.0:
+		_shot_left = DEMO_SHOT
+		take_shot()
+	_demo_left -= delta
+	if _demo_left > 0.0:
+		return
+	_demo_left = DEMO_EVERY
+	_demo_step += 1
+	if _demo_step == 1:
+		_link.to_server(&"use_slot", [2, false])
+	else:
+		_link.to_server(&"strike")
+
+
 func apply_positions(snapshot: Dictionary) -> void:
 	for id in snapshot:
 		if _creatures.has(id):
@@ -46,6 +80,9 @@ func apply_positions(snapshot: Dictionary) -> void:
 
 func input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F12:
+			take_shot()
+			return
 		var slot := slot_of(event.keycode)
 		if slot != -1:
 			_link.to_server(&"use_slot", [slot, event.shift_pressed])
@@ -89,3 +126,29 @@ func id_of(node: Object) -> int:
 		if _creatures[id] == node:
 			return id
 	return 0
+
+
+## Знімок екрана по F12.
+##
+## Потрібен, бо очима перевіряється те, чого не перевірити пробою: HUD,
+## камера, світло. Зовнішні знімалки під цим композитором не працюють
+## (grim: "compositor doesn't support wlr-screencopy"), а зсередини Godot
+## знімок виходить завжди.
+##
+## Знімати можна лише ПІСЛЯ того, як кадр намальовано, інакше в текстурі
+## порожнеча — звідси одноразове під'єднання до frame_post_draw.
+func take_shot() -> void:
+	RenderingServer.frame_post_draw.connect(_save_shot,
+			CONNECT_ONE_SHOT)
+
+
+func _save_shot() -> void:
+	var image := _world.get_viewport().get_texture().get_image()
+	var path := "user://знімок-%s.png" % Time.get_datetime_string_from_system(
+			false, true).replace(":", "-").replace(" ", "_")
+	var err := image.save_png(path)
+	if err != OK:
+		push_error("[знімок] не зберігся: %s" % error_string(err))
+		print("[знімок] ‼ не зберігся: %s" % error_string(err))
+		return
+	print("[знімок] ", ProjectSettings.globalize_path(path))

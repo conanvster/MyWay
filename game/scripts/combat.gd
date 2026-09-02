@@ -57,6 +57,9 @@ func attack(me: int) -> bool:
 		victim.add_threat(me, hit + victim.threat_per_hit)
 	# Про зміну здоров'я знають лише ті, хто бачить постраждалого.
 	_link.to_watchers(a.target_id, &"client_hp", [a.target_id, victim.hp])
+	# Число шкоди над головою бачать ті самі, хто бачить постраждалого.
+	_link.to_watchers(a.target_id, &"client_damage",
+			[a.target_id, hit, behind])
 	print("[бій] %d вдарив %d%s, лишилось %d"
 			% [me, a.target_id, " ЗІ СПИНИ" if behind else "", victim.hp])
 	if victim.hp <= 0:

@@ -19,6 +19,7 @@ extends Node3D
 ##     mob_zone.gd     форма зони появи: те, що намальовано в редакторі
 ##     game_data.gd    числа з дані/*.json, із перечитуванням на ходу
 ##     client_view.gd  згладжування й ввід клієнта
+##     hud.gd          що гравець бачить поверх світу
 ##     messenger.gd    єдиний вихід на клієнтів
 
 const AVATAR := preload("res://scenes/avatar.tscn")
@@ -39,6 +40,8 @@ var actions: Actions
 var mobs: MobAI
 var spawner: Spawner
 var view: ClientView
+## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
+var hud: HUD
 
 var _since_tick := 0.0
 
@@ -94,6 +97,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if not Net.is_server:
 		view.smooth(delta)
+		view.demo(delta)
 		return
 
 	_since_tick += delta
@@ -103,6 +107,7 @@ func _process(delta: float) -> void:
 
 	for peer in multiplayer.get_peers():
 		_serve(peer)
+		_serve_self(peer)
 
 
 ## Що бачить одне з'єднання. Поява й зникнення йдуть надійним каналом,
@@ -113,9 +118,22 @@ func _serve(peer: int) -> void:
 	for id in diff["appeared"]:
 		var other: Node3D = creatures[id]
 		rpc_id(peer, "client_spawn", id, other.global_position, other.facing)
+		# Смуга здоров'я цілі мусить знати, скільки його всього.
+		rpc_id(peer, "client_vitals", id, other.hp, other.stats.max_hp())
 	for id in diff["gone"]:
 		rpc_id(peer, "client_despawn", id)
 	rpc_id(peer, "client_positions", diff["snapshot"])
+
+
+## Свої числа: здоров'я, мана, відкат, замах і черга. Йдуть щотіку й
+## ненадійним каналом — загублений пакет це кадр застарілого показу.
+func _serve_self(peer: int) -> void:
+	var me: Node = creatures.get(peer)
+	if me == null:
+		return
+	rpc_id(peer, "client_self", me.hp, me.stats.max_hp(), me.mp,
+			me.stats.max_mp(), me.attack_ready_in, me.busy_in,
+			PackedStringArray(me.queue))
 
 
 # ── сервер: що надходить від клієнтів ─────────────────────────────────
@@ -173,6 +191,8 @@ func _on_joined(id: int) -> void:
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
 	rpc_id(id, "client_spawn", id, a.global_position, a.facing)
 	rpc_id(id, "client_vision", a.vision_radius())
+	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
+	rpc_id(id, "client_bar", PackedStringArray(a.bar))
 	vision.watch(id)
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
 
@@ -193,6 +213,9 @@ func client_spawn(id: int, pos: Vector3, look: float) -> void:
 	a.place_at(pos, look)
 	if id == multiplayer.get_unique_id():
 		a.become_local()
+		hud = HUD.new()
+		hud.setup(self)
+		add_child(hud)
 
 
 ## Переставити стрибком: оживлення, а далі й телепорти. Окреме надійне
@@ -217,12 +240,46 @@ func client_target(id: int) -> void:
 	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null:
 		me.target_id = id
+	if hud != null:
+		hud.set_target(id)
 
 
 @rpc("authority", "call_remote", "reliable")
 func client_hp(id: int, hp: int) -> void:
 	if creatures.has(id):
 		creatures[id].hp = hp
+	if hud != null:
+		hud.set_hp(id, hp)
+
+
+## Скільки в істоти здоров'я всього — щоб смуга цілі мала від чого рахувати.
+@rpc("authority", "call_remote", "reliable")
+func client_vitals(id: int, hp: int, max_hp: int) -> void:
+	if hud != null:
+		hud.set_vitals(id, hp, max_hp)
+
+
+## Розкладка панелі з дані/панель.json (П-58).
+@rpc("authority", "call_remote", "reliable")
+func client_bar(bar: PackedStringArray) -> void:
+	if hud != null:
+		hud.set_bar(Array(bar))
+
+
+## Свої числа щотіку: здоров'я, мана, відкат, замах, черга.
+@rpc("authority", "call_remote", "unreliable_ordered")
+func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
+		attack_in: float, busy_in: float, queue: PackedStringArray) -> void:
+	if hud != null:
+		hud.update_self(hp, max_hp, mp, max_mp, attack_in, busy_in,
+				Array(queue))
+
+
+## Число шкоди над головою.
+@rpc("authority", "call_remote", "reliable")
+func client_damage(id: int, amount: int, behind: bool) -> void:
+	if hud != null:
+		hud.damage(id, amount, behind)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -230,6 +287,8 @@ func client_died(id: int) -> void:
 	if creatures.has(id):
 		creatures[id].hp = 0
 		creatures[id].lay_down()
+	if hud != null:
+		hud.set_hp(id, 0)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -237,11 +296,15 @@ func client_revive(id: int, hp: int) -> void:
 	if creatures.has(id):
 		creatures[id].hp = hp
 		creatures[id].stand_up()
+	if hud != null:
+		hud.set_hp(id, hp)
 
 
 @rpc("authority", "call_remote", "reliable")
 func client_notice(text: String) -> void:
 	print("[гра] ", text)
+	if hud != null:
+		hud.notice(text)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -249,6 +312,8 @@ func client_despawn(id: int) -> void:
 	if creatures.has(id):
 		creatures[id].queue_free()
 		creatures.erase(id)
+	if hud != null:
+		hud.forget(id)
 
 
 @rpc("authority", "call_remote", "unreliable_ordered")

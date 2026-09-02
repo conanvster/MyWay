@@ -39,6 +39,8 @@ var combat: Combat
 var actions: Actions
 var mobs: MobAI
 var spawner: Spawner
+## Крамар: асортимент, ціни й перевірки торгівлі (П-132).
+var shop: Shop
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
@@ -82,6 +84,7 @@ func _ready() -> void:
 	actions.goods = data.items
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
+	shop = Shop.new(data)
 	view = ClientView.new(creatures, self, link)
 
 	# Краєвид будується однаково й на сервері, і в клієнта: серверові
@@ -727,6 +730,124 @@ func ask_use(name: String) -> void:
 		_after_bag(id, creatures.get(id))
 
 
+# ── крамар (П-132) ────────────────────────────────────────────────────
+#
+# Мешканці — вузли краєвиду, а не істоти: вони не ходять, не б'ються і не
+# мають здоров'я. Через це в них немає номера з'єднання, і називають їх
+# НОМЕРОМ У МАПІ: обидва боки будують місто з того самого файлу.
+#
+# Клієнт шле лише «хочу оце в отого» — відстань, асортимент і гроші
+# рахує сервер (П-08). Без цього вікно торгівлі було б найкоротшим
+# шляхом до нескінченних речей.
+
+
+## Хто це й чи можна з ним говорити. `-1` у відповіді — «ні».
+func _resident(id: int, at: int) -> NPC:
+	var a: Node = creatures.get(id)
+	var land: Node = get_node_or_null("Landscape")
+	if a == null or land == null or not land.has_method("resident_at"):
+		return null
+	var who: NPC = land.resident_at(at)
+	if who == null:
+		return null
+	if not shop.within(a, who):
+		link.notice(id, "%s задалеко" % who.title())
+		return null
+	return who
+
+
+## Заговорити до мешканця. Відповідь — вікно розмови з кнопками.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_talk(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null:
+		return
+	rpc_id(id, "client_talk", at, who.title(), who.trades())
+
+
+## Показати прилавок. Асортимент шлемо цілком: він короткий і не
+## змінюється, а рахувати ціни на клієнті означало б їм вірити.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_shop(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.trades():
+		return
+	rpc_id(id, "client_shop", at, who.title(),
+			shop.goods_of({"товар": who.goods}),
+			int(_data_trade().get("крамар купує за", Shop.DEFAULT_BUYBACK)
+					* 100.0))
+
+
+func _data_trade() -> Dictionary:
+	return data.items.trade
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_buy(at: int, name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.trades():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = shop.buy(a, {"товар": who.goods}, name)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "куплено: %s за %d" % [name, shop.sell_price(name)])
+	_after_bag(id, a)
+
+
+## Продати поодиноку річ за її номером у торбі.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_sell(at: int, thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.trades():
+		return
+	var a: Node = creatures.get(id)
+	if thing_at < 0 or thing_at >= a.things.size():
+		return
+	# Назву й ціну беремо ДО продажу: після нього речі вже немає.
+	var sold: String = a.things[thing_at].title()
+	var paid: int = shop.buy_price(a.things[thing_at].base)
+	var why: String = shop.sell(a, thing_at)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "продано: %s за %d" % [sold, paid])
+	_after_bag(id, a)
+
+
+## Продати складану річ — увесь стос одразу.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_sell_stack(at: int, name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.trades():
+		return
+	var a: Node = creatures.get(id)
+	var count := int(a.items.get(name, 0))
+	var paid := shop.buy_price(name) * count
+	var why: String = shop.sell_stack(a, name)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "продано: %s ×%d за %d" % [name, count, paid])
+	_after_bag(id, a)
+
+
 ## Після будь-якої зміни в торбі: сама торба, стати (спорядження їх
 ## зсуває) і перелік речей для вікна.
 func _after_bag(id: int, a: Node) -> void:
@@ -810,6 +931,16 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_take_off", slot))
 		hud.wants_use.connect(func(name: String) -> void:
 				rpc_id(1, "ask_use", name))
+		# Крамар (П-132). Кнопка «Торгувати» й кожна комірка прилавка —
+		# це прохання до сервера, не дія: гроші й асортимент рахує він.
+		hud.wants_shop.connect(func(at: int) -> void:
+				rpc_id(1, "ask_shop", at))
+		hud.wants_buy.connect(func(at: int, name: String) -> void:
+				rpc_id(1, "ask_buy", at, name))
+		hud.wants_sell.connect(func(at: int, thing_at: int) -> void:
+				rpc_id(1, "ask_sell", at, thing_at))
+		hud.wants_sell_stack.connect(func(at: int, name: String) -> void:
+				rpc_id(1, "ask_sell_stack", at, name))
 		add_child(hud)
 
 
@@ -977,6 +1108,22 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 func client_cast_end(id: int, done: bool) -> void:
 	if hud != null:
 		hud.cast_ended(id, done)
+
+
+## Мешканець відповів: вікно розмови (П-132).
+@rpc("authority", "call_remote", "reliable")
+func client_talk(at: int, title: String, trades: bool) -> void:
+	if hud != null:
+		hud.show_talk(at, title, trades)
+
+
+## Прилавок: що продають і за скільки. `buyback` — у відсотках, щоб у
+## вікні можна було чесно написати, скільки дадуть за твоє.
+@rpc("authority", "call_remote", "reliable")
+func client_shop(at: int, title: String, goods: Array,
+		buyback: int) -> void:
+	if hud != null:
+		hud.show_shop(at, title, goods, buyback)
 
 
 ## Хтось замахнувся: показуємо рух рукою.

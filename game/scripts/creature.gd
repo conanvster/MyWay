@@ -416,11 +416,12 @@ func has_item(name: String) -> bool:
 	return name == "" or int(items.get(name, 0)) > 0
 
 
-## Забрати одну штуку. Руна витрачається при використанні (П-50).
-func take_item(name: String) -> void:
-	if name == "":
+## Забрати штуку або кілька. Руна витрачається при використанні (П-50),
+## а гроші йдуть сотнями за раз у крамаря — звідси `count`.
+func take_item(name: String, count: int = 1) -> void:
+	if name == "" or count <= 0:
 		return
-	var left: int = int(items.get(name, 0)) - 1
+	var left: int = int(items.get(name, 0)) - count
 	if left > 0:
 		items[name] = left
 	else:

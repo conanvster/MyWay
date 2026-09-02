@@ -97,6 +97,8 @@ func setup(world: Node) -> void:
 	_build_stats()
 	_build_skills()
 	_build_things()
+	_build_talk()
+	_build_shop()
 
 
 # ── збирання ──────────────────────────────────────────────────────────
@@ -621,8 +623,14 @@ func show_windows() -> void:
 func set_things(things: Array, stacks: Array) -> void:
 	if _things_box == null:
 		return
+	_things = things
+	_stacks = stacks
 	_fill_body(things)
 	_fill_bag(things, stacks)
+	# Вікно торгівлі показує ту саму торбу. Продав річ — і вона зникає
+	# звідти теж, без перевідкривання прилавка.
+	if _shop_box != null and _shop_box.visible:
+		_fill_mine()
 
 
 func _fill_body(things: Array) -> void:
@@ -714,6 +722,255 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 			press.disabled = not useful
 			if useful:
 				press.pressed.connect(func() -> void: wants_use.emit(name))
+
+
+## Розмова з мешканцем і торгівля (П-132).
+##
+## Мешканець відкривається тією самою дією, якою б'ють монстра: вибрав,
+## підійшов, «удар». Замість шкоди приходить це вікно — з кнопками того,
+## що він уміє. Поки вміє тільки крамар, але кнопок може стати більше, і
+## тоді вікно не доведеться переробляти.
+##
+## Ціни ПРИ НАВЕДЕННІ, як просив замовник: не підписом під кожною коміркою
+## (тоді сітка стає стіною чисел), а одним рядком унизу, що міняється,
+## коли ведеш мишею. Рядок ще й каже, що саме станеться від натиску —
+## «купити за 120» проти «продати за 48».
+signal wants_shop(at: int)
+signal wants_buy(at: int, name: String)
+signal wants_sell(at: int, thing_at: int)
+signal wants_sell_stack(at: int, name: String)
+
+const TALK_INNER := Vector2(240, 96)
+## Прилавок: та сама комірка, що в торбі, по чотири в ряд.
+const SHOP_COLUMNS := 4
+const SHOP_ROWS := 6
+const HINT_H := 26.0
+
+var _talk_box: WindowBox
+var _talk_title: Label
+var _talk_trade: Button
+var _talk_with := -1
+
+var _shop_box: WindowBox
+var _shop_title: Label
+var _shop_hint: Label
+var _shop_money: Label
+var _mine_cells: Array = []
+var _stock_cells: Array = []
+var _shop_with := -1
+var _buyback := 40
+## Що зараз у торбі — щоб вікно торгівлі малювало те саме, що й «Речі».
+var _things: Array = []
+var _stacks: Array = []
+
+
+func _build_talk() -> void:
+	_talk_box = WindowBox.new()
+	_talk_box.name = "ВікноРозмови"
+	_talk_box.setup("Розмова", TALK_INNER)
+	_talk_box.set_anchors_preset(Control.PRESET_CENTER)
+	_talk_box.position = -_talk_box.size * 0.5
+	_root.add_child(_talk_box)
+	var page: Control = _talk_box.body
+
+	_talk_title = _text(15, page)
+	_talk_title.text = "—"
+
+	_talk_trade = Button.new()
+	_talk_trade.text = "Торгувати"
+	_talk_trade.position = Vector2(0, 40)
+	_talk_trade.size = Vector2(TALK_INNER.x, 32)
+	_talk_trade.custom_minimum_size = _talk_trade.size
+	_talk_trade.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_shop.emit(_talk_with))
+	page.add_child(_talk_trade)
+
+
+## Мешканця вибрано ціллю: показуємо ім'я там-таки, де ім'я монстра.
+##
+## Смуги здоров'я в мешканця немає й бути не повинно: він не б'ється, і
+## порожня смуга обіцяла б бій, якого не буде.
+func aim_resident(title: String, trades: bool) -> void:
+	if _target_box == null:
+		return
+	if title == "":
+		_target_box.visible = _target != 0
+		return
+	_target_box.visible = true
+	_target_name.text = title + ("  ·  торгує" if trades else "")
+	_target_name.modulate = Color(0.86, 0.9, 0.72)
+	_target_fill.size.x = 0.0
+
+
+func show_talk(at: int, title: String, trades: bool) -> void:
+	if _talk_box == null:
+		return
+	_talk_with = at
+	_talk_title.text = title
+	_talk_trade.visible = trades
+	_talk_box.visible = true
+	_talk_box._keep_on_screen()
+
+
+func _build_shop() -> void:
+	var grid := Vector2(SHOP_COLUMNS * CELL_SIDE
+			+ (SHOP_COLUMNS - 1) * CELL_GAP,
+			SHOP_ROWS * CELL_SIDE + (SHOP_ROWS - 1) * CELL_GAP)
+	var inner := Vector2(grid.x * 2.0 + 28.0,
+			18.0 + grid.y + 10.0 + HINT_H + 4.0 + 26.0)
+
+	_shop_box = WindowBox.new()
+	_shop_box.name = "ВікноТоргівлі"
+	_shop_box.setup("Торгівля", inner)
+	_shop_box.set_anchors_preset(Control.PRESET_CENTER)
+	_shop_box.position = -_shop_box.size * 0.5
+	_root.add_child(_shop_box)
+	var page: Control = _shop_box.body
+
+	var mine := _text(11, page)
+	mine.text = "твоє — натисни, щоб продати"
+	mine.modulate = CAPTION_COLOR
+	_shop_title = _text(11, page)
+	_shop_title.text = "прилавок"
+	_shop_title.position = Vector2(grid.x + 28.0, 0)
+	_shop_title.modulate = CAPTION_COLOR
+
+	for i in SHOP_COLUMNS * SHOP_ROWS:
+		var at := Vector2((i % SHOP_COLUMNS) * (CELL_SIDE + CELL_GAP),
+				18.0 + int(i / SHOP_COLUMNS) * (CELL_SIDE + CELL_GAP))
+		_mine_cells.append(_make_cell(page, at,
+				Vector2(CELL_SIDE, CELL_SIDE)))
+		var to := at + Vector2(grid.x + 28.0, 0)
+		_stock_cells.append(_make_cell(page, to,
+				Vector2(CELL_SIDE, CELL_SIDE)))
+
+	# Рядок ціни: те, заради чого все й затівалось.
+	var strip := _plate(Vector2(inner.x, HINT_H),
+			Color(0.13, 0.12, 0.09, 0.95), page)
+	strip.position = Vector2(0, 18.0 + grid.y + 10.0)
+	_shop_hint = _text(13, page)
+	_shop_hint.name = "Ціна"
+	_shop_hint.text = "наведи річ — покаже ціну"
+	_shop_hint.position = Vector2(8, 18.0 + grid.y + 14.0)
+	_shop_hint.modulate = Color(0.88, 0.86, 0.7)
+
+	_shop_money = _text(14, page)
+	_shop_money.name = "ГрошіТоргівлі"
+	_shop_money.text = "гроші: 0"
+	_shop_money.position = Vector2(0, inner.y - 22.0)
+	_shop_money.modulate = Color(0.95, 0.85, 0.45)
+
+
+func show_shop(at: int, title: String, goods: Array, buyback: int) -> void:
+	if _shop_box == null:
+		return
+	_shop_with = at
+	_buyback = buyback
+	_shop_title.text = "%s — прилавок" % title
+	_fill_stock(goods)
+	_fill_mine()
+	if _talk_box != null:
+		_talk_box.visible = false
+	_shop_box.visible = true
+	_shop_box._keep_on_screen()
+
+
+func _fill_stock(goods: Array) -> void:
+	for i in _stock_cells.size():
+		var cell: Dictionary = _stock_cells[i]
+		var press: Button = cell["press"]
+		_unlink(press)
+		if i >= goods.size():
+			_blank(cell)
+			continue
+		var row: Dictionary = goods[i]
+		var name: String = str(row["назва"])
+		var price: int = int(row["ціна"])
+		cell["icon"].modulate = Color(1, 1, 1, 1)
+		cell["icon"].show_item(str(row.get("вид", "")),
+				str(row.get("слот", "")), str(row.get("грейд", "")))
+		cell["count"].text = ""
+		press.disabled = false
+		press.tooltip_text = "%s\nкупити за %d" % [name, price]
+		_cell_look(press, true)
+		_hover(press, "%s — купити за %d" % [name, price])
+		press.pressed.connect(func() -> void:
+				wants_buy.emit(_shop_with, name))
+
+
+## Ліворуч — те саме, що у вікні «Речі», тільки вдягнене не показуємо:
+## продати його однаково не можна, поки не знімеш.
+func _fill_mine() -> void:
+	var rows: Array = []
+	for row: Dictionary in _things:
+		if not bool(row.get("вдягнене", false)):
+			rows.append(row)
+	for row: Dictionary in _stacks:
+		if str(row.get("назва", "")) != "гроші":
+			rows.append(row)
+	_shop_money.text = "гроші: %d" % _money()
+
+	for i in _mine_cells.size():
+		var cell: Dictionary = _mine_cells[i]
+		var press: Button = cell["press"]
+		_unlink(press)
+		if i >= rows.size():
+			_blank(cell)
+			continue
+		var row: Dictionary = rows[i]
+		var name: String = str(row.get("назва", "?"))
+		cell["icon"].modulate = Color(1, 1, 1, 1)
+		cell["icon"].show_item(str(row.get("вид", "")),
+				str(row.get("слот", "")), str(row.get("грейд", "")))
+		press.disabled = false
+		_cell_look(press, true)
+		if row.has("номер"):
+			var thing_at: int = int(row["номер"])
+			cell["count"].text = ""
+			var paid := "%d%% ціни" % _buyback
+			press.tooltip_text = "%s\nпродати за %s" % [name, paid]
+			_hover(press, "%s — продати за %s" % [name, paid])
+			press.pressed.connect(func() -> void:
+					wants_sell.emit(_shop_with, thing_at))
+		else:
+			var count: int = int(row.get("скільки", 0))
+			cell["count"].text = "×%d" % count
+			press.tooltip_text = "%s ×%d\nпродати весь стос" % [name, count]
+			_hover(press, "%s ×%d — продати весь стос" % [name, count])
+			press.pressed.connect(func() -> void:
+					wants_sell_stack.emit(_shop_with, name))
+
+
+func _blank(cell: Dictionary) -> void:
+	cell["icon"].clear_item()
+	cell["count"].text = ""
+	cell["press"].disabled = true
+	cell["press"].tooltip_text = ""
+	_cell_look(cell["press"], false)
+
+
+## Старі зв'язки знімаємо руками — і натиску, і наведення. Прилавок
+## перемальовується після кожної покупки, і без цього одна комірка
+## продавала б усе, що в ній колись лежало.
+func _unlink(press: Button) -> void:
+	for link in press.pressed.get_connections():
+		press.pressed.disconnect(link["callable"])
+	for link in press.mouse_entered.get_connections():
+		press.mouse_entered.disconnect(link["callable"])
+
+
+func _hover(press: Button, text: String) -> void:
+	press.mouse_entered.connect(func() -> void:
+			if _shop_hint != null:
+				_shop_hint.text = text)
+
+
+func _money() -> int:
+	for row: Dictionary in _stacks:
+		if str(row.get("назва", "")) == "гроші":
+			return int(row.get("скільки", 0))
+	return 0
 
 
 ## Свої здоров'я й мана — ліворуч угорі.

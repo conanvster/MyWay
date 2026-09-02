@@ -286,20 +286,53 @@ func click_at(where: Vector2) -> void:
 		return
 	var body: Object = hit["collider"]
 	if body is NPC:
-		# Мешканець поки не говорить (П-113) — але має відповідати хоч
-		# чимось, інакше здається, що гра не помітила кліку.
-		if _world.hud != null:
-			_world.hud.notice("%s — поки не говорить" % body.title())
+		# Мешканець стає ціллю, як монстр. Далі з ним говорять тією самою
+		# дією, що б'ють монстра: вибрав, підійшов, «удар» — і замість
+		# шкоди приходить вікно розмови (П-132). Окремої кнопки «говорити»
+		# не треба, і панель не росте від кожного нового мешканця.
+		_aim_resident(body)
 		return
 
 	var id := id_of(body)
 	if id == 0:
 		return
 
+	_forget_resident()
 	if me.target_id == id:
 		_link.to_server(&"strike")
 	else:
 		_link.to_server(&"select_target", [id])
+
+
+## Кого з мешканців вибрано. -1 — нікого.
+var _resident := -1
+
+
+func _aim_resident(body: NPC) -> void:
+	if body.at_index < 0:
+		return
+	_resident = body.at_index
+	_resident_at = body.global_position
+	# Ціль у бою знімаємо: одна ціль за раз, інакше «удар» бив би когось
+	# іншого, поки на екрані стоїть ім'я мешканця.
+	var me: Node = _me()
+	if me != null and me.target_id != 0:
+		_link.to_server(&"select_target", [0])
+	if _world.hud != null:
+		_world.hud.aim_resident(body.title(), body.trades())
+
+
+func _forget_resident() -> void:
+	if _resident < 0:
+		return
+	_resident = -1
+	if _world.hud != null:
+		_world.hud.aim_resident("", false)
+
+
+## Де він стоїть. Мешканець нерухомий, тож місця досить — шукати вузол
+## щокадру ні до чого.
+var _resident_at := Vector3.ZERO
 
 
 ## Клік по землі — наказ іти. Другий промінь, уже по світу: перший шукав
@@ -377,6 +410,28 @@ func take_shot() -> void:
 # натискання, коли вже близько. Сервер перевіряє відстань так само
 # суворо, як і раніше.
 
+## Те саме, але до мешканця: він нерухомий, здоров'я не має й померти не
+## може, тож умов тут менше, ніж у бою.
+func _approach_resident(delta: float) -> void:
+	var me: Node = _me()
+	if me == null or not me.is_alive():
+		_wait_talk = -1
+		return
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A) \
+			or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D):
+		_wait_talk = -1
+		return
+	_wait_left -= delta
+	if _wait_left <= 0.0:
+		_wait_talk = -1
+		_say("до мешканця не дійти")
+		return
+	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE * 0.85:
+		_link.to_server(&"ask_talk", [_wait_talk])
+		me.walk_to = Vector3.ZERO
+		_wait_talk = -1
+
+
 ## Скільки щонайбільше йти до цілі, перш ніж кинути намір.
 const REACH_TIME := 8.0
 ## Підходимо трохи ближче за межу: ціль рухається, і на самій межі
@@ -387,6 +442,8 @@ const REACH_MARGIN := 0.85
 ## дальність у того, що натиснули.
 var _bar: Array[String] = []
 var _wait_slot := -1
+## Номер мешканця, до якого йдемо говорити. -1 — нікуди.
+var _wait_talk := -1
 var _wait_shift := false
 var _wait_target := 0
 var _wait_range := 0.0
@@ -420,9 +477,24 @@ func _reach_of(action: String) -> float:
 
 func use_slot(slot: int, shift: bool) -> void:
 	_wait_slot = -1
+	_wait_talk = -1
 	var me: Node = _me()
 	var action: String = _bar[slot] if slot < _bar.size() else ""
 	var need := _reach_of(action)
+	# Вибрано мешканця — «удар» означає «заговорити». Решта дій по ньому
+	# просто нічого не робить: лікувати крамарку нема від чого.
+	if _resident >= 0 and me != null:
+		if action != "attack":
+			_say("до мешканця це не застосуєш")
+			return
+		if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE:
+			_link.to_server(&"ask_talk", [_resident])
+			return
+		_wait_talk = _resident
+		_wait_left = REACH_TIME
+		me.walk_to = _resident_at
+		_say("підходжу до мешканця")
+		return
 	if me == null or need <= 0.0 or me.target_id == 0:
 		_link.to_server(&"use_slot", [slot, shift])
 		return
@@ -444,6 +516,9 @@ func use_slot(slot: int, shift: bool) -> void:
 
 ## Крок підходу. Кличеться щокадру з `world._process` на клієнті.
 func approach(delta: float) -> void:
+	if _wait_talk >= 0:
+		_approach_resident(delta)
+		return
 	if _wait_slot < 0:
 		return
 	var me: Node = _me()

@@ -9,6 +9,13 @@ extends StaticBody3D
 
 @export var who := "мешканець"
 @export var craft := ""
+## Номер у переліку `map.json → місто → мешканці`. Ним клієнт і сервер
+## називають одного й того самого мешканця: обидва будують місто з того
+## самого файлу, тож порядок у них однаковий, а вигадувати ще одну
+## нумерацію означало б тримати її узгодженою руками.
+@export var at_index := -1
+## Що продає. Порожньо — не крамар, і кнопки «Торгувати» не буде.
+var goods: Array = []
 ## Колір, щоб їх було видно один від одного, поки немає моделей.
 @export var tint := Color(0.75, 0.7, 0.6)
 
@@ -32,3 +39,7 @@ func _ready() -> void:
 
 func title() -> String:
 	return who if craft == "" else "%s, %s" % [who, craft]
+
+
+func trades() -> bool:
+	return not goods.is_empty()

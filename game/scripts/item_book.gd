@@ -12,11 +12,14 @@ const GRADES := ["E", "D", "C", "B", "A", "S", "SS"]
 
 var bases: Dictionary = {}
 var affixes: Dictionary = {}
+## Правила крамаря: за скільки викуповує, чого не бере (П-132).
+var trade: Dictionary = {}
 
 
 func load_from(raw: Dictionary) -> void:
 	bases = raw.get("бази", {})
 	affixes = raw.get("афікси", {})
+	trade = raw.get("торгівля", {})
 
 
 func has(name: String) -> bool:

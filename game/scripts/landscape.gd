@@ -291,8 +291,9 @@ func _city() -> void:
 					str(house.get("колір", "#8a6a4a")),
 					str(house.get("дах", "#6b3f2f")))
 
-	for who: Dictionary in city.get("мешканці", []):
-		_dweller(who)
+	var dwellers: Array = city.get("мешканці", [])
+	for i in dwellers.size():
+		_dweller(dwellers[i], i)
 
 
 func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
@@ -462,12 +463,22 @@ static func _size_of(node: Node) -> Vector3:
 	return box.size if not first else Vector3(4, 3, 4)
 
 
-## Мешканець: капсула на своєму місці. Говорити він поки не вміє (П-113).
-func _dweller(who: Dictionary) -> void:
+## Мешканець за номером. Сервер шукає ним того, з ким гравець говорить.
+func resident_at(at: int) -> NPC:
+	for child in get_children():
+		if child is NPC and child.at_index == at:
+			return child
+	return null
+
+
+## Мешканець: капсула на своєму місці. Крамар ще й торгує (П-132).
+func _dweller(who: Dictionary, at: int) -> void:
 	var body := NPC.new()
 	body.name = "Мешканець-" + str(who.get("хто", "мешканець"))
 	body.who = str(who.get("хто", "мешканець"))
 	body.craft = str(who.get("ремесло", ""))
+	body.at_index = at
+	body.goods = who.get("товар", [])
 	body.tint = Color(str(who.get("колір", "#75706a")))
 	body.position = _on_ground(_point(who["де"])) + Vector3(0, 1.0, 0)
 	# Шар «мешканці» (третій, тобто 4): промінь миші шукає і його теж,

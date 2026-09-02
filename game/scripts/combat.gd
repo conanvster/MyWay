@@ -52,6 +52,7 @@ func attack(me: int) -> bool:
 		power *= 1.0 + Stats.back_bonus_against(victim.stats)
 	var hit: int = Stats.damage_through(power, victim.stats.physical_defence())
 	victim.hp = maxi(0, victim.hp - hit)
+	_try_interrupt(victim, a.target_id, hit)
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
 	if a.target_id < 0 and me > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
@@ -131,16 +132,76 @@ func cast(me: int, key: String) -> bool:
 	if victims.is_empty():
 		return false
 
+	# Мана списується НА ПОЧАТКУ читання. Якщо каст переб'ють, вона не
+	# вертається — це і є ціна того, що тебе дістали (пропозиція П-111).
 	a.mp -= cost
-	a.skill_ready_in[key] = a.stats.skill_cooldown(skill.cooldown_points)
-	a.busy_in = a.stats.skill_cast(skill.cast_points)
 
+	var seconds: float = a.stats.skill_cast(skill.cast_points)
+	if seconds > 0.0:
+		# Довгий скіл читається, а не спрацьовує миттю (крок 2.3). Відкат
+		# піде тільки після того, як дочитає: збитий каст не садить скіл
+		# на відкат, інакше перервання карало б двічі.
+		a.start_cast(key, seconds, a.target_id)
+		a.busy_in = seconds
+		_link.to_watchers(me, &"client_cast", [me, skill.name, seconds])
+		return true
+
+	_apply(me, a, skill, level, victims)
+	return true
+
+
+## Дочитав — б'є. Спільне для миттєвих скілів і для тих, що читалися.
+func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
+	a.skill_ready_in[skill.key] = a.stats.skill_cooldown(skill.cooldown_points)
 	var power: float = a.stats.magical_attack() * skill.power_share(level)
 	for victim: Node in victims:
 		_land(me, a, victim, power)
 	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
 			% [me, skill.name, level, victims.size(), a.mp])
-	return true
+
+
+## Час іде: хто дочитав — б'є, і про це дізнаються ті, хто його бачить.
+func tick_casts(delta: float) -> void:
+	for id in _creatures:
+		var a: Node = _creatures[id]
+		if not a.is_casting():
+			continue
+		a.casting_left -= delta
+		if a.casting_left > 0.0:
+			continue
+		var skill: Skill = skills.get_skill(a.casting_key)
+		var level: int = a.learned.get(a.casting_key, 1)
+		# Ціль беремо ту, на кого починали (П-42).
+		a.target_id = a.casting_target if a.casting_target != 0 else a.target_id
+		a.stop_cast()
+		if skill == null:
+			continue
+		var victims: Array = _victims_for(a, id, skill, level)
+		_link.to_watchers(id, &"client_cast_end", [id, not victims.is_empty()])
+		if victims.is_empty():
+			continue
+		_apply(id, a, skill, level, victims)
+
+
+## Спроба збити каст ударом (П-111).
+##
+## Опір — концентрація плюс магічний захист. Концентрацію дає Чуття й баф
+## «концентрація уваги»; магічний захист — Витривалість, спорядження й
+## свої бафи. Тобто збити мага тим важче, що більше він у це вклав.
+func _try_interrupt(victim: Node, id: int, hit: int) -> void:
+	if not victim.is_casting():
+		return
+	var guard: float = victim.stats.concentration() \
+			+ victim.stats.magical_defence()
+	var chance: float = Stats.interrupt_chance(hit, guard)
+	if randf() >= chance:
+		return
+	print("[каст] %d збито ударом на %d (опір %.0f, шанс %.0f%%)"
+			% [id, hit, guard, chance * 100.0])
+	victim.stop_cast()
+	victim.busy_in = 0.0
+	_link.notice(id, "читання перервано")
+	_link.to_watchers(id, &"client_cast_end", [id, false])
 
 
 ## Кого зачепить скіл. Тут-таки й повідомлення про невдачу, бо причина
@@ -183,6 +244,7 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 	var id: int = _id_of(victim)
 	var hit: int = Stats.damage_through(power, victim.stats.magical_defence())
 	victim.hp = maxi(0, victim.hp - hit)
+	_try_interrupt(victim, id, hit)
 	if id < 0 and me > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
 	_link.to_watchers(id, &"client_hp", [id, victim.hp])

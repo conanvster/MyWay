@@ -68,6 +68,14 @@ var learned: Dictionary = {}
 var skill_ready_in: Dictionary = {}
 var attack_ready_in := 0.0
 var busy_in := 0.0
+## Що зараз читається: ключ скіла, скільки лишилось і скільки тривало.
+## Порожній ключ означає, що каст не йде (крок 2.3).
+var casting_key := ""
+var casting_left := 0.0
+var casting_full := 0.0
+## Кого мітив, коли починав. Ціль могли змінити посеред читання, а скіл
+## має влучити в того, на кого його починали (П-42).
+var casting_target := 0
 var queue: Array[String] = []
 
 
@@ -93,6 +101,7 @@ func add_state(state: State) -> void:
 
 func die() -> void:
 	hp = 0
+	stop_cast()
 	corpse_left = CORPSE_SHORT
 	queue.clear()
 	wanted = Vector2.ZERO
@@ -199,6 +208,26 @@ func skill_ready(key: String) -> bool:
 ## це шлях, яким скіл потрапляє в істоту (і в монстра теж).
 func learn(key: String, level: int = 1) -> void:
 	learned[key] = level
+
+
+func is_casting() -> bool:
+	return casting_key != ""
+
+
+## Почати читання.
+func start_cast(key: String, seconds: float, target: int) -> void:
+	casting_key = key
+	casting_left = seconds
+	casting_full = seconds
+	casting_target = target
+
+
+## Кинути читання — і коли дочитав, і коли збили.
+func stop_cast() -> void:
+	casting_key = ""
+	casting_left = 0.0
+	casting_full = 0.0
+	casting_target = 0
 
 
 func is_alive() -> bool:

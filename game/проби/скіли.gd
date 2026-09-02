@@ -39,6 +39,7 @@ func _go() -> void:
 	await _ray()
 	await _burst()
 	await _mana()
+	await _casting()
 	quit()
 
 
@@ -167,5 +168,59 @@ func _mana() -> void:
 		w[0][-1].hp = 999            # ціль безсмертна, щоб рахувати саму ману
 	print("  застосувань підряд: %d, мани лишилось %d" % [casts, hero.mp])
 	print("  остання відмова: %s" % link.notices()[-1])
+	for id in w[0]:
+		w[0][id].queue_free()
+
+
+## Крок 2.3: каст читається, і його можна збити (П-111).
+func _casting() -> void:
+	print("\n— читання й перервання (П-111) —")
+	var w: Array = await _world(1, 3.0)
+	var hero: Node3D = w[1]
+	var combat: Combat = w[2]
+	var link: Recorder = w[3]
+	var mob: Node3D = w[0][-1]
+	hero.learn("енергетичний-промінь", 1)
+	hero.target_id = -1
+
+	var full: int = mob.hp
+	print("  почав читати: %s" % combat.cast(1, "енергетичний-промінь"))
+	print("    читає %s, лишилось %.2f с, шкоди ще немає: %d"
+			% [hero.casting_key, hero.casting_left, full - mob.hp])
+	combat.tick_casts(0.8)
+	print("    через 0,8 с: лишилось %.2f с, шкода %d"
+			% [hero.casting_left, full - mob.hp])
+	combat.tick_casts(0.8)
+	print("    через 1,6 с: читає %s, шкода %d, відкат %.1f с"
+			% [hero.is_casting(), full - mob.hp,
+			   hero.skill_ready_in.get("енергетичний-промінь", 0.0)])
+
+	print("  шанс збити каст при опорі 35 (концентрація 20 + маг. захист 15):")
+	for hit: int in [3, 7, 12, 20, 40]:
+		print("    удар %2d -> %.0f%%" % [hit,
+				Stats.interrupt_chance(hit, 35.0) * 100.0])
+	var tough := Stats.new()
+	tough.sense = 30
+	tough.stamina = 20
+	print("  маг зі Чуттям 30 і Витривалістю 20: концентрація %.0f, маг. захист %.0f -> удар 7 збиває на %.0f%%"
+			% [tough.concentration(), tough.magical_defence(),
+			   Stats.interrupt_chance(7, tough.concentration()
+					   + tough.magical_defence()) * 100.0])
+	tough.concentration_bonus = 0.5
+	print("  з бафом «концентрація уваги» (+50%%): концентрація %.0f -> %.0f%%"
+			% [tough.concentration(), Stats.interrupt_chance(7,
+					tough.concentration() + tough.magical_defence()) * 100.0])
+
+	# Збиваємо напевно: удар 40 по слабкому магові.
+	hero.skill_ready_in.clear()
+	hero.mp = 70
+	combat.cast(1, "енергетичний-промінь")
+	var before_mp: int = hero.mp
+	seed(7)
+	combat._try_interrupt(hero, 1, 60)
+	print("  сильний удар по тому, хто читає: читає %s, мана %d (не вернулась), відкату немає: %s"
+			% [hero.is_casting(), hero.mp,
+			   not hero.skill_ready_in.has("енергетичний-промінь")])
+	print("  повідомлення: %s" % [link.notices()])
 	for id in w[0]:
 		w[0][id].queue_free()

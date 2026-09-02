@@ -80,6 +80,7 @@ func _physics_process(delta: float) -> void:
 				mobs.think(id, delta)
 			else:
 				actions.pump(id)
+		combat.tick_casts(delta)
 		for id in combat.clear_corpses():
 			remove(id)
 		spawner.tick(delta)
@@ -292,6 +293,20 @@ func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 		queue: PackedStringArray) -> void:
 	if hud != null:
 		hud.update_self(hp, max_hp, mp, max_mp, slots, busy_in, Array(queue))
+
+
+## Хтось почав читати скіл: у нього над головою смуга.
+@rpc("authority", "call_remote", "reliable")
+func client_cast(id: int, name: String, seconds: float) -> void:
+	if hud != null:
+		hud.cast_started(id, name, seconds)
+
+
+## Дочитав або збили.
+@rpc("authority", "call_remote", "reliable")
+func client_cast_end(id: int, done: bool) -> void:
+	if hud != null:
+		hud.cast_ended(id, done)
 
 
 ## Число шкоди над головою.

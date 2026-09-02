@@ -25,6 +25,7 @@ const BACK := Color(0, 0, 0, 0.55)
 const HP_COLOR := Color(0.72, 0.21, 0.18)
 const MP_COLOR := Color(0.24, 0.42, 0.76)
 const TARGET_COLOR := Color(0.78, 0.62, 0.22)
+const CAST_COLOR := Color(0.35, 0.55, 0.85)
 
 var _world: Node
 ## Скільки в кого здоров'я всього: сервер шле це, коли істота з'являється.
@@ -41,6 +42,11 @@ var _target_box: Control
 var _target_name: Label
 var _target_fill: ColorRect
 var _queue_text: Label
+var _cast_box: Control
+var _cast_fill: ColorRect
+var _cast_text: Label
+var _cast_left := 0.0
+var _cast_full := 0.0
 var _messages: VBoxContainer
 var _cells: Array = []
 var _floats: Array = []
@@ -56,6 +62,7 @@ func setup(world: Node) -> void:
 	_build_vitals()
 	_build_target()
 	_build_panel()
+	_build_cast()
 	_build_messages()
 
 
@@ -149,6 +156,21 @@ func _build_panel() -> void:
 	_queue_text.position = Vector2(0, -24)
 
 
+## Смуга читання — над панеллю. Видно, скільки лишилось і що саме
+## читається; зникає, щойно дочитав або збили (крок 2.3).
+func _build_cast() -> void:
+	_cast_box = Control.new()
+	_cast_box.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_cast_box.position = Vector2(-WIDE * 0.5, -CELL - 62)
+	_cast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_cast_box.visible = false
+	_root.add_child(_cast_box)
+	_plate(Vector2(WIDE, 16), BACK, _cast_box)
+	_cast_fill = _plate(Vector2(0, 16), CAST_COLOR, _cast_box)
+	_cast_text = _text(12, _cast_box)
+	_cast_text.position = Vector2(6, 0)
+
+
 ## Рядок повідомлень — ліворуч унизу. Старі зникають самі.
 func _build_messages() -> void:
 	_messages = VBoxContainer.new()
@@ -233,6 +255,26 @@ func update_self(hp: int, max_hp: int, mp: int, max_mp: int,
 			if not names.is_empty() else tail.strip_edges()
 
 
+## Почалося читання. Чуже поки не показуємо окремо — своє важливіше, а
+## чуже видно по тому, що істота стоїть (крок 2.4 додасть значок).
+func cast_started(id: int, name: String, seconds: float) -> void:
+	if id != _world.multiplayer.get_unique_id():
+		return
+	_cast_full = seconds
+	_cast_left = seconds
+	_cast_text.text = name
+	_cast_box.visible = true
+
+
+func cast_ended(id: int, done: bool) -> void:
+	if id != _world.multiplayer.get_unique_id():
+		return
+	_cast_box.visible = false
+	_cast_left = 0.0
+	if not done:
+		notice("читання перервано")
+
+
 func notice(text: String) -> void:
 	var line := _text(14, _messages)
 	line.text = text
@@ -269,6 +311,12 @@ func _process(delta: float) -> void:
 		_target_name.text = "%s   %d / %d" % [
 				("монстр %d" % -_target) if _target < 0 else ("гравець %d" % _target),
 				_hp.get(_target, 0), _max_hp[_target]]
+	if _cast_box.visible:
+		_cast_left = maxf(0.0, _cast_left - delta)
+		var gone: float = 1.0 - _cast_left / maxf(0.01, _cast_full)
+		_cast_fill.size.x = WIDE * clampf(gone, 0.0, 1.0)
+		_cast_text.text = "%s   %.1f с" % [_cast_text.text.split("   ")[0],
+				_cast_left]
 	_move_floats(delta)
 
 

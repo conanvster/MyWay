@@ -76,6 +76,8 @@ func applied_to(base: Stats) -> Stats:
 	# власним шляхом.
 	out.cooldown_cut = base.cooldown_cut + _bonus("cooldown_cut")
 	out.cast_speed_bonus = base.cast_speed_bonus + _bonus("cast_speed_bonus")
+	out.concentration_bonus = base.concentration_bonus \
+			+ _bonus("concentration_bonus")
 	return out
 
 

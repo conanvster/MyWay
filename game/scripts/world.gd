@@ -53,6 +53,7 @@ func _ready() -> void:
 	vision = Vision.new(creatures)
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
+	combat.skills = data.skills
 	actions = Actions.new(creatures, vision, combat, link)
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
@@ -132,8 +133,23 @@ func _serve_self(peer: int) -> void:
 	if me == null:
 		return
 	rpc_id(peer, "client_self", me.hp, me.stats.max_hp(), me.mp,
-			me.stats.max_mp(), me.attack_ready_in, me.busy_in,
+			me.stats.max_mp(), _slot_cooldowns(me), me.busy_in,
 			PackedStringArray(me.queue))
+
+
+## Скільки лишилось відкату на кожній комірці панелі. Рахує сервер, бо
+## тільки він знає відкати; HUD лише малює.
+func _slot_cooldowns(me: Node) -> PackedFloat32Array:
+	var left := PackedFloat32Array()
+	for action: String in me.bar:
+		if action == "attack":
+			left.append(me.attack_ready_in)
+		elif action.begins_with(Actions.SKILL_PREFIX):
+			left.append(me.skill_ready_in.get(
+					action.substr(Actions.SKILL_PREFIX.length()), 0.0))
+		else:
+			left.append(0.0)
+	return left
 
 
 # ── сервер: що надходить від клієнтів ─────────────────────────────────
@@ -188,6 +204,9 @@ func _zones() -> Array:
 func _on_joined(id: int) -> void:
 	var a := spawn(id, Vector3(0, 1.5, 0))
 	a.bar = data.bar if not data.bar.is_empty() else a.bar
+	# Стартові скіли — заглушка до рун і крамниць (П-97).
+	for skill_key in data.starting_skills:
+		a.learn(skill_key, int(data.starting_skills[skill_key]))
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
 	rpc_id(id, "client_spawn", id, a.global_position, a.facing)
 	rpc_id(id, "client_vision", a.vision_radius())
@@ -269,10 +288,10 @@ func client_bar(bar: PackedStringArray) -> void:
 ## Свої числа щотіку: здоров'я, мана, відкат, замах, черга.
 @rpc("authority", "call_remote", "unreliable_ordered")
 func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
-		attack_in: float, busy_in: float, queue: PackedStringArray) -> void:
+		slots: PackedFloat32Array, busy_in: float,
+		queue: PackedStringArray) -> void:
 	if hud != null:
-		hud.update_self(hp, max_hp, mp, max_mp, attack_in, busy_in,
-				Array(queue))
+		hud.update_self(hp, max_hp, mp, max_mp, slots, busy_in, Array(queue))
 
 
 ## Число шкоди над головою.

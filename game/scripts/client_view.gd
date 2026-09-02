@@ -65,9 +65,14 @@ func demo(delta: float) -> void:
 	_demo_left = DEMO_EVERY
 	_demo_step += 1
 	if _demo_step == 1:
-		_link.to_server(&"use_slot", [2, false])
-	else:
-		_link.to_server(&"strike")
+		_link.to_server(&"use_slot", [2, false])   # взяти монстра
+		return
+	# Далі по колу: удар · вибух · удар · промінь — щоб на знімку було
+	# видно і бій, і відкати скілів на панелі.
+	match _demo_step % 4:
+		2: _link.to_server(&"use_slot", [5, false])  # енергетичний вибух
+		0: _link.to_server(&"use_slot", [6, false])  # енергетичний промінь
+		_: _link.to_server(&"strike")
 
 
 func apply_positions(snapshot: Dictionary) -> void:

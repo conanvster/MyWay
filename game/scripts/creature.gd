@@ -62,6 +62,10 @@ var wanted := Vector2.ZERO
 var server_position := Vector3.ZERO
 
 var target_id := 0
+## Вивчені скіли: ключ -> рівень усередині грейду (П-106).
+var learned: Dictionary = {}
+## Відкати скілів: ключ -> скільки секунд лишилось.
+var skill_ready_in: Dictionary = {}
 var attack_ready_in := 0.0
 var busy_in := 0.0
 var queue: Array[String] = []
@@ -170,9 +174,31 @@ func server_step(delta: float) -> void:
 	attack_ready_in = maxf(0.0, attack_ready_in - delta)
 	busy_in = maxf(0.0, busy_in - delta)
 
+	for key in skill_ready_in.keys():
+		var left: float = skill_ready_in[key] - delta
+		if left <= 0.0:
+			skill_ready_in.erase(key)
+		else:
+			skill_ready_in[key] = left
+
 	# Строк станів спливає на сервері; що скінчилось — перераховуємо.
 	if not states.tick(delta).is_empty():
 		refresh_stats()
+
+
+## Чи знає істота цей скіл і чи минув його відкат.
+func knows(key: String) -> bool:
+	return learned.has(key)
+
+
+func skill_ready(key: String) -> bool:
+	return not skill_ready_in.has(key)
+
+
+## Вивчити скіл одразу потрібного рівня. Руни й досвід — крок 2.5; поки
+## це шлях, яким скіл потрапляє в істоту (і в монстра теж).
+func learn(key: String, level: int = 1) -> void:
+	learned[key] = level
 
 
 func is_alive() -> bool:

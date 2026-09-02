@@ -11,6 +11,7 @@ extends RefCounted
 
 const MOBS_PATH := "res://дані/монстри.json"
 const BAR_PATH := "res://дані/панель.json"
+const SKILLS_PATH := "res://дані/скіли.json"
 ## Як часто перевіряти, чи файли змінились.
 const WATCH_EVERY := 2.0
 
@@ -18,6 +19,11 @@ const WATCH_EVERY := 2.0
 var mobs: Dictionary = {}
 ## Розкладка панелі за замовчуванням (П-58).
 var bar: Array[String] = []
+## Скіли: ключ -> Skill.
+var skills := SkillBook.new()
+## З чим персонаж заходить у світ: ключ скіла -> рівень. Заглушка до рун
+## і крамниць (П-97).
+var starting_skills: Dictionary = {}
 
 var _stamps: Dictionary = {}
 var _since_check := 0.0
@@ -35,10 +41,19 @@ func load_all() -> bool:
 	else:
 		ok = false
 
+	var read_skills: Variant = _read(SKILLS_PATH)
+	if read_skills is Dictionary:
+		skills.load_from(read_skills)
+		print("[дані] скілів: %d (%s)" % [skills.count(), ", ".join(skills.keys())])
+	else:
+		ok = false
+
 	var read_bar: Variant = _read(BAR_PATH)
 	if read_bar is Dictionary and read_bar.has("панель"):
 		bar.assign(read_bar["панель"])
+		starting_skills = read_bar.get("стартові скіли", {})
 		print("[дані] панель: %s" % [bar])
+		print("[дані] стартові скіли: %s" % [starting_skills])
 	else:
 		if read_bar is Dictionary:
 			push_error("[дані] %s: немає ключа \"панель\"" % BAR_PATH)
@@ -55,7 +70,7 @@ func poll(delta: float) -> bool:
 		return false
 	_since_check = 0.0
 	var changed := false
-	for path in [MOBS_PATH, BAR_PATH]:
+	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH]:
 		var stamp := _stamp(path)
 		if stamp != 0 and _stamps.get(path, 0) != stamp:
 			changed = true

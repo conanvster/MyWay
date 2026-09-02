@@ -93,3 +93,108 @@ func clear_corpses() -> Array:
 		# інакше труп проїде через усю мапу (вада 3 з ПЛАН.md).
 		_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])
 	return remove
+
+
+# ── скіли (крок 2.2) ──────────────────────────────────────────────────
+
+## Книга скілів. Ставить світ при створенні; проба підставляє свою.
+var skills := SkillBook.new()
+
+
+## Застосувати скіл. Повертає true, якщо він справді спрацював.
+##
+## Порядок перевірок навмисне такий: спершу те, що взагалі неможливе
+## (не вивчений, мертвий), далі відкат, далі мана, і аж потім ціль —
+## щоб повідомлення казало найточнішу причину, а не першу-ліпшу.
+func cast(me: int, key: String) -> bool:
+	var a: Node = _creatures.get(me)
+	if a == null or not a.is_alive():
+		return false
+	var skill: Skill = skills.get_skill(key)
+	if skill == null:
+		_link.notice(me, "такого вміння немає")
+		return false
+	if not a.knows(key):
+		_link.notice(me, "%s не вивчено" % skill.name)
+		return false
+	if not a.skill_ready(key):
+		return false  # відкат — дія просто викидається (П-38)
+
+	var level: int = a.learned[key]
+	var cost: int = skill.mana(level)
+	# «Не вистачає мани — скіл неактивний» (П-93).
+	if a.mp < cost:
+		_link.notice(me, "не вистачає мани")
+		return false
+
+	var victims: Array = _victims_for(a, me, skill, level)
+	if victims.is_empty():
+		return false
+
+	a.mp -= cost
+	a.skill_ready_in[key] = a.stats.skill_cooldown(skill.cooldown_points)
+	a.busy_in = a.stats.skill_cast(skill.cast_points)
+
+	var power: float = a.stats.magical_attack() * skill.power_share(level)
+	for victim: Node in victims:
+		_land(me, a, victim, power)
+	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
+			% [me, skill.name, level, victims.size(), a.mp])
+	return true
+
+
+## Кого зачепить скіл. Тут-таки й повідомлення про невдачу, бо причина
+## залежить від типу цілі (П-42).
+func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
+	var reach: float = skill.range_at(level)
+	if skill.hits_many():
+		# Вибух б'є все вороже навколо. Гравець зачіпає монстрів, монстр —
+		# гравців: PvP по площі це окреме питання (П-110), і мовчки
+		# вирішувати його за замовника не можна.
+		var found: Array = []
+		for id in _creatures:
+			if id == me or (id < 0) == (me < 0):
+				continue
+			var other: Node = _creatures[id]
+			if not other.is_alive():
+				continue
+			if a.global_position.distance_to(other.global_position) <= reach:
+				found.append(other)
+		if found.is_empty():
+			_link.notice(me, "поруч нікого немає")
+		return found
+
+	var victim: Node = _creatures.get(a.target_id)
+	if victim == null:
+		_link.notice(me, "немає цілі")
+		return []
+	if not victim.is_alive():
+		_link.notice(me, "неможливо застосувати на даному типі цілі")
+		return []
+	if a.global_position.distance_to(victim.global_position) > reach:
+		_link.notice(me, "задалеко")
+		return []
+	a.face_point(victim.global_position)
+	return [victim]
+
+
+## Шкода одній цілі: те саме, що й в ударі, тільки крізь МАГІЧНИЙ захист.
+func _land(me: int, a: Node, victim: Node, power: float) -> void:
+	var id: int = _id_of(victim)
+	var hit: int = Stats.damage_through(power, victim.stats.magical_defence())
+	victim.hp = maxi(0, victim.hp - hit)
+	if id < 0 and me > 0:
+		victim.add_threat(me, hit + victim.threat_per_hit)
+	_link.to_watchers(id, &"client_hp", [id, victim.hp])
+	_link.to_watchers(id, &"client_damage", [id, hit, false])
+	if victim.hp <= 0:
+		victim.die()
+		_link.to_watchers(id, &"client_died", [id])
+		print("[бій] %d загинув від уміння" % id)
+
+
+func _id_of(node: Node) -> int:
+	for id in _creatures:
+		if _creatures[id] == node:
+			return id
+	return 0

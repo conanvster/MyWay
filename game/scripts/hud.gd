@@ -169,6 +169,9 @@ func set_bar(bar: Array) -> void:
 
 ## Назви дій українською. Уміння з кроку 2 принесуть свої.
 func _title(action: String) -> String:
+	if action.begins_with("скіл:"):
+		# У панелі стоїть ключ скіла; показуємо коротку назву.
+		return action.substr(5).replace("енергетичний-", "енерг. ")
 	match action:
 		"attack": return "удар"
 		"next_player": return "гравець"
@@ -204,15 +207,15 @@ func forget(id: int) -> void:
 
 ## Свої числа приходять щотіку, разом із відкатами й чергою.
 func update_self(hp: int, max_hp: int, mp: int, max_mp: int,
-		attack_in: float, busy_in: float, queue: Array) -> void:
+		slots: PackedFloat32Array, busy_in: float, queue: Array) -> void:
 	_hp_fill.size.x = WIDE * clampf(float(hp) / maxf(1.0, max_hp), 0.0, 1.0)
 	_mp_fill.size.x = WIDE * clampf(float(mp) / maxf(1.0, max_mp), 0.0, 1.0)
 	_vitals_text.text = "%d / %d      мана %d / %d" % [hp, max_hp, mp, max_mp]
 
 	for i in _cells.size():
 		var action: String = _bar[i] if i < _bar.size() else ""
-		# Відкат зараз має лише удар; решта готова завжди (П-62).
-		var left: float = attack_in if action == "attack" else 0.0
+		# Відкат кожної комірки рахує сервер: в удару свій, у скіла свій.
+		var left: float = slots[i] if i < slots.size() else 0.0
 		var cell: Dictionary = _cells[i]
 		cell["shade"].visible = left > 0.0 or action == ""
 		if action == "":

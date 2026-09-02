@@ -5,6 +5,11 @@ extends RefCounted
 ## Далі це стане диспетчером умінь: `match` із рядками поступиться
 ## переліку ефектів із ресурсу (крок 2.2 у ПЛАН.md).
 
+## Так у панелі відрізняється скіл від уміння: «скіл:енергетичний-промінь»
+## проти «attack». Уміння даються всім і рівнів не мають, скіли вчаться
+## рунами — це різні речі (погоджено 02.09.2026).
+const SKILL_PREFIX := "скіл:"
+
 var _creatures: Dictionary
 var _vision: Vision
 var _combat: Combat
@@ -92,6 +97,12 @@ func pump(me: int) -> void:
 				_corpse_skill(me)
 			"taunt":
 				_taunt(me)
+			var action:
+				# Усе, що починається зі «скіл:», іде в скіли. Саме тут
+				# `match` перестає рости від кожного нового вміння:
+				# новий скіл — це рядок у дані/скіли.json (крок 2.2).
+				if action.begins_with(SKILL_PREFIX):
+					_combat.cast(me, action.substr(SKILL_PREFIX.length()))
 
 
 ## Чи минув відкат саме цієї дії. Інші причини невдачі (немає цілі,
@@ -99,6 +110,8 @@ func pump(me: int) -> void:
 func _off_cooldown(a: Node, action: String) -> bool:
 	if action == "attack":
 		return a.attack_ready_in <= 0.0
+	if action.begins_with(SKILL_PREFIX):
+		return a.skill_ready(action.substr(SKILL_PREFIX.length()))
 	return true
 
 

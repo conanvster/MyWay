@@ -150,19 +150,6 @@ func demo(delta: float) -> void:
 		me.walk_to = _nearest_zone(me.global_position)
 
 
-## Осередок найближчої зони появи. Порожній вектор — зон немає.
-func _nearest_zone(from: Vector3) -> Vector3:
-	var found := Vector3.ZERO
-	var best := 1e9
-	for zone in _world.find_children("*", "MobZone", true, false):
-		var far: float = from.distance_to(zone.global_position)
-		# Прийшли — беремо наступну за віддаленістю, щоб не тупцювати.
-		if far < 6.0 or far >= best:
-			continue
-		best = far
-		found = zone.global_position
-	return found
-
 	# Тицяємо в землю тим самим шляхом, що й людина мишею: інакше
 	# клік нічим не перевірити — рук у проби немає.
 	_click_left -= delta
@@ -199,6 +186,20 @@ func _nearest_zone(from: Vector3) -> Vector3:
 		2: _link.to_server(&"use_slot", [5, false])  # енергетичний вибух
 		0: _link.to_server(&"use_slot", [6, false])  # енергетичний промінь
 		_: _link.to_server(&"strike")
+
+
+## Осередок найближчої зони появи. Порожній вектор — зон немає.
+func _nearest_zone(from: Vector3) -> Vector3:
+	var found := Vector3.ZERO
+	var best := 1e9
+	for zone in _world.find_children("*", "MobZone", true, false):
+		var far: float = from.distance_to(zone.global_position)
+		# Прийшли — беремо наступну за віддаленістю, щоб не тупцювати.
+		if far < 6.0 or far >= best:
+			continue
+		best = far
+		found = zone.global_position
+	return found
 
 
 func apply_positions(snapshot: Dictionary) -> void:

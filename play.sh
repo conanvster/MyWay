@@ -35,7 +35,14 @@ if [ "${1:-}" = "--stop" ]; then
         walk=$(awk '{print $4}' "/proc/$walk/stat" 2>/dev/null || echo 1)
         ancestors="$ancestors$walk "
     done
-    for name in "godot --headless" "postgrest"; do
+    # Шукаємо за "--headless --path", а не за "godot --headless":
+    # перевірка запускає сервер повним шляхом до двійника
+    # (Godot_v4.7.2-stable_linux.x86_64), і слова "godot" у її рядку
+    # команди немає взагалі. Такий сервер лишався жити після --stop і їв
+    # пам'ять далі — знайдено 03.09.2026.
+    for name in "\-\-headless \-\-path" "postgrest"; do
+        label="сервер гри"
+        [ "$name" = "postgrest" ] && label="база"
         killed=0
         for victim in $(pgrep -f "$name" 2>/dev/null || true); do
             case "$ancestors" in
@@ -43,7 +50,7 @@ if [ "${1:-}" = "--stop" ]; then
             esac
             kill "$victim" 2>/dev/null && killed=$((killed + 1))
         done
-        [ "$killed" -gt 0 ] && echo "зупинено: $name ($killed)"
+        [ "$killed" -gt 0 ] && echo "зупинено: $label ($killed)"
     done
     # Мітка «світ збудовано», яку кладе сервер: убитий на місці, він її
     # прибрати не встигає. Стартова сторінка вірить мітці лише при

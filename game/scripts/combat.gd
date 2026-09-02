@@ -32,6 +32,14 @@ func attack(me: int) -> bool:
 		return false
 	if a.attack_ready_in > 0.0:
 		return false  # відкат не минув — дія викидається (П-35, П-38)
+	# Себе не б'ють. Перевірка стоїть і тут, а не лише у виборі цілі:
+	# сервер не вірить клієнтові двічі, а ціль може лишитись своєю з
+	# минулого — наприклад, після чужої правки в переборі.
+	if a.target_id == me:
+		a.target_id = 0
+		_link.to_one(me, &"client_target", [0])
+		_link.notice(me, "себе не вдариш")
+		return false
 	var victim: Node = _creatures.get(a.target_id)
 	if victim == null:
 		_link.notice(me, "немає цілі")

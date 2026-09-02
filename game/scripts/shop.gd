@@ -45,6 +45,11 @@ func _buyback() -> float:
 	return float(rules.get("крамар купує за", DEFAULT_BUYBACK))
 
 
+## Те саме у відсотках — у вікні торгівлі його показують один раз рядком.
+func buyback_percent() -> int:
+	return int(round(_buyback() * 100.0))
+
+
 ## Чого крамар не бере взагалі. Гроші — щоб не було «продам гроші за
 ## гроші»; вдягнене перевіряється окремо, бо це не про річ, а про стан.
 func refuses(name: String) -> bool:

@@ -656,6 +656,12 @@ func _bag_row(a: Node) -> Array:
 			"номер": at,
 			"назва": item.title(),
 			"вид": item.kind,
+			# За скільки крамар це викупить. Рахує СЕРВЕР: у клієнта ні
+			# цін, ні частки викупу немає й бути не повинно (П-08), а
+			# замовник просив у вікні торгівлі саме ціну, не частку.
+			# Нуль — крамар цього не бере.
+			"продати за": 0 if shop.refuses(item.base) \
+					else shop.buy_price(item.base),
 			"слот": item.slot,
 			"комірки": ItemBook.slots_for(item.slot),
 			"дві руки": item.two_handed,
@@ -675,6 +681,8 @@ func _stacks_row(a: Node) -> Array:
 			"назва": str(name),
 			"вид": str(base.get("вид", "")),
 			"грейд": str(base.get("грейд", "")),
+			"продати за": 0 if shop.refuses(str(name)) \
+					else shop.buy_price(str(name)),
 			"скільки": int(a.items[name]),
 			"придатна": not base.get("дія", {}).is_empty(),
 		})
@@ -779,13 +787,7 @@ func ask_shop(at: int) -> void:
 	if who == null or not who.trades():
 		return
 	rpc_id(id, "client_shop", at, who.title(),
-			shop.goods_of({"товар": who.goods}),
-			int(_data_trade().get("крамар купує за", Shop.DEFAULT_BUYBACK)
-					* 100.0))
-
-
-func _data_trade() -> Dictionary:
-	return data.items.trade
+			shop.goods_of({"товар": who.goods}), shop.buyback_percent())
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -1026,6 +1028,12 @@ func client_target(id: int) -> void:
 	var me: Node = creatures.get(multiplayer.get_unique_id())
 	if me != null:
 		me.target_id = id
+	# Ціль одна. Узяв монстра — мешканець більше не вибраний, інакше
+	# кожна дія відповідала б «до мешканця це не застосуєш», а на екрані
+	# стояло б ім'я монстра. Спіймано перевіркою: показ так замкнувся
+	# намертво й за півтори хвилини не вдарив нікого.
+	if id != 0:
+		view.forget_resident()
 	if hud != null:
 		hud.set_target(id)
 
@@ -1046,6 +1054,10 @@ func client_hp(id: int, hp: int) -> void:
 func client_things(things: Array, stacks: Array) -> void:
 	if hud != null:
 		hud.set_things(things, stacks)
+	# Показ дивиться на гроші, щоб не йти до крамаря з порожньою кишенею.
+	for row: Dictionary in stacks:
+		if str(row.get("назва", "")) == "гроші":
+			view.money = int(row.get("скільки", 0))
 
 
 ## Що гравець уміє — для вікна «Скіли», з якого скіли тягнуть на панель.

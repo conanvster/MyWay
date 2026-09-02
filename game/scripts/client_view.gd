@@ -31,11 +31,34 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_link = link if link != null else Messenger.new(world)
 	_demo = OS.get_cmdline_user_args().has("--демо")
 	_windows = OS.get_cmdline_user_args().has("--вікна")
+	_shop_demo = OS.get_cmdline_user_args().has("--крамар")
 
 
 var _demo := false
 ## Показ відкриває «Речі» й «Стати», щоб їх було на чому побачити.
 var _windows := false
+
+## Показ іде до крамаря: підійти, заговорити, купити, продати назад.
+##
+## Шле рівно ті самі повідомлення, що й кнопки у вікні торгівлі — і
+## сервер перевіряє їх так само. Лазівки тут немає: якби вона була,
+## перевірка «без грошей не купиш» проходила б і зі зламаним сервером.
+var _shop_demo := false
+var _shop_done := false
+var _shop_step := 0
+var _shop_left := 0.0
+## Скільки треба назбирати, перш ніж іти купувати. Кристал душі коштує
+## 25, і з двох зайців виходить приблизно вдвічі більше.
+const SHOP_DEMO_MONEY := 30
+const SHOP_DEMO_GOODS := "кристал душі"
+const SHOP_DEMO_PAUSE := 0.8
+## Річ, якої показ ніколи не подужає: на неї треба 300, а він приходить
+## із сімдесятьма. Відмову сервера перевіряємо саме нею.
+const SHOP_DEMO_DEAR := "благословенний кристал душі"
+
+## Скільки грошей у торбі. Каже сервер разом із речами; показ дивиться на
+## це число, щоб не йти до крамаря з порожньою кишенею.
+var money := 0
 var _demo_left := DEMO_START
 var _demo_step := 0
 var _shot_left := DEMO_START + 2.0
@@ -130,6 +153,9 @@ func smooth(delta: float) -> void:
 ## Показ: спершу взяти найближчого монстра (комірка 3), далі бити.
 func demo(delta: float) -> void:
 	if not _demo or _me() == null:
+		return
+	# Крамар старший за полювання: назбирав грошей — іди витрать.
+	if _demo_shop(delta):
 		return
 	# У режимі показу гравець ще й іде до найближчого монстра — інакше
 	# він стоїть на місці й на всі удари відповідає «задалеко».
@@ -322,6 +348,11 @@ func _aim_resident(body: NPC) -> void:
 		_world.hud.aim_resident(body.title(), body.trades())
 
 
+## Те саме ззовні: сервер сказав, що ціллю став хтось інший.
+func forget_resident() -> void:
+	_forget_resident()
+
+
 func _forget_resident() -> void:
 	if _resident < 0:
 		return
@@ -430,6 +461,71 @@ func _approach_resident(delta: float) -> void:
 		_link.to_server(&"ask_talk", [_wait_talk])
 		me.walk_to = Vector3.ZERO
 		_wait_talk = -1
+
+
+## Показ у крамаря. Повертає true, поки зайнятий ним: тоді полювання
+## цього кадру не відбувається, інакше показ бив би зайця через усе місто.
+##
+## Кроки рознесені в часі не для краси: сервер відповідає окремими
+## повідомленнями, і без пауз перевірка не встигала б розрізнити, на що
+## саме він відповів.
+func _demo_shop(delta: float) -> bool:
+	if not _shop_demo or _shop_done:
+		return false
+	# Доки грошей нема — полюємо. Інакше показ стоїть біля прилавка й
+	# ніколи їх не заробить.
+	if money < SHOP_DEMO_MONEY and _shop_step == 0:
+		return false
+	var seller: NPC = _first_seller()
+	if seller == null:
+		_shop_done = true
+		print("[крамар] у мапі немає жодного крамаря")
+		return false
+	var me: Node = _me()
+	if me.global_position.distance_to(seller.global_position) \
+			> Shop.TALK_RANGE * 0.85:
+		me.walk_to = seller.global_position
+		return true
+	me.walk_to = Vector3.ZERO
+
+	_shop_left -= delta
+	if _shop_left > 0.0:
+		return true
+	_shop_left = SHOP_DEMO_PAUSE
+	_shop_step += 1
+	var at: int = seller.at_index
+	match _shop_step:
+		1:
+			_aim_resident(seller)
+		2:
+			_link.to_server(&"ask_talk", [at])
+		3:
+			_link.to_server(&"ask_shop", [at])
+		4:
+			# Заздалегідь задорога річ: сервер МУСИТЬ відмовити. Це
+			# найважливіше з усього, що тут перевіряється, — саме на цій
+			# перевірці впаде зламаний сервер, який вірить клієнтові.
+			_link.to_server(&"ask_buy", [at, SHOP_DEMO_DEAR])
+		5:
+			_link.to_server(&"ask_buy", [at, SHOP_DEMO_GOODS])
+		6:
+			_link.to_server(&"ask_sell_stack", [at, SHOP_DEMO_GOODS])
+		_:
+			_shop_done = true
+			print("[крамар] показ закінчив торгувати")
+	return true
+
+
+## Перший крамар у краєвиді. Мешканців мало й вони не з'являються на ходу,
+## тож шукати щокадру не дорого — і не треба тримати ще одну таблицю.
+func _first_seller() -> NPC:
+	var land: Node = _world.get_node_or_null("Landscape")
+	if land == null:
+		return null
+	for child in land.get_children():
+		if child is NPC and child.trades():
+			return child
+	return null
 
 
 ## Скільки щонайбільше йти до цілі, перш ніж кинути намір.

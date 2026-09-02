@@ -16,6 +16,8 @@ extends SceneTree
 ## Esc — вийти, пробіл — ще один знімок. Перший знімок робиться сам.
 
 var _hud: Node
+var _shop: Shop
+var _seller: Dictionary = {}
 
 
 func _init() -> void:
@@ -48,19 +50,38 @@ func _go() -> void:
 		_hud._toggle_skills()
 	await process_frame
 
+	# Друга сторінка вітрини — крамар. Вікна торгівлі в грі не побачити
+	# інакше як дійти до Ліди, а знімок потрібен тут і зараз.
+	_shop = Shop.new(data)
+	_seller = _find_seller(data)
+
 	print("— вітрина вікон —")
 	print("  комірок тіла: %d" % ItemBook.BODY_SLOTS.size())
 	print("  речей у торбі: %d" % _stacks().size())
 	_report()
+	_report_shop()
 
 	# Далі — просто дивитись. Перший знімок робимо самі, щоб вітрина
 	# годилась і для перевірки без рук.
-	print("\n  Esc — вийти · пробіл — ще знімок")
+	print("\n  Esc — вийти · пробіл — ще знімок · Т — прилавок")
 	root.close_requested.connect(quit)
 	await process_frame
 	await process_frame
 	Shot.take(root)
+	# Другий знімок — прилавок. Знімати обидва самому, бо саме «нема на
+	# чому побачити» й лишило вигляд вікна речей неперевіреним на вечір.
+	#
+	# Секунда паузи не для краси: ім'я знімка складається з часу З
+	# ТОЧНІСТЮ ДО СЕКУНДИ, і два знімки поспіль просто затирали один
+	# одного — на диску лишався тільки другий.
+	await create_timer(1.2).timeout
+	_open_shop()
+	await process_frame
+	await process_frame
+	Shot.take(root)
+	await create_timer(0.3).timeout
 	var space_held := false
+	var trade_held := false
 	while true:
 		await process_frame
 		if Input.is_key_pressed(KEY_ESCAPE):
@@ -71,7 +92,52 @@ func _go() -> void:
 			space_held = true
 		else:
 			space_held = false
+		if Input.is_key_pressed(KEY_T):
+			if not trade_held:
+				_open_shop()
+			trade_held = true
+		else:
+			trade_held = false
 	quit()
+
+
+## Прилавок Ліди з мапи, з цінами, порахованими сервером.
+func _open_shop() -> void:
+	if _shop == null or _seller.is_empty():
+		print("  ‼ у мапі немає жодного крамаря — прилавка не буде")
+		return
+	_hud.show_shop(0, "%s, %s" % [_seller.get("хто"), _seller.get("ремесло")],
+			_shop.goods_of(_seller),
+			_shop.buyback_percent())
+
+
+func _find_seller(data: GameData) -> Dictionary:
+	for who: Dictionary in data.map.get("місто", {}).get("мешканці", []):
+		if not Array(who.get("товар", [])).is_empty():
+			return who
+	return {}
+
+
+## Прилавок числами: скільки товару, скільки свого, і чи вміщається.
+func _report_shop() -> void:
+	if _shop == null or _seller.is_empty():
+		print("\n  ‼ крамаря в мапі немає")
+		return
+	_open_shop()
+	var window: Control = _hud.find_child("ВікноТоргівлі", true, false)
+	var stock := _shop.goods_of(_seller)
+	print("\n— прилавок —")
+	print("  крамар: %s, %s" % [_seller.get("хто"), _seller.get("ремесло")])
+	print("  на прилавку: %d" % stock.size())
+	print("  перше на прилавку: %s за %d" % [stock[0]["назва"], stock[0]["ціна"]])
+	var screen: Vector2 = root.get_viewport().get_visible_rect().size
+	print("  вікно торгівлі: %.0f×%.0f, екран %.0f×%.0f, вміщається: %s"
+			% [window.size.x, window.size.y, screen.x, screen.y,
+			   "ні ‼" if window.size.x > screen.x
+					or window.size.y > screen.y else "так"])
+	var hint: Label = window.get_node("Вміст").get_node("Ціна")
+	print("  рядок ціни: «%s»" % hint.text)
+	window.visible = false
 
 
 ## По речі в кожен слот тіла плюс те, що лежить у торбі.

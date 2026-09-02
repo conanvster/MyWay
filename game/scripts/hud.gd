@@ -868,6 +868,10 @@ func show_shop(at: int, title: String, goods: Array, buyback: int) -> void:
 	_shop_with = at
 	_buyback = buyback
 	_shop_title.text = "%s — прилавок" % title
+	# Частку кажемо ОДИН раз, у рядку підказки: у кожній комірці стоїть
+	# уже пораховане число, і повторювати відсоток там ні до чого.
+	_shop_hint.text = "наведи річ — покаже ціну · викуповує за %d%%" \
+			% _buyback
 	_fill_stock(goods)
 	_fill_mine()
 	if _talk_box != null:
@@ -925,19 +929,33 @@ func _fill_mine() -> void:
 				str(row.get("слот", "")), str(row.get("грейд", "")))
 		press.disabled = false
 		_cell_look(press, true)
+		# Ціну викупу рахує сервер і шле разом із річчю: клієнт її не
+		# знає й знати не повинен.
+		var paid: int = int(row.get("продати за", 0))
 		if row.has("номер"):
 			var thing_at: int = int(row["номер"])
 			cell["count"].text = ""
-			var paid := "%d%% ціни" % _buyback
-			press.tooltip_text = "%s\nпродати за %s" % [name, paid]
-			_hover(press, "%s — продати за %s" % [name, paid])
+			if paid <= 0:
+				press.tooltip_text = "%s\nкрамар цього не бере" % name
+				press.disabled = true
+				_hover(press, "%s — крамар цього не бере" % name)
+				continue
+			press.tooltip_text = "%s\nпродати за %d" % [name, paid]
+			_hover(press, "%s — продати за %d" % [name, paid])
 			press.pressed.connect(func() -> void:
 					wants_sell.emit(_shop_with, thing_at))
 		else:
 			var count: int = int(row.get("скільки", 0))
 			cell["count"].text = "×%d" % count
-			press.tooltip_text = "%s ×%d\nпродати весь стос" % [name, count]
-			_hover(press, "%s ×%d — продати весь стос" % [name, count])
+			if paid <= 0:
+				press.tooltip_text = "%s\nкрамар цього не бере" % name
+				press.disabled = true
+				_hover(press, "%s — крамар цього не бере" % name)
+				continue
+			press.tooltip_text = "%s ×%d\nпродати весь стос за %d" \
+					% [name, count, paid * count]
+			_hover(press, "%s ×%d — продати весь стос за %d"
+					% [name, count, paid * count])
 			press.pressed.connect(func() -> void:
 					wants_sell_stack.emit(_shop_with, name))
 

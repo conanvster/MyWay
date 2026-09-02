@@ -57,6 +57,13 @@ func use_slot(me: int, slot: int, shift: bool) -> void:
 func pick_target(me: int, id: int) -> void:
 	if not _creatures.has(me):
 		return
+	# Себе ціллю не беруть. Промінь миші влучає у ВЛАСНУ фігуру так само
+	# легко, як у чужу — камера ж стоїть за спиною, — і далі «удар» бив
+	# самого себе. Спіймано перевіркою крамаря: показ забив себе на
+	# смерть за півтори хвилини, і в журналі стояло
+	# «[бій] 1344142197 вдарив 1344142197».
+	if id == me:
+		return
 	if id != 0 and not _vision.sees(me, id):
 		return  # цілі, якої не бачить, гравець узяти не може
 	_creatures[me].target_id = id

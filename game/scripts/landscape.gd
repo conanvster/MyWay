@@ -242,9 +242,14 @@ func _city() -> void:
 	add_child(stone)
 
 	for house: Dictionary in city.get("будинки", []):
-		_house(_on_ground(_point(house["де"])), _point(house["розмір"]),
-				str(house.get("колір", "#8a6a4a")),
-				str(house.get("дах", "#6b3f2f")))
+		var at := _on_ground(_point(house["де"]))
+		var model := str(house.get("модель", ""))
+		if model != "" and ResourceLoader.exists(model):
+			_model_house(at, model, house)
+		else:
+			_house(at, _point(house["розмір"]),
+					str(house.get("колір", "#8a6a4a")),
+					str(house.get("дах", "#6b3f2f")))
 
 	for who: Dictionary in city.get("мешканці", []):
 		_dweller(who)
@@ -270,6 +275,59 @@ func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
 	top.position = where + Vector3(0, size.y + cap.height * 0.5, 0)
 	top.rotation.y = PI * 0.25
 	add_child(top)
+
+
+## Будинок із готової моделі (крок 6, П-15).
+##
+## Модель дає лише вигляд; крізь що не пройти — окрема коробка за її
+## розміром. Так зроблено навмисно: у гарних моделях геометрія дрібна, і
+## зіткнення по ній коштувало б дорожче за саму картинку, а гравцеві
+## однаково важливо тільки те, що всередину не зайти.
+##
+## Якщо моделі немає на диску, будинок лишається коробкою: гра має
+## запускатися й без завантажених паків.
+func _model_house(where: Vector3, path: String, house: Dictionary) -> void:
+	var scene: PackedScene = load(path)
+	if scene == null:
+		_house(where, _point(house.get("розмір", [6, 4, 6])),
+				str(house.get("колір", "#8a6a4a")),
+				str(house.get("дах", "#6b3f2f")))
+		return
+	var body := StaticBody3D.new()
+	body.name = _named("Будинок")
+	body.position = where
+	body.rotation.y = deg_to_rad(float(house.get("поворот", 0.0)))
+	add_child(body)
+
+	var view: Node3D = scene.instantiate()
+	view.name = "Модель"
+	var scale := float(house.get("масштаб", 1.0))
+	view.scale = Vector3(scale, scale, scale)
+	body.add_child(view)
+
+	# Коробка за розміром самої моделі: не треба вгадувати числа руками.
+	var box := _size_of(view) * scale
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(maxf(box.x, 0.5), maxf(box.y, 0.5), maxf(box.z, 0.5))
+	var wall := CollisionShape3D.new()
+	wall.name = "Стіна"
+	wall.shape = shape
+	wall.position = Vector3(0, shape.size.y * 0.5, 0)
+	body.add_child(wall)
+
+
+## Розмір моделі: збираємо межі всіх мешів усередині.
+static func _size_of(node: Node) -> Vector3:
+	var box := AABB()
+	var first := true
+	for child in node.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = child
+		if mesh.mesh == null:
+			continue
+		var part := mesh.transform * mesh.mesh.get_aabb()
+		box = part if first else box.merge(part)
+		first = false
+	return box.size if not first else Vector3(4, 3, 4)
 
 
 ## Мешканець: капсула на своєму місці. Говорити він поки не вміє (П-113).

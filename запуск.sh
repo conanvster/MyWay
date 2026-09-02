@@ -1,33 +1,44 @@
 #!/usr/bin/env bash
-# Запуск проєкту на ВБУДОВАНІЙ відеокарті AMD.
-#
-# Навіщо: LM Studio тримає модель на NVIDIA і займає майже всю її пам'ять
-# (перевірено 02.09.2026: 15778 з 16311 МіБ). Godot тоді не може створити
-# пристрій Vulkan і падає з "VkResult error -3". Вбудована AMD вільна, і
-# для капсул її вистачає з головою.
+# Запуск проєкту. За замовчуванням — на ДИСКРЕТНІЙ NVIDIA.
 #
 #   ./запуск.sh          редактор
 #   ./запуск.sh --run    одразу гру (клієнт до 127.0.0.1)
+#   ./запуск.sh --демо   гру в режимі показу: сама бере ціль, б'є і знімає екран
 #
 # Сервер піднімається окремо: ./запуск-сервера.sh
-#   NVIDIA=1 ./запуск.sh  силувано на NVIDIA (спершу вивантаж модель: lms unload --all)
+#
+# Чому тут узагалі є вибір карти: LM Studio тримає модель на NVIDIA і
+# займає майже всю її пам'ять (04.09.2025 було 15778 з 16311 МіБ). Godot
+# тоді не може створити пристрій Vulkan і падає з "VkResult error -3".
+# Тож скрипт дивиться, скільки на ній вільно, і сам вирішує:
+#
+#   вільно ≥ 2000 МіБ  -> дискретна NVIDIA (швидша, потрібна для світу з туманом)
+#   вільно менше       -> вбудована AMD, із попередженням
+#   AMD=1 ./запуск.sh  -> силувано вбудована
+#
+# Перевірити, куди воно справді пішло, можна за першим рядком журналу:
+# Godot друкує "Using Device #N: ...".
 
 set -euo pipefail
 proj="$(cd "$(dirname "$0")" && pwd)/game"
+amd_icd=/usr/share/vulkan/icd.d/radeon_icd.json
 
-if [ "${NVIDIA:-0}" = "1" ]; then
+if [ "${AMD:-0}" = "1" ]; then
+    export VK_ICD_FILENAMES="$amd_icd"
+    echo "→ вбудована AMD (силувано)"
+else
     free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null || echo 0)
-    if [ "$free" -lt 2000 ]; then
-        echo "‼ на NVIDIA вільно ${free} МіБ — Vulkan не підніметься." >&2
-        echo "  вивантаж модель:  lms unload --all" >&2
-        exit 1
+    if [ "$free" -ge 2000 ]; then
+        echo "→ дискретна NVIDIA, вільно ${free} МіБ"
+    else
+        echo "‼ на NVIDIA вільно лише ${free} МіБ — беру вбудовану AMD." >&2
+        echo "  щоб звільнити:  lms unload --all" >&2
+        export VK_ICD_FILENAMES="$amd_icd"
     fi
-else
-    export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json
 fi
 
-if [ "${1:-}" = "--run" ]; then
-    exec godot --path "$proj"
-else
-    exec godot --path "$proj" -e
-fi
+case "${1:-}" in
+    --run)  exec godot --path "$proj" ;;
+    --демо) exec godot --path "$proj" -- --демо ;;
+    *)      exec godot --path "$proj" -e ;;
+esac

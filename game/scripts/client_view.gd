@@ -127,12 +127,22 @@ func click_at(where: Vector2) -> void:
 	var from := cam.project_ray_origin(where)
 	var query := PhysicsRayQueryParameters3D.create(
 			from, from + cam.project_ray_normal(where) * 200.0)
-	query.collision_mask = 2  # шар «істоти»
+	# Шари 2 «істоти» і 4 «мешканці»: клікати можна і по монстрах, і по
+	# людях у місті.
+	query.collision_mask = 2 | 4
 	var space := _world.get_world_3d().direct_space_state
 	var hit: Dictionary = space.intersect_ray(query)
 	if hit.is_empty():
 		return
-	var id := id_of(hit["collider"])
+	var body: Object = hit["collider"]
+	if body is NPC:
+		# Мешканець поки не говорить (П-113) — але має відповідати хоч
+		# чимось, інакше здається, що гра не помітила кліку.
+		if _world.hud != null:
+			_world.hud.notice("%s — поки не говорить" % body.title())
+		return
+
+	var id := id_of(body)
 	if id == 0:
 		return
 	if me.target_id == id:

@@ -34,6 +34,11 @@ var threat_per_hit := 1.0
 var skills_by_case: Dictionary = {}
 ## Постійний баф, який дається при появі. Строк 0 — поки живий.
 var spawn_buff: Dictionary = {}
+## Як він виглядає, поки немає моделей: колір і зріст (П-105). Вовк
+## сірий і в повний зріст, заєць рудуватий і низенький — щоб з одного
+## погляду було видно, хто є хто.
+var look: Dictionary = {}
+
 ## Що з нього падає: повага, досвід і таблиця речей (крок 3).
 var respect_range: Array = [0, 0]
 var experience_range: Array = [0, 0]
@@ -98,6 +103,8 @@ func apply_tuning(tuning: Dictionary) -> void:
 	respect_range = tuning.get("повага", respect_range)
 	experience_range = tuning.get("досвід", experience_range)
 	drop_table = tuning.get("дроп", drop_table)
+	look = tuning.get("вигляд", look)
+	_apply_look()
 	skills_by_case = tuning.get("скіли", skills_by_case)
 	spawn_buff = tuning.get("баф при появі", spawn_buff)
 	for key in skills_by_case.values():
@@ -109,6 +116,26 @@ func apply_tuning(tuning: Dictionary) -> void:
 	# Стати помінялись — чинні перерахувати, інакше баф лишиться на
 	# старих числах.
 	refresh_stats()
+
+
+## Пофарбувати й змінити зріст. Робиться і на сервері, і на клієнті: на
+## сервері воно нікому не заважає, а клієнтові саме це й потрібно.
+func _apply_look() -> void:
+	if look.is_empty():
+		return
+	var mesh: Node3D = get_node_or_null("Mesh")
+	if mesh == null:
+		return
+	if look.has("колір"):
+		var paint := StandardMaterial3D.new()
+		paint.albedo_color = Color(str(look["колір"]))
+		mesh.set_surface_override_material(0, paint)
+	if look.has("зріст"):
+		var size := float(look["зріст"])
+		mesh.scale = Vector3(size, size, size)
+		var body: Node3D = get_node_or_null("Collision")
+		if body != null:
+			body.scale = Vector3(size, size, size)
 
 
 func add_threat(id: int, amount: float) -> void:

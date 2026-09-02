@@ -52,8 +52,7 @@ var _since_tick := 0.0
 
 func _ready() -> void:
 	data = GameData.new()
-	if Net.is_server:
-		data.load_all()
+	data.load_all()
 	vision = Vision.new(creatures)
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
@@ -65,6 +64,12 @@ func _ready() -> void:
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
 	view = ClientView.new(creatures, self, link)
+
+	# Краєвид будується однаково й на сервері, і в клієнта: серверові
+	# потрібні стіни, щоб крізь будинки не бігали, клієнтові — картинка.
+	var land: Node = get_node_or_null("Landscape")
+	if land != null:
+		land.build(data.map)
 
 	if Net.is_server:
 		store = Store.new()

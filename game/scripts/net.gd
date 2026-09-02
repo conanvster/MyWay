@@ -12,6 +12,12 @@ const MAX_PLAYERS := 10
 
 var is_server := false
 var host := "127.0.0.1"
+## Ім'я персонажа: `-- --персонаж Вовкодав`. Під ним він зберігається в
+## базі (крок 3). Акаунти — крок 5; поки ім'я береться з рядка запуску.
+var character := "Мандрівник"
+## Адреса PostgREST: `-- --база http://127.0.0.1:3000`. Порожня — гра йде
+## без збереження й каже про це вголос.
+var db := ""
 
 
 func _ready() -> void:
@@ -21,6 +27,12 @@ func _ready() -> void:
 	var at := args.find("--host")
 	if at != -1 and at + 1 < args.size():
 		host = args[at + 1]
+	at = args.find("--персонаж")
+	if at != -1 and at + 1 < args.size():
+		character = args[at + 1]
+	at = args.find("--база")
+	if at != -1 and at + 1 < args.size():
+		db = args[at + 1]
 
 	var peer := ENetMultiplayerPeer.new()
 	var err := (peer.create_server(PORT, MAX_PLAYERS) if is_server

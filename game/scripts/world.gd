@@ -42,6 +42,10 @@ var spawner: Spawner
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
+## Збереження персонажів через PostgREST (крок 3). Є лише на сервері.
+var store: Store
+## Хто під яким іменем грає: peer_id -> ім'я в базі.
+var _names: Dictionary = {}
 
 var _since_tick := 0.0
 
@@ -61,6 +65,9 @@ func _ready() -> void:
 	view = ClientView.new(creatures, self, link)
 
 	if Net.is_server:
+		store = Store.new()
+		add_child(store)
+		store.setup(Net.db)
 		multiplayer.peer_disconnected.connect(_on_left)
 		spawner.start(_zones())
 		print("[світ] сервер чекає гравців")
@@ -69,7 +76,7 @@ func _ready() -> void:
 		# Якби сервер спавнив за подією з'єднання, повідомлення могло б
 		# прийти раніше, ніж клієнт готовий, і загубитись.
 		multiplayer.connected_to_server.connect(
-				func() -> void: rpc_id(1, "announce_ready"))
+				func() -> void: rpc_id(1, "announce_ready", Net.character))
 
 
 func _physics_process(delta: float) -> void:
@@ -85,6 +92,8 @@ func _physics_process(delta: float) -> void:
 		for id in combat.clear_corpses():
 			remove(id)
 		spawner.tick(delta)
+		if store != null and store.due(delta):
+			_save_everyone()
 		# Числа правляться в дані/*.json під час гри: помітив зміну —
 		# роздав живим монстрам (крок 1.2).
 		if data.poll(delta):
@@ -158,10 +167,25 @@ func _slot_cooldowns(me: Node) -> PackedFloat32Array:
 # ── сервер: що надходить від клієнтів ─────────────────────────────────
 
 @rpc("any_peer", "call_remote", "reliable")
-func announce_ready() -> void:
+func announce_ready(character: String = "") -> void:
 	if not Net.is_server:
 		return
-	_on_joined(multiplayer.get_remote_sender_id())
+	var id := multiplayer.get_remote_sender_id()
+	_names[id] = character if character != "" else "Гравець-%d" % id
+	_on_joined(id)
+
+
+## Зберегти всіх, хто в грі. Викликається раз на 30 секунд і при виході.
+func _save_everyone() -> void:
+	for id in _names:
+		_save_one(id)
+
+
+func _save_one(id: int) -> void:
+	var who: Node = creatures.get(id)
+	if who == null or store == null:
+		return
+	store.save_character(_names[id], Store.row_of(_names[id], who))
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
@@ -206,6 +230,22 @@ func _zones() -> Array:
 
 func _on_joined(id: int) -> void:
 	var a := spawn(id, Vector3(0, 1.5, 0))
+	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
+	# базу, а база не жде гру.
+	if store != null and store.works():
+		store.loaded.connect(func(name: String, row: Dictionary) -> void:
+				if name != _names.get(id, "") or not creatures.has(id):
+					return
+				Store.apply_row(creatures[id], row)
+				if row.is_empty():
+					print("[база] %s новий, починає з нуля" % name)
+				else:
+					print("[база] %s повернувся: рівень %d, поваги %d"
+							% [name, creatures[id].level,
+							   creatures[id].respect])
+				rpc_id(id, "client_place", id, creatures[id].global_position,
+						creatures[id].facing), CONNECT_ONE_SHOT)
+		store.load_character(_names[id])
 	a.bar = data.bar if not data.bar.is_empty() else a.bar
 	# Стартові скіли — заглушка до рун і крамниць (П-97).
 	for skill_key in data.starting_skills:
@@ -220,6 +260,9 @@ func _on_joined(id: int) -> void:
 
 
 func _on_left(id: int) -> void:
+	# Зберегти ДО того, як істота зникне: інакше зберігати вже нічого.
+	_save_one(id)
+	_names.erase(id)
 	vision.drop_watcher(id)
 	remove(id)
 	print("[світ] пішов %d, лишилось %d" % [id, creatures.size()])

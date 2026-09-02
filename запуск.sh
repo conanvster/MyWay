@@ -40,5 +40,6 @@ fi
 case "${1:-}" in
     --run)  exec godot --path "$proj" ;;
     --демо) exec godot --path "$proj" -- --демо ;;
+    --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
     *)      exec godot --path "$proj" -e ;;
 esac

@@ -19,6 +19,7 @@ func _go() -> void:
 	await _no_back_after_aggro()
 	_stats()
 	_speeds()
+	_skill_time()
 	_races()
 	quit()
 
@@ -192,3 +193,21 @@ func _races() -> void:
 				   s.max_mp(), s.physical_attack(), s.cast_time(),
 				   s.vision_radius(), s.magical_defence()])
 	print("  сума статів у кожного однакова: %d" % 50)
+
+
+## П-98 і П-35: відкат скіла статами не ріжеться, каст — ріжеться.
+func _skill_time() -> void:
+	print("\n— поінти скіла в секунди (П-98) —")
+	print("  промінь: каст 3 поінти, відкат 6 поінтів")
+	var s := Stats.new()
+	for value: int in [10, 30, 70]:
+		s.sense = value
+		s.agility = value
+		print("    Чуття й Спритність %2d -> каст %.2f с, відкат %.2f с"
+				% [value, s.skill_cast(3.0), s.skill_cooldown(6.0)])
+	s.sense = 10
+	s.agility = 10
+	print("  той самий скіл під бафом на чверть відкату:")
+	s.cooldown_cut = 0.25
+	print("    каст %.2f с, відкат %.2f с (стат не змінився, баф змінив)"
+			% [s.skill_cast(3.0), s.skill_cooldown(6.0)])

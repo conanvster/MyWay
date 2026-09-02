@@ -15,6 +15,10 @@ var bar: Array[String] = ["attack", "next_player", "next_mob",
 		"corpse_skill", "taunt", "", ""]
 
 var is_local := false
+## Куди йти в режимі показу (`--демо`). Порожній вектор — керує людина.
+## Потрібне тільки для знімків: сам намір іде тими самими шляхами, що й
+## від клавіш, і сервер перевіряє його так само.
+var demo_to := Vector3.ZERO
 
 @onready var _rig: Node3D = $CameraRig
 
@@ -42,6 +46,15 @@ func die() -> void:
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери
 ## робить клієнт, бо тільки він знає, куди дивиться.
 func sample_intent() -> Vector2:
+	if demo_to != Vector3.ZERO:
+		var to := demo_to - global_position
+		to.y = 0.0
+		var walk := Vector2(to.x, to.z)
+		if walk.length() < 1.6:
+			return Vector2.ZERO
+		move_direction = Vector3(to.x, 0.0, to.z).normalized()
+		return walk.normalized()
+
 	var input := Vector2.ZERO
 	# input.y — це «скільки вперед», тому W додатний. Множиться на вектор
 	# forward, і зі знаком навпаки W вів би назад.

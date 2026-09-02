@@ -55,6 +55,21 @@ func smooth(delta: float) -> void:
 func demo(delta: float) -> void:
 	if not _demo or _me() == null:
 		return
+	# У режимі показу гравець ще й іде до найближчого монстра — інакше
+	# він стоїть на місці й на всі удари відповідає «задалеко».
+	var me: Node = _me()
+	var closest: Node3D = null
+	var best := 1e9
+	for id in _creatures:
+		if id >= 0:
+			continue
+		var far: float = me.global_position.distance_to(
+				_creatures[id].global_position)
+		if far < best:
+			best = far
+			closest = _creatures[id]
+	me.demo_to = closest.global_position if closest != null else Vector3.ZERO
+
 	_shot_left -= delta
 	if _shot_left <= 0.0:
 		_shot_left = DEMO_SHOT

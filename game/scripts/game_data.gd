@@ -12,6 +12,7 @@ extends RefCounted
 const MOBS_PATH := "res://дані/монстри.json"
 const BAR_PATH := "res://дані/панель.json"
 const SKILLS_PATH := "res://дані/скіли.json"
+const LEVELS_PATH := "res://дані/рівні.json"
 ## Як часто перевіряти, чи файли змінились.
 const WATCH_EVERY := 2.0
 
@@ -24,6 +25,8 @@ var skills := SkillBook.new()
 ## З чим персонаж заходить у світ: ключ скіла -> рівень. Заглушка до рун
 ## і крамниць (П-97).
 var starting_skills: Dictionary = {}
+## Сітка поваги й множники за різницю рівнів (крок 3).
+var levels: Dictionary = {}
 
 var _stamps: Dictionary = {}
 var _since_check := 0.0
@@ -45,6 +48,15 @@ func load_all() -> bool:
 	if read_skills is Dictionary:
 		skills.load_from(read_skills)
 		print("[дані] скілів: %d (%s)" % [skills.count(), ", ".join(skills.keys())])
+	else:
+		ok = false
+
+	var read_levels: Variant = _read(LEVELS_PATH)
+	if read_levels is Dictionary:
+		levels = read_levels
+		print("[дані] сітка рівнів: основа %s, показник %s, очок статів %s"
+				% [levels.get("основа"), levels.get("показник"),
+				   levels.get("очок статів за рівень")])
 	else:
 		ok = false
 
@@ -70,7 +82,7 @@ func poll(delta: float) -> bool:
 		return false
 	_since_check = 0.0
 	var changed := false
-	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH]:
+	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH, LEVELS_PATH]:
 		var stamp := _stamp(path)
 		if stamp != 0 and _stamps.get(path, 0) != stamp:
 			changed = true

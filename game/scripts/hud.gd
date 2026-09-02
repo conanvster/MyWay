@@ -26,6 +26,7 @@ const HP_COLOR := Color(0.72, 0.21, 0.18)
 const MP_COLOR := Color(0.24, 0.42, 0.76)
 const TARGET_COLOR := Color(0.78, 0.62, 0.22)
 const CAST_COLOR := Color(0.35, 0.55, 0.85)
+const RESPECT_COLOR := Color(0.55, 0.72, 0.35)
 
 var _world: Node
 ## Скільки в кого здоров'я всього: сервер шле це, коли істота з'являється.
@@ -45,6 +46,8 @@ var _queue_text: Label
 var _cast_box: Control
 var _cast_fill: ColorRect
 var _cast_text: Label
+var _respect_fill: ColorRect
+var _level_text: Label
 var _cast_left := 0.0
 var _cast_full := 0.0
 var _messages: VBoxContainer
@@ -103,6 +106,14 @@ func _build_vitals() -> void:
 
 	_vitals_text = _text(13, box)
 	_vitals_text.position = Vector2(6, 0)
+
+	# Рівень і повага: тонка смуга під маною (крок 3).
+	var respect_back := _plate(Vector2(WIDE, 6), BACK, box)
+	respect_back.position = Vector2(0, 36)
+	_respect_fill = _plate(Vector2(0, 6), RESPECT_COLOR, box)
+	_respect_fill.position = Vector2(0, 36)
+	_level_text = _text(12, box)
+	_level_text.position = Vector2(0, 44)
 
 
 ## Рамка цілі — угорі посередині. Ховається, коли цілі немає (П-31).
@@ -273,6 +284,13 @@ func cast_ended(id: int, done: bool) -> void:
 	_cast_left = 0.0
 	if not done:
 		notice("читання перервано")
+
+
+## Рівень і повага до наступного (крок 3).
+func update_level(level: int, respect: int, need: int) -> void:
+	_respect_fill.size.x = WIDE * clampf(float(respect) / maxf(1.0, need),
+			0.0, 1.0)
+	_level_text.text = "рівень %d      повага %d / %d" % [level, respect, need]
 
 
 func notice(text: String) -> void:

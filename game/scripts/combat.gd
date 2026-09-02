@@ -73,10 +73,7 @@ func attack(me: int) -> bool:
 	print("[бій] %d вдарив %d%s, лишилось %d"
 			% [me, a.target_id, " ЗІ СПИНИ" if behind else "", victim.hp])
 	if victim.hp <= 0:
-		victim.die()
-		print("[бій] %d загинув, труп лежатиме %.0f с"
-				% [a.target_id, victim.corpse_left])
-		_link.to_watchers(a.target_id, &"client_died", [a.target_id])
+		_kill(me, a, victim, a.target_id)
 	return true
 
 
@@ -95,7 +92,6 @@ func clear_corpses() -> Array:
 			remove.append(id)
 			continue
 		# Не оживили за 20 хвилин — підводиться сам (П-69, П-70).
-		# Втрат за смерть (П-27) поки немає: немає ні досвіду, ні речей.
 		c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
 		c.place_at(Vector3(0, 1.5, 0), 0.0)
 		_link.to_watchers(id, &"client_revive", [id, c.hp])
@@ -109,6 +105,8 @@ func clear_corpses() -> Array:
 
 ## Книга скілів. Ставить світ при створенні; проба підставляє свою.
 var skills := SkillBook.new()
+## Повага, рівні й винагорода за різницю рівнів (крок 3).
+var progress := Progress.new()
 
 
 ## Застосувати скіл. Повертає true, якщо він справді спрацював.
@@ -269,9 +267,63 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 	_link.to_watchers(id, &"client_hp", [id, victim.hp])
 	_link.to_watchers(id, &"client_damage", [id, hit, false])
 	if victim.hp <= 0:
-		victim.die()
-		_link.to_watchers(id, &"client_died", [id])
-		print("[бій] %d загинув від уміння" % id)
+		_kill(me, a, victim, id)
+
+
+## Хтось загинув. Тут-таки й винагорода вбивці: повага, досвід і дроп
+## (крок 3). Гравець за гравця поки не отримує нічого — це PvP, і воно
+## має свої правила (П-88).
+func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
+	victim.die()
+	# Гравець за смерть втрачає повагу: рівно 10% обсягу поточного рівня
+	# (П-27, числа замовника). Досвід не втрачається.
+	if victim_id > 0:
+		var lost: int = progress.death_loss(victim)
+		_link.notice(victim_id, "втрачено %d поваги" % lost)
+		print("[смерть] %d втратив %d поваги, лишилось %d"
+				% [victim_id, lost, victim.respect])
+	print("[бій] %d загинув, труп лежатиме %.0f с"
+			% [victim_id, victim.corpse_left])
+	_link.to_watchers(victim_id, &"client_died", [victim_id])
+	if me > 0 and victim_id < 0:
+		_reward(me, killer, victim)
+
+
+## Скільки дісталось убивці. Множник за різницю рівнів (П-104) б'є по
+## всьому одразу — і по повазі, і по досвіду, і по дропу: інакше вбивати
+## дрібних монстрів заради речей лишалось би вигідним.
+func _reward(me: int, killer: Node, victim: Node) -> void:
+	var mult: float = progress.reward_multiplier(victim.level, killer.level)
+	if mult <= 0.0:
+		_link.notice(me, "монстр надто слабкий — нічого не дав")
+		return
+
+	var respect: int = roundi(_roll(victim.respect_range) * mult)
+	var experience: int = roundi(_roll(victim.experience_range) * mult)
+	killer.experience += experience
+	var levels: int = progress.add_respect(killer, respect)
+	var tail := "" if is_equal_approx(mult, 1.0) 			else "  (×%.2f за різницю рівнів)" % mult
+	_link.notice(me, "повага +%d, досвід +%d%s" % [respect, experience, tail])
+	if levels > 0:
+		_link.notice(me, "рівень %d! очок статів: %d"
+				% [killer.level, killer.stat_points])
+		print("[рівень] %d узяв %d рівень" % [me, killer.level])
+
+	for row: Dictionary in victim.drop_table:
+		if randf() > float(row.get("шанс", 0.0)) * mult:
+			continue
+		var count: int = randi_range(int(row.get("від", 1)),
+				int(row.get("до", 1)))
+		if count <= 0:
+			continue
+		killer.give_item(row["що"], count)
+		_link.notice(me, "здобуто: %s ×%d" % [row["що"], count])
+
+
+func _roll(pair: Array) -> int:
+	if pair.size() < 2:
+		return 0
+	return randi_range(int(pair[0]), int(pair[1]))
 
 
 func _id_of(node: Node) -> int:

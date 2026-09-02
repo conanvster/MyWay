@@ -54,6 +54,7 @@ func _ready() -> void:
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
 	combat.skills = data.skills
+	combat.progress = Progress.new(data.levels)
 	actions = Actions.new(creatures, vision, combat, link)
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
@@ -135,7 +136,8 @@ func _serve_self(peer: int) -> void:
 		return
 	rpc_id(peer, "client_self", me.hp, me.stats.max_hp(), me.mp,
 			me.stats.max_mp(), _slot_cooldowns(me), me.busy_in,
-			PackedStringArray(me.queue))
+			PackedStringArray(me.queue), me.level, me.respect,
+			combat.progress.need_for(me.level, me.race, me.sex))
 
 
 ## Скільки лишилось відкату на кожній комірці панелі. Рахує сервер, бо
@@ -290,9 +292,11 @@ func client_bar(bar: PackedStringArray) -> void:
 @rpc("authority", "call_remote", "unreliable_ordered")
 func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 		slots: PackedFloat32Array, busy_in: float,
-		queue: PackedStringArray) -> void:
+		queue: PackedStringArray, level: int, respect: int,
+		need: int) -> void:
 	if hud != null:
 		hud.update_self(hp, max_hp, mp, max_mp, slots, busy_in, Array(queue))
+		hud.update_level(level, respect, need)
 
 
 ## Хтось почав читати скіл: у нього над головою смуга.

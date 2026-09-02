@@ -34,6 +34,10 @@ var threat_per_hit := 1.0
 var skills_by_case: Dictionary = {}
 ## Постійний баф, який дається при появі. Строк 0 — поки живий.
 var spawn_buff: Dictionary = {}
+## Що з нього падає: повага, досвід і таблиця речей (крок 3).
+var respect_range: Array = [0, 0]
+var experience_range: Array = [0, 0]
+var drop_table: Array = []
 
 ## Місце, де монстр з'явився, і куди повертається.
 var home := Vector3.ZERO
@@ -90,6 +94,10 @@ func apply_tuning(tuning: Dictionary) -> void:
 	wander_radius = tuning.get("блукання_радіус", wander_radius)
 	wander_pace = tuning.get("блукання_темп", wander_pace)
 	threat_per_hit = tuning.get("загроза_за_удар", threat_per_hit)
+	level = int(tuning.get("рівень", level))
+	respect_range = tuning.get("повага", respect_range)
+	experience_range = tuning.get("досвід", experience_range)
+	drop_table = tuning.get("дроп", drop_table)
 	skills_by_case = tuning.get("скіли", skills_by_case)
 	spawn_buff = tuning.get("баф при появі", spawn_buff)
 	for key in skills_by_case.values():

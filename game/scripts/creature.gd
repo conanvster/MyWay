@@ -32,7 +32,14 @@ const CORPSE_PLAYER := 1200.0
 ## З яким запасом здоров'я гравець підводиться (П-69).
 const REVIVE_SHARE := 0.30
 
+## Стати БАЗОВІ: раса, стать, рівень. Їх міняє тільки розвиток.
+var base_stats := Stats.new()
+## Стати ЧИННІ: базові плюс усе, що зараз висить (крок 2.1). Саме їх
+## питає бій — щоб дебаф на чутливість чи баф на відкат діяли самі собою,
+## без окремої перевірки в кожній формулі.
 var stats := Stats.new()
+## Бафи й дебафи. Кожен зі строком (П-108).
+var states := States.new()
 var hp := 0
 ## Мана. Витрачати її поки нічим — заглушка до вмінь (крок 2.2), але HUD
 ## показує справжнє число, а не намальоване.
@@ -61,10 +68,23 @@ var queue: Array[String] = []
 
 
 func _ready() -> void:
+	refresh_stats()
 	if hp == 0:
 		hp = stats.max_hp()
 	if mp == 0:
 		mp = stats.max_mp()
+
+
+## Перерахувати чинні стати. Кликати після кожної зміни станів або
+## базових статів; сам бій цього не робить — він просто читає `stats`.
+func refresh_stats() -> void:
+	stats = states.applied_to(base_stats)
+
+
+## Повісити баф або дебаф і одразу перерахувати стати.
+func add_state(state: State) -> void:
+	states.apply(state)
+	refresh_stats()
 
 
 func die() -> void:
@@ -149,6 +169,10 @@ func server_step(delta: float) -> void:
 
 	attack_ready_in = maxf(0.0, attack_ready_in - delta)
 	busy_in = maxf(0.0, busy_in - delta)
+
+	# Строк станів спливає на сервері; що скінчилось — перераховуємо.
+	if not states.tick(delta).is_empty():
+		refresh_stats()
 
 
 func is_alive() -> bool:

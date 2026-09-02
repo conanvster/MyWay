@@ -51,11 +51,16 @@ func setup(at: Vector3, of_kind: int, is_aggressive: bool,
 	_wander_to = at
 	# Заглушка до балансування: трохи слабший за гравця. Числа з даних,
 	# якщо вони є.
-	stats.strength = 7
-	stats.stamina = 4
-	stats.agility = 7
+	base_stats.strength = 7
+	base_stats.stamina = 4
+	base_stats.agility = 7
+	# Перерахувати ОБОВ'ЯЗКОВО тут, а не тільки в apply_tuning: без даних
+	# той повертається одразу, і монстр лишався б із чинними статами по
+	# 10 — тобто зі здоров'ям 100 замість 64. Спіймано пробою 02.09.
+	refresh_stats()
 	apply_tuning(tuning)
 	hp = stats.max_hp()
+	mp = stats.max_mp()
 
 
 ## Роздати числа з `дані/монстри.json`. Викликається і при появі, і коли
@@ -76,9 +81,12 @@ func apply_tuning(tuning: Dictionary) -> void:
 	wander_pace = tuning.get("блукання_темп", wander_pace)
 	threat_per_hit = tuning.get("загроза_за_удар", threat_per_hit)
 	var from_data: Dictionary = tuning.get("стати", {})
-	stats.strength = from_data.get("сила", stats.strength)
-	stats.stamina = from_data.get("витривалість", stats.stamina)
-	stats.agility = from_data.get("спритність", stats.agility)
+	base_stats.strength = from_data.get("сила", base_stats.strength)
+	base_stats.stamina = from_data.get("витривалість", base_stats.stamina)
+	base_stats.agility = from_data.get("спритність", base_stats.agility)
+	# Стати помінялись — чинні перерахувати, інакше баф лишиться на
+	# старих числах.
+	refresh_stats()
 
 
 func add_threat(id: int, amount: float) -> void:

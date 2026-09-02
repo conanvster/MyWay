@@ -40,6 +40,22 @@ func count() -> int:
 	return bases.size()
 
 
+## Комірки тіла, згори вниз — так, як людина вдягається.
+##
+## Пальців два, тож перстень має ДВІ комірки, хоч слот у речі один:
+## `slots_for` і перекладає одне в друге. Список тут, а не в показі, бо
+## його однаково перевіряє сервер.
+const BODY_SLOTS: Array[String] = ["голова", "підвіска", "тіло", "ремінь",
+		"рукавиці", "взуття", "зброя", "щит", "перстень-1", "перстень-2"]
+
+
+## У які комірки тіла годиться річ із таким слотом.
+static func slots_for(item_slot: String) -> Array:
+	if item_slot == "перстень":
+		return ["перстень-1", "перстень-2"]
+	return [item_slot] if BODY_SLOTS.has(item_slot) else []
+
+
 ## Зробити річ із бази. `rolled` порожній — афікси кидаються заново.
 func make(name: String, rolled: Array = []) -> Item:
 	if not has(name):
@@ -49,6 +65,7 @@ func make(name: String, rolled: Array = []) -> Item:
 	item.base = name
 	item.kind = str(data.get("вид", ""))
 	item.slot = str(data.get("слот", ""))
+	item.two_handed = bool(data.get("дві руки", false))
 	item.grade = str(data.get("грейд", "E"))
 	item.affixes = rolled if not rolled.is_empty() \
 			else _roll(item.grade, str(data.get("рід", "ч")))
@@ -86,24 +103,6 @@ func _roll(grade: String, gender: String = "ч") -> Array:
 			})
 			break        # з кожного боку не більше одного
 	return out
-
-
-## Що показати гравцеві: вдягнене окремо, решта окремо. Робиться тут, бо
-## і бій, і дії шлють одне й те саме, а знати про HUD їм не треба.
-static func bag_of(who: Node) -> Dictionary:
-	var worn: Array = []
-	var carried: Array = []
-	for at in who.things.size():
-		var item: Item = who.things[at]
-		var line := item.title()
-		if who.is_worn(at):
-			worn.append("%s: %s" % [item.slot, line])
-		else:
-			carried.append(line)
-	var stacks: Array = []
-	for name in who.items:
-		stacks.append("%s ×%d" % [name, int(who.items[name])])
-	return {"вдягнене": worn, "у торбі": carried + stacks}
 
 
 static func _grade_allows(item_grade: String, need: String) -> bool:

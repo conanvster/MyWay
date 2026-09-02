@@ -46,14 +46,6 @@ func to_server(method: StringName, args: Array = []) -> void:
 		_node.callv("rpc_id", [1, method] + args)
 
 
-## Показати гравцеві його торбу. Шлеться після кожної зміни, а не
-## щотіку: речі міняються рідко, а рядків там багато.
-func bag(id: int, who: Node) -> void:
-	var bag_data: Dictionary = ItemBook.bag_of(who)
-	to_one(id, &"client_bag", [PackedStringArray(bag_data["вдягнене"]),
-			PackedStringArray(bag_data["у торбі"])])
-
-
 ## Повідомлення в чат одному гравцеві.
 func notice(id: int, text: String) -> void:
 	to_one(id, &"client_notice", [text])

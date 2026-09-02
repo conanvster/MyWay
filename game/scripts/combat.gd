@@ -94,13 +94,30 @@ func clear_corpses() -> Array:
 			remove.append(id)
 			continue
 		# Не оживили за 20 хвилин — підводиться сам (П-69, П-70).
-		c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
-		c.place_at(Vector3(0, 1.5, 0), 0.0)
-		_link.to_watchers(id, &"client_revive", [id, c.hp])
-		# Окремим повідомленням, бо переставляння має бути стрибком:
-		# інакше труп проїде через усю мапу (вада 3 з PLAN.md).
-		_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])
+		revive(id)
 	return remove
+
+
+## Підняти труп гравця й поставити в місто.
+##
+## Одне місце на два випадки: строк у двадцять хвилин і кнопка
+## «Повернутися в місто» з вікна смерті. Якби вони жили окремо, числа
+## розійшлися б із першою ж правкою.
+##
+## Живого не піднімає — інакше кнопка стала б безплатним телепортом
+## додому просто посеред бою.
+func revive(id: int) -> bool:
+	var c: Node = _creatures.get(id)
+	if c == null or id < 0 or c.is_alive():
+		return false
+	c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
+	c.corpse_left = 0.0
+	c.place_at(Vector3(0, 1.5, 0), 0.0)
+	_link.to_watchers(id, &"client_revive", [id, c.hp])
+	# Окремим повідомленням, бо переставляння має бути стрибком:
+	# інакше труп проїде через усю мапу (вада 3 з PLAN.md).
+	_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])
+	return true
 
 
 # ── скіли (крок 2.2) ──────────────────────────────────────────────────
@@ -293,8 +310,6 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено: %s" % gone)
 			print("[смерть] %d загубив %s" % [victim_id, gone])
-		if not gone_all.is_empty():
-			_link.bag(victim_id, victim)
 	print("[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
@@ -322,7 +337,6 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 				% [killer.level, killer.stat_points])
 		print("[рівень] %d узяв %d рівень" % [me, killer.level])
 
-	var had: int = killer.things.size() + killer.items.size()
 	for row: Dictionary in victim.drop_table:
 		if randf() > float(row.get("шанс", 0.0)) * mult:
 			continue
@@ -331,8 +345,6 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 		if count <= 0:
 			continue
 		_give(me, killer, str(row["що"]), count)
-	if killer.things.size() + killer.items.size() != had:
-		_link.bag(me, killer)
 
 
 ## Покласти здобуте. Складані речі йдуть кількістю, поодинокі — кожна

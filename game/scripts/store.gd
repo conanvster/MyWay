@@ -156,6 +156,9 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"items": who.items,
 		"things": _things_row(who),
 		"gear": who.gear,
+		# Розкладка панелі — своя в кожного (її тягають мишею у вікні
+		# «Скіли»), тож без неї персонаж щоразу вертався б до типової.
+		"bar": who.bar,
 	}
 
 
@@ -192,6 +195,11 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	who.learned = _whole(row.get("skills", {}))
 	who.items = _whole(row.get("items", {}))
 	who.gear = _whole(row.get("gear", {}))
+	# Порожня розкладка — це «ще не розкладав»: тоді лишається типова з
+	# data/bar.json, яку вже поставив світ.
+	var saved_bar: Array = row.get("bar", [])
+	if not saved_bar.is_empty():
+		who.bar.assign(saved_bar)
 	who.place_at(Vector3(float(row.get("x", 0.0)), float(row.get("y", 1.5)),
 			float(row.get("z", 0.0))), 0.0)
 	# Здоров'я й ману ставимо після позиції: `place_at` їх не чіпає, але

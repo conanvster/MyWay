@@ -8,8 +8,15 @@ extends RefCounted
 ##
 ## Зовнішні знімалки під цим композитором не працюють: `grim` каже
 ## «compositor doesn't support wlr-screencopy».
+##
+## Без вікна знімати нічого: `frame_post_draw` там не настає ніколи, тож
+## одноразове під'єднання не знімається, а наступний виклик натикається на
+## «Signal is already connected». У безвіконній перевірці бою цей рядок
+## сипався щокадру й ховав усе інше — тому мовчки виходимо.
 
 static func take(from: Node) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
 	RenderingServer.frame_post_draw.connect(_save.bind(from),
 			CONNECT_ONE_SHOT)
 

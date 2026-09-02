@@ -30,9 +30,12 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_world = world
 	_link = link if link != null else Messenger.new(world)
 	_demo = OS.get_cmdline_user_args().has("--демо")
+	_windows = OS.get_cmdline_user_args().has("--вікна")
 
 
 var _demo := false
+## Показ відкриває «Речі» й «Стати», щоб їх було на чому побачити.
+var _windows := false
 var _demo_left := DEMO_START
 var _demo_step := 0
 var _shot_left := DEMO_START + 2.0
@@ -163,10 +166,20 @@ func demo(delta: float) -> void:
 
 	# Раз на п'ять секунд кажемо, скільки кадрів на секунду: без цього
 	# «швидше чи повільніше» лишається відчуттям, а не числом.
+	#
+	# Поруч — об'єкти й пам'ять. Клієнт показу одного разу набрав 28 ГіБ і
+	# машину поклав OOM-килер; за самими кадрами цього не видно було
+	# взагалі, а два ці числа кажуть одразу, чи щось накопичується і чи
+	# це вузли, чи сира пам'ять.
 	_fps_left -= delta
 	if _fps_left <= 0.0:
 		_fps_left = 5.0
-		print("[кадри] %d за секунду" % Engine.get_frames_per_second())
+		print("[кадри] %d за секунду · об'єктів %d · вузлів %d · пам'ять %d МіБ"
+				% [Engine.get_frames_per_second(),
+				   Performance.get_monitor(Performance.OBJECT_COUNT),
+				   Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+				   Performance.get_monitor(Performance.MEMORY_STATIC)
+						/ 1024 / 1024])
 
 	_shot_left -= delta
 	if _shot_left <= 0.0:
@@ -177,15 +190,39 @@ func demo(delta: float) -> void:
 		return
 	_demo_left = DEMO_EVERY
 	_demo_step += 1
-	if _demo_step == 1:
-		_link.to_server(&"use_slot", [2, false])   # взяти монстра
+	# Немає цілі — беремо наступного монстра. Раніше ціль бралась ЛИШЕ
+	# один раз, на початку: убивши першого, показ до кінця прогону казав
+	# «немає цілі», і ні друга ціль, ні підхід до неї не перевірялись.
+	# Вікна «Речі» й «Стати» руками ніхто не відкриє: у показу немає рук,
+	# а без них жоден знімок їх не покаже. Тому окремий прапорець
+	# `--вікна`, і відкриваються вони РАЗ, на шостому кроці — до нього
+	# вже щось убито, тож у торбі є здобич, а не порожні комірки.
+	if _windows and _demo_step == 6 and _world.hud != null:
+		_world.hud.show_windows()
+	var aimed: Node3D = _creatures.get(me.target_id)
+	if me.target_id == 0 or aimed == null or not aimed.is_alive():
+		_press("next_mob")
 		return
 	# Далі по колу: удар · вибух · удар · промінь — щоб на знімку було
 	# видно і бій, і відкати скілів на панелі.
+	# Через `use_slot`, а не навпростець: показ має ходити тим самим
+	# шляхом, що й людина, інакше підхід до цілі ніхто б не перевіряв.
 	match _demo_step % 4:
-		2: _link.to_server(&"use_slot", [5, false])  # енергетичний вибух
-		0: _link.to_server(&"use_slot", [6, false])  # енергетичний промінь
-		_: _link.to_server(&"strike")
+		2: _press(Actions.SKILL_PREFIX + "енергетичний-вибух")
+		0: _press(Actions.SKILL_PREFIX + "енергетичний-промінь")
+		_: _press("attack")
+
+
+## Натиснути ту комірку, у якій лежить ця дія.
+##
+## За НОМЕРОМ комірки шукати не можна: розкладку кожен складає під себе,
+## і показ, прив'язаний до номерів, ламається від першої ж перестановки.
+## Уже ламався: після зміни типової розкладки він бив «наступну ціль»
+## замість променя й не вбив нікого за півтори хвилини.
+func _press(action: String) -> void:
+	var slot := _bar.find(action)
+	if slot >= 0:
+		use_slot(slot, false)
 
 
 ## Осередок найближчої зони появи. Порожній вектор — зон немає.
@@ -217,7 +254,7 @@ func input(event: InputEvent) -> void:
 			return
 		var slot := slot_of(event.keycode)
 		if slot != -1:
-			_link.to_server(&"use_slot", [slot, event.shift_pressed])
+			use_slot(slot, event.shift_pressed)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
 		click_at(event.position)
@@ -327,3 +364,118 @@ func id_of(node: Object) -> int:
 ## стартовій сторінці, а двічі писати те саме не варто.
 func take_shot() -> void:
 	Shot.take(_world)
+
+
+# ── підійти й застосувати ─────────────────────────────────────────────
+#
+# Замовник узяв ціль, натиснув 6 — і не сталось нічого. Сервер чесно
+# відповідав «задалеко» й ДІЮ ВИКИДАВ: у черзі їй не місце, бо поки
+# дійдеш, вона вже застаріє. Але людина чекає іншого: «підійду й зроблю».
+#
+# Рішення на боці клієнта, і це не порушує П-08. Клієнт нічого не
+# вирішує — він лише йде до цілі (як ходить від кліку мишею) і повторює
+# натискання, коли вже близько. Сервер перевіряє відстань так само
+# суворо, як і раніше.
+
+## Скільки щонайбільше йти до цілі, перш ніж кинути намір.
+const REACH_TIME := 8.0
+## Підходимо трохи ближче за межу: ціль рухається, і на самій межі
+## перший же її крок робив би «задалеко» знову.
+const REACH_MARGIN := 0.85
+
+## Розкладка панелі: та сама, що в показі. Потрібна, щоб знати, яка
+## дальність у того, що натиснули.
+var _bar: Array[String] = []
+var _wait_slot := -1
+var _wait_shift := false
+var _wait_target := 0
+var _wait_range := 0.0
+var _wait_left := 0.0
+
+
+func set_bar(bar: Array) -> void:
+	_bar.assign(bar)
+
+
+## Яка дальність потрібна цій дії. 0 — дія без відстані (перебір цілей,
+## «сісти»), таку шлемо одразу.
+func _reach_of(action: String) -> float:
+	if action == "attack":
+		return Creature.ATTACK_RANGE
+	# Приставку беремо з `Actions`, а не пишемо вдруге: коли її колись
+	# перейменують, друга копія тихо перестане збігатись.
+	if not action.begins_with(Actions.SKILL_PREFIX):
+		return 0.0
+	var book: SkillBook = _world.data.skills if _world.data != null else null
+	if book == null:
+		return 0.0
+	var skill: Skill = book.get_skill(
+			action.substr(Actions.SKILL_PREFIX.length()))
+	if skill == null:
+		return 0.0
+	# Рівень скіла знає сервер, не клієнт. Беремо перший — у нього
+	# дальність найменша, тож підійдемо трохи ближче, ніж конче треба.
+	return skill.range_at(1)
+
+
+func use_slot(slot: int, shift: bool) -> void:
+	_wait_slot = -1
+	var me: Node = _me()
+	var action: String = _bar[slot] if slot < _bar.size() else ""
+	var need := _reach_of(action)
+	if me == null or need <= 0.0 or me.target_id == 0:
+		_link.to_server(&"use_slot", [slot, shift])
+		return
+	var target: Node3D = _creatures.get(me.target_id)
+	# Мертвої чи зниклої цілі не доганяємо: хай сервер скаже, чому ні.
+	if target == null or not target.is_alive():
+		_link.to_server(&"use_slot", [slot, shift])
+		return
+	if me.global_position.distance_to(target.global_position) <= need:
+		_link.to_server(&"use_slot", [slot, shift])
+		return
+	_wait_slot = slot
+	_wait_shift = shift
+	_wait_target = me.target_id
+	_wait_range = need * REACH_MARGIN
+	_wait_left = REACH_TIME
+	_say("підходжу до цілі")
+
+
+## Крок підходу. Кличеться щокадру з `world._process` на клієнті.
+func approach(delta: float) -> void:
+	if _wait_slot < 0:
+		return
+	var me: Node = _me()
+	if me == null or not me.is_alive():
+		_wait_slot = -1
+		return
+	# Клавіатура старша за намір, як і скрізь: пішов сам — намір знято.
+	if Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_A) \
+			or Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_D):
+		_wait_slot = -1
+		return
+	var target: Node3D = _creatures.get(_wait_target)
+	if target == null or not target.is_alive() or me.target_id != _wait_target:
+		_wait_slot = -1
+		return
+	_wait_left -= delta
+	if _wait_left <= 0.0:
+		_wait_slot = -1
+		_say("до цілі не дійти")
+		return
+	if me.global_position.distance_to(target.global_position) <= _wait_range:
+		_link.to_server(&"use_slot", [_wait_slot, _wait_shift])
+		me.walk_to = Vector3.ZERO
+		_wait_slot = -1
+		return
+	me.walk_to = target.global_position
+
+
+## Своє повідомлення — тим самим шляхом, що й серверне: у показ і в
+## консоль. Без друку його не видно у перевірках, а перевіряти підхід до
+## цілі очима щоразу — це те, від чого ми й тікаємо.
+func _say(text: String) -> void:
+	print("[гра] ", text)
+	if _world.hud != null:
+		_world.hud.notice(text)

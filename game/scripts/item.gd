@@ -15,6 +15,8 @@ extends RefCounted
 var base := ""          ## ключ у `data/items.json`
 var kind := ""          ## зброя · обладунок · амулет
 var slot := ""          ## куди вдягається
+## Зброя на дві руки: щит із нею не вдягнути (і навпаки).
+var two_handed := false
 var grade := "E"
 ## Стати від бази й від афіксів, уже складені: "сила" -> 3.
 var stats: Dictionary = {}

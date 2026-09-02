@@ -170,16 +170,48 @@ func add_thing(item: Item) -> int:
 	return things.size() - 1
 
 
-## Вдягти. Що вже стояло в цьому слоті — знімається саме собою.
-func equip(at: int) -> String:
+## Вдягти. Що вже стояло в цій комірці — знімається саме собою.
+##
+## `want` — у яку саме комірку тіла (для перснів, бо пальців два).
+## Порожнє — гра бере першу вільну, а як вільних немає, то першу.
+##
+## Два правила про руки, і обидва тут, а не в показі: показ нічого не
+## вирішує (П-08), а обійти його — це підказати клієнтові, що можна.
+func equip(at: int, want: String = "") -> String:
 	if at < 0 or at >= things.size():
 		return "такої речі немає"
 	var item: Item = things[at]
-	if item.slot == "":
+	var places: Array = ItemBook.slots_for(item.slot)
+	if places.is_empty():
 		return "%s не вдягається" % item.title()
-	gear[item.slot] = at
+
+	# Сокира на дві руки звільняє щит; щит не вдягнеться, поки в руках
+	# дворучна.
+	if item.slot == "зброя" and item.two_handed:
+		gear.erase("щит")
+	if item.slot == "щит":
+		var weapon: Item = worn_in("зброя")
+		if weapon != null and weapon.two_handed:
+			return "«%s» — на дві руки, щит нікуди подіти" % weapon.title()
+
+	var place: String = want if places.has(want) else ""
+	if place == "":
+		place = places[0]
+		for free in places:
+			if not gear.has(free):
+				place = free
+				break
+	gear[place] = at
 	refresh_stats()
 	return ""
+
+
+## Що стоїть у цій комірці тіла. Порожньо — нічого.
+func worn_in(slot: String) -> Item:
+	if not gear.has(slot):
+		return null
+	var at: int = int(gear[slot])
+	return things[at] if at >= 0 and at < things.size() else null
 
 
 func unequip(slot: String) -> void:
@@ -239,6 +271,56 @@ func is_corpse() -> bool:
 func model() -> Node3D:
 	var body := get_node_or_null("Mesh")
 	return body if body is CreatureModel or body is SkinnedModel else null
+
+
+## Підпис над головою: хто це і якого рівня.
+##
+## Досі ціль у показі звалась «монстр 22» — номером з'єднання, який не
+## означає нічого. Тепер над кожним видно ім'я, а колір каже головне:
+## по кому ти влучиш, а від кого краще піти.
+##
+## `Label3D` навмисно замість напису в показі: він сам обертається до
+## камери, сам ховається за стіною й не потребує щокадрового
+## перерахунку екранних координат.
+const TAG_HEIGHT := 0.55
+
+
+func show_tag(text: String, tint: Color) -> void:
+	var tag: Label3D = get_node_or_null("Підпис")
+	if tag == null:
+		tag = Label3D.new()
+		tag.name = "Підпис"
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.no_depth_test = false
+		tag.font_size = 48
+		tag.outline_size = 14
+		tag.outline_modulate = Color(0, 0, 0, 0.85)
+		# Сталий розмір на екрані, а не у світі. Інакше та сама назва
+		# здалеку зникає, а зблизька займає пів екрана — обидва випадки
+		# знято. Так само роблять усі MMO з іменами над головами.
+		tag.fixed_size = true
+		tag.pixel_size = 0.0009
+		add_child(tag)
+	# Над головою: зріст моделі плюс трохи. У фігурок і моделей висота
+	# однакова за домовленістю (П-105), тож одного числа досить.
+	tag.position = Vector3(0.0, body_height() + TAG_HEIGHT, 0.0)
+	tag.text = text
+	tag.modulate = tint
+
+
+## Наскільки істота висока. Потрібно, щоб підпис не вліз у голову.
+func body_height() -> float:
+	var body := model()
+	if body == null:
+		return 1.75
+	# У фігурки з примітивів це `body_height`, у моделі з набору —
+	# `height`. Обидві означають ОДНЕ Й ТЕ САМЕ (зріст у метрах, П-105),
+	# просто назвались по-різному.
+	if "body_height" in body:
+		return float(body.body_height)
+	if "height" in body:
+		return float(body.height)
+	return 1.75
 
 
 ## Труп лягає. Викликає клієнт — це суто вигляд.

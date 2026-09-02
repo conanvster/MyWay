@@ -25,9 +25,30 @@ if [ "${open_now:-0}" -ge 2 ] && [ "${1:-}" != "--stop" ]; then
 fi
 
 if [ "${1:-}" = "--stop" ]; then
-    for name in "godot --headless" "postgrest"; do
-        pkill -f "$name" 2>/dev/null && echo "зупинено: $name"
+    # Своїх предків не вбиваємо. `pkill -f "godot --headless"` збігається
+    # й з оболонкою, у чиєму РЯДКУ КОМАНДИ є цей текст, — тобто з тією,
+    # що зараз викликала цей скрипт. Так двічі обривався власний прогін
+    # (02.09.2026, і ще двічі 03.09.2026, поки це не полагодили).
+    ancestors=" $$ "
+    walk=$$
+    while [ "$walk" -gt 1 ] && [ -r "/proc/$walk/stat" ]; do
+        walk=$(awk '{print $4}' "/proc/$walk/stat" 2>/dev/null || echo 1)
+        ancestors="$ancestors$walk "
     done
+    for name in "godot --headless" "postgrest"; do
+        killed=0
+        for victim in $(pgrep -f "$name" 2>/dev/null || true); do
+            case "$ancestors" in
+                *" $victim "*) continue ;;
+            esac
+            kill "$victim" 2>/dev/null && killed=$((killed + 1))
+        done
+        [ "$killed" -gt 0 ] && echo "зупинено: $name ($killed)"
+    done
+    # Мітка «світ збудовано», яку кладе сервер: убитий на місці, він її
+    # прибрати не встигає. Стартова сторінка вірить мітці лише при
+    # зайнятому порті, тож це прибирання не для неї, а для чистоти диска.
+    rm -f "$HOME/.local/share/godot/app_userdata/гра-lineage/сервер.json"
     exit 0
 fi
 

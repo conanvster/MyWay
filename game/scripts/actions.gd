@@ -149,7 +149,6 @@ func use_item(me: int, name: String) -> bool:
 	a.take_item(name)
 	a.mp = mini(full, a.mp + back)
 	_link.notice(me, "%s: мани +%d" % [name, back])
-	_link.bag(me, a)
 	return true
 
 

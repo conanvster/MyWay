@@ -72,6 +72,44 @@ func _paint(color: String) -> StandardMaterial3D:
 	return paint
 
 
+## Поверхня з крапом — замість текстури, якої в нас немає.
+##
+## У наборі є стіни, дахи й камінь, а землі й трави немає. Рівний колір
+## без нічого читається саме так, як сказав замовник: «тіні від
+## ландшафту є, а текстури немає» — бо її й справді немає, є заливка.
+##
+## Тому робимо свою: шум трипланарно поверх кольору. Трипланарно — щоб не
+## розгортати UV на рельєфі, який будується кодом; `size` задає, через
+## скільки метрів візерунок повторюється.
+func _speckled(color: String, size: float, strength: float
+		) -> StandardMaterial3D:
+	var paint := StandardMaterial3D.new()
+	paint.albedo_color = Color(color)
+	paint.roughness = 0.95
+	var noise := FastNoiseLite.new()
+	noise.seed = SEED
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	# Частота — у пікселях текстури, не в метрах. При 0,9 кожен піксель
+	# уже незалежний, і з двох кроків це зливається в рівний тон — саме
+	# так і вийшло з першої спроби. Потрібні плями на пів текстури.
+	noise.frequency = 0.012
+	noise.fractal_octaves = 4
+	var grain := NoiseTexture2D.new()
+	grain.noise = noise
+	grain.width = 256
+	grain.height = 256
+	grain.seamless = true
+	# Крап не має ставати плямами: зводимо його до вузької смуги біля
+	# одиниці, інакше земля рябіє, як шкура далматинця.
+	grain.color_ramp = Gradient.new()
+	grain.color_ramp.set_color(0, Color(1, 1, 1) * (1.0 - strength))
+	grain.color_ramp.set_color(1, Color(1, 1, 1))
+	paint.albedo_texture = grain
+	paint.uv1_triplanar = true
+	paint.uv1_scale = Vector3.ONE / maxf(0.5, size)
+	return paint
+
+
 ## Godot стирає ім'я, якщо таке вже є в батька: другий «Будинок» стає
 ## «@StaticBody3D@8». Тому нумеруємо самі — у редакторі має бути видно,
 ## де що, а не сорок однакових значків.
@@ -172,8 +210,10 @@ func _ground() -> void:
 	var view := MeshInstance3D.new()
 	view.name = "Меш"
 	view.mesh = surface.commit()
+	# Земля — найбільша поверхня у грі, і саме на ній рівний колір
+	# найпомітніший. Візерунок через 12 метрів: дрібніше рябіє здалеку.
 	view.set_surface_override_material(0,
-			_paint(str(earth.get("колір", "#4a5c3a"))))
+			_speckled(str(earth.get("колір", "#4a5c3a")), 12.0, 0.22))
 	body.add_child(view)
 
 	var shape := HeightMapShape3D.new()
@@ -236,8 +276,9 @@ func _city() -> void:
 	var stone := MeshInstance3D.new()
 	stone.name = "Брук"
 	stone.mesh = road
+	# Брук — камінь, і візерунок на ньому має бути дрібніший за земляний.
 	stone.set_surface_override_material(0,
-			_paint(str(city.get("колір бруку", "#6e6459"))))
+			_speckled(str(city.get("колір бруку", "#6e6459")), 4.0, 0.30))
 	stone.position = _on_ground(center) + Vector3(0, 0.06, 0)
 	add_child(stone)
 
@@ -526,7 +567,10 @@ func fog_to_vision(radius: float) -> void:
 	# п'ять кроків.
 	_air.fog_mode = Environment.FOG_MODE_DEPTH
 	_air.fog_depth_end = radius * spare
-	_air.fog_depth_begin = _air.fog_depth_end * 0.45
+	# Туман починається не з половини відстані, а з двох третин: при 0,45
+	# він з'їдав колір землі вже за двадцять чотири метри, і краєвид
+	# виглядав як біла пляма з тінями.
+	_air.fog_depth_begin = _air.fog_depth_end * 0.66
 	_air.fog_depth_curve = 1.4
 	# Небо туман не чіпає: інакше зникає обрій, і світ стає коробкою.
 	_air.fog_sky_affect = 0.25

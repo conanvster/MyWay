@@ -55,9 +55,21 @@ var _names: Dictionary = {}
 var _signed: Dictionary = {}
 
 var _since_tick := 0.0
+## Відбиток статів кожного гравця: щоб слати сторінку «Стати» лише тоді,
+## коли числа змінились.
+var _stats_mark: Dictionary = {}
+## Те саме для вивчених скілів.
+var _skills_mark: Dictionary = {}
+## І для вмісту торби.
+var _bag_mark: Dictionary = {}
 
 
 func _ready() -> void:
+	# Мітку від попереднього сервера прибираємо ще до того, як почали
+	# будувати: інакше стартова сторінка секунду світила б зелене на
+	# чужу, стару мітку при вже зайнятому порті.
+	if Net.is_server:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
 	data = GameData.new()
 	data.load_all()
 	vision = Vision.new(creatures)
@@ -87,7 +99,11 @@ func _ready() -> void:
 					print("[перевірка] %s -> %s" % [name, reply]))
 			store.call_rpc("login", {"login": "конан", "password": "таємниця"})
 		multiplayer.peer_disconnected.connect(_on_left)
-		spawner.start(_zones())
+		if OS.get_cmdline_user_args().has("--полігон"):
+			_range()
+		else:
+			spawner.start(_zones())
+		_mark_ready()
 		print("[світ] сервер чекає гравців")
 	else:
 		# Спавн просимо самі, коли сцена вже здатна приймати виклики.
@@ -100,6 +116,76 @@ func _ready() -> void:
 		# І аж ТЕПЕР стукаємо: доки була стартова сторінка, світу не було,
 		# і пакети шукали б вузол, якого не існує.
 		Net.join()
+
+
+## Мітка «світ збудовано». Її читає стартова сторінка.
+##
+## Навіщо вона, коли є порт. Порт ENet займається в перший же кадр, ще до
+## того, як прочитано дані й поставлено 70 дерев і три десятки монстрів.
+## Якби сторінка світила зелене за самим портом, кнопка «Зайти в гру»
+## відмикалась би на секунду раніше, ніж є куди заходити, — і ми б
+## вернули собі ту саму ваду, заради якої сторінку й писали.
+##
+## У мітці лежить номер процесу: за ним сторінка може зупинити сервер,
+## якого сама не піднімала (наприклад, запущений `./run-server.sh`).
+const READY_MARK := "user://сервер.json"
+
+
+func _mark_ready() -> void:
+	var file := FileAccess.open(READY_MARK, FileAccess.WRITE)
+	if file == null:
+		print("[світ] ‼ не вдалось записати мітку %s: %s"
+				% [READY_MARK, error_string(FileAccess.get_open_error())])
+		return
+	file.store_string(JSON.stringify({
+			"номер": OS.get_process_id(),
+			"порт": Net.PORT,
+			"коли": int(Time.get_unix_time_from_system())}))
+
+
+## Полігон: закрита ділянка для перевірок (`-- --полігон`).
+##
+## Замість десяти зон і трьох десятків монстрів світ дістає РІВНО трьох
+## зайців на 5, 7 і 9 метрах від місця появи. Навіщо саме так:
+##
+## - **5 метрів** — щоб перевірка бою була про те, що просили: побачив
+##   ціль неподалік, дійшов, убив, отримав здобич;
+## - **заєць** (вид 2) — 1 рівня, повільний і не агресивний: він не вб'є
+##   того, хто його перевіряє, і не втече за обрій;
+## - **троє, а не один** — з одного зайця здобич падає з імовірністю 94%,
+##   і перевірка валилась би раз на шістнадцять запусків просто так. З
+##   трьох порожньо виходить раз на чотири тисячі;
+## - **на 5, 14 і 23 метрах, а не поруч** — заєць кличе своїх на 6 метрів.
+##   Коли вони стояли за 5, 7 і 9, на першу ж атаку збігались усі троє й
+##   забивали перевіряльника (заміряно: 100 здоров'я → труп). Проміжок 9
+##   метрів більший за поклик, тож б'єшся з одним;
+## - **місто** — земля тут рівна (краєвид вирівнює її в радіусі 26), тож
+##   ніхто не тоне й не застряє в горбі.
+##
+## Це НЕ лазівка: прапорець читається лише сервером при запуску, і жоден
+## клієнт до нього не дотягнеться.
+const RANGE_KIND := 2
+const RANGE_STEPS: Array[float] = [5.0, 14.0, 23.0]
+
+
+func _range() -> void:
+	for i in RANGE_STEPS.size():
+		var at := Vector3(RANGE_STEPS[i], 0.0, 0.0)
+		at.y = ground_at(at.x, at.z) + 1.0
+		var mob: Node = spawn(-(i + 1), at)
+		mob.setup(at, RANGE_KIND, false, data.for_kind(RANGE_KIND))
+	print("[полігон] %s, штук %d, найближчий за %.1f м"
+			% [data.for_kind(RANGE_KIND).get("назва", "?"),
+			   RANGE_STEPS.size(), RANGE_STEPS[0]])
+
+
+## Сервер іде — мітку прибираємо. На цьому не можна будувати: заміряно
+## 02.09.2026, що при `kill` (як робить `./play.sh --stop`) цей виклик до
+## нас не доходить, і мітка лишається на диску. Тому сторінка вірить їй
+## ЛИШЕ при зайнятому порті, а новий сервер стирає стару мітку в `_ready`.
+func _exit_tree() -> void:
+	if Net.is_server:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
 
 
 func _physics_process(delta: float) -> void:
@@ -139,6 +225,7 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	if not Net.is_server:
 		view.smooth(delta)
+		view.approach(delta)
 		view.demo(delta)
 		return
 
@@ -159,7 +246,9 @@ func _serve(peer: int) -> void:
 	var diff := vision.update(peer)
 	for id in diff["appeared"]:
 		var other: Node3D = creatures[id]
-		rpc_id(peer, "client_spawn", id, other.global_position, other.facing)
+		rpc_id(peer, "client_spawn", id, other.global_position,
+				other.facing, _kind_of(other), _names.get(id, ""),
+				other.level)
 		# Смуга здоров'я цілі мусить знати, скільки його всього.
 		rpc_id(peer, "client_vitals", id, other.hp, other.stats.max_hp())
 	for id in diff["gone"]:
@@ -177,6 +266,26 @@ func _serve_self(peer: int) -> void:
 			me.stats.max_mp(), _slot_cooldowns(me), me.busy_in,
 			PackedStringArray(me.queue), me.level, me.respect,
 			combat.progress.need_for(me.level, me.race, me.sex))
+	# Стати шлемо не щотіку, а коли вони справді змінились: рівень, речі,
+	# баф. Відбиток дешевий — п'ять чисел і рівень.
+	var mark := "%d/%d/%d/%d/%d/%d/%d" % [me.level, me.stat_points,
+			me.stats.strength, me.stats.agility, me.stats.stamina,
+			me.stats.intellect, me.stats.sense]
+	if _stats_mark.get(peer, "") != mark:
+		_stats_mark[peer] = mark
+		send_stats(peer)
+	# Те саме для вивченого: руна або новий рівень скіла мають одразу
+	# з'явитись у вікні «Скіли».
+	var learned_mark := str(me.learned)
+	if _skills_mark.get(peer, "") != learned_mark:
+		_skills_mark[peer] = learned_mark
+		send_skills(peer)
+	# І для торби: здобич падає в бою, і вікно речей має це побачити без
+	# перевідкривання.
+	var bag_mark := "%d/%s/%s" % [me.things.size(), me.items, me.gear]
+	if _bag_mark.get(peer, "") != bag_mark:
+		_bag_mark[peer] = bag_mark
+		send_things(peer)
 
 
 ## Скільки лишилось відкату на кожній комірці панелі. Рахує сервер, бо
@@ -324,6 +433,48 @@ func use_slot(slot: int, shift: bool = false) -> void:
 		actions.use_slot(multiplayer.get_remote_sender_id(), slot, shift)
 
 
+## Дії, які можна класти на панель без жодного вивчення: вони є в усіх.
+const BASIC_SLOTS: Array[String] = ["", "attack", "next_player", "next_mob",
+		"next_player_corpse", "next_mob_corpse", "corpse_skill", "taunt",
+		"sit"]
+
+
+## Перекласти комірку панелі (перетягуванням у вікні «Скіли»).
+##
+## Перевіряє СЕРВЕР: інакше будь-хто поклав би собі скіл, якого не вчив, і
+## диспетчер узяв би його за чисту монету.
+@rpc("any_peer", "call_remote", "reliable")
+func set_slot(slot: int, action: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null or slot < 0 or slot >= a.bar.size():
+		return
+	var allowed: bool = action in BASIC_SLOTS
+	if not allowed and action.begins_with(Actions.SKILL_PREFIX):
+		allowed = a.knows(action.substr(Actions.SKILL_PREFIX.length()))
+	if not allowed:
+		link.notice(id, "цього на панель не покласти")
+		return
+	a.bar[slot] = action
+	rpc_id(id, "client_bar", PackedStringArray(a.bar))
+
+
+## «Повернутися в місто» з вікна смерті.
+##
+## Робить рівно те саме, що зробив би строк у двадцять хвилин, тільки
+## зараз: те саме здоров'я, те саме місце. Живому це нічого не дає —
+## `combat.revive` відмовить, тож телепортом додому воно не стане.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_revive() -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if combat.revive(id):
+		print("[світ] %d повернувся в місто" % id)
+
+
 ## Під водою (П-61). Рівень моря знає краєвид — він його й будував.
 func _tick_water(delta: float) -> void:
 	var land: Node = get_node_or_null("Landscape")
@@ -420,13 +571,175 @@ func _on_joined(id: int) -> void:
 	for skill_key in data.starting_skills:
 		a.learn(skill_key, int(data.starting_skills[skill_key]))
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
-	rpc_id(id, "client_spawn", id, a.global_position, a.facing)
+	rpc_id(id, "client_spawn", id, a.global_position, a.facing,
+			_kind_of(a), _names.get(id, ""), a.level)
 	rpc_id(id, "client_vision", a.vision_radius())
 	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
 	rpc_id(id, "client_bar", PackedStringArray(a.bar))
-	link.bag(id, a)
 	vision.watch(id)
+	send_stats(id)
+	send_skills(id)
+	send_things(id)
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
+
+
+## Що показувати на сторінці «Стати». Збирає СЕРВЕР: у клієнта ні базових
+## статів, ні спорядження немає й бути не повинно (П-08).
+func _stats_row(a: Node) -> Dictionary:
+	return {
+		"раса": a.race,
+		"стать": a.sex,
+		"рівень": a.level,
+		"очки": a.stat_points,
+		"сила": a.stats.strength,
+		"сила базова": a.base_stats.strength,
+		"спритність": a.stats.agility,
+		"спритність базова": a.base_stats.agility,
+		"витривалість": a.stats.stamina,
+		"витривалість базова": a.base_stats.stamina,
+		"інтелект": a.stats.intellect,
+		"інтелект базова": a.base_stats.intellect,
+		"чуття": a.stats.sense,
+		"чуття базова": a.base_stats.sense,
+		"здоров'я": a.stats.max_hp(),
+		"мана": a.stats.max_mp(),
+		"атака": a.stats.physical_attack(),
+		"магічна атака": a.stats.magical_attack(),
+		"захист": a.stats.physical_defence(),
+		"магічний захист": a.stats.magical_defence(),
+	}
+
+
+## Що вміє гравець: ключ, назва, грейд, рівень і числа поточного рівня.
+## Збирає сервер — у клієнта книги скілів для ЧУЖИХ рівнів немає.
+func _skills_row(a: Node) -> Array:
+	var out: Array = []
+	for key: String in a.learned:
+		var skill: Skill = data.skills.get_skill(key)
+		if skill == null:
+			continue
+		var level: int = int(a.learned[key])
+		out.append({
+			"ключ": key,
+			"назва": skill.name,
+			"грейд": skill.grade,
+			"рівень": level,
+			"рівнів": skill.max_level(),
+			"мана": skill.mana(level),
+			"дальність": skill.range_at(level),
+		})
+	return out
+
+
+func send_skills(id: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or id <= 0:
+		return
+	rpc_id(id, "client_skills", _skills_row(a))
+
+
+## Речі гравця: поодинокі (з афіксами) і складані.
+func _bag_row(a: Node) -> Array:
+	var out: Array = []
+	var where := {}
+	for slot in a.gear:
+		where[int(a.gear[slot])] = slot
+	for at in a.things.size():
+		var item: Item = a.things[at]
+		var lines := PackedStringArray()
+		for stat_name in item.stats:
+			lines.append("%s +%d" % [stat_name, int(item.stats[stat_name])])
+		out.append({
+			"номер": at,
+			"назва": item.title(),
+			"вид": item.kind,
+			"слот": item.slot,
+			"комірки": ItemBook.slots_for(item.slot),
+			"дві руки": item.two_handed,
+			"грейд": item.grade,
+			"вдягнене": a.is_worn(at),
+			"де": str(where.get(at, "")),
+			"стати": ", ".join(lines),
+		})
+	return out
+
+
+func _stacks_row(a: Node) -> Array:
+	var out: Array = []
+	for name in a.items:
+		var base: Dictionary = data.items.base_of(str(name))
+		out.append({
+			"назва": str(name),
+			"вид": str(base.get("вид", "")),
+			"грейд": str(base.get("грейд", "")),
+			"скільки": int(a.items[name]),
+			"придатна": not base.get("дія", {}).is_empty(),
+		})
+	return out
+
+
+func send_things(id: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or id <= 0:
+		return
+	rpc_id(id, "client_things", _bag_row(a), _stacks_row(a))
+
+
+## Вдягти річ із торби. Номер перевіряє сама істота (`equip`), а слот вона
+## ж і звільняє: що там стояло, знімається саме собою.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_wear(at: int, want: String = "") -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var why: String = a.equip(at, want)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "вдягнено: %s" % a.things[at].title())
+	_after_bag(id, a)
+
+
+## Зняти те, що стоїть у цьому слоті.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_take_off(slot: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null or not a.gear.has(slot):
+		return
+	a.unequip(slot)
+	link.notice(id, "знято: %s" % slot)
+	_after_bag(id, a)
+
+
+## Ужити складану річ — кристал душі й таке інше.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_use(name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if actions.use_item(id, name):
+		_after_bag(id, creatures.get(id))
+
+
+## Після будь-якої зміни в торбі: сама торба, стати (спорядження їх
+## зсуває) і перелік речей для вікна.
+func _after_bag(id: int, a: Node) -> void:
+	send_things(id)
+	send_stats(id)
+
+
+## Переслати гравцеві його стати. Кличеться там, де числа могли змінитись.
+func send_stats(id: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or id <= 0:
+		return
+	rpc_id(id, "client_stats", _stats_row(a))
 
 
 func _on_left(id: int) -> void:
@@ -434,6 +747,9 @@ func _on_left(id: int) -> void:
 	_save_one(id)
 	_names.erase(id)
 	_signed.erase(id)
+	_stats_mark.erase(id)
+	_skills_mark.erase(id)
+	_bag_mark.erase(id)
 	vision.drop_watcher(id)
 	remove(id)
 	print("[світ] пішов %d, лишилось %d" % [id, creatures.size()])
@@ -441,18 +757,96 @@ func _on_left(id: int) -> void:
 
 # ── клієнт: що надходить від сервера ──────────────────────────────────
 
+## Хто це такий: вид монстра числом.
+##
+## Без цього клієнт знав про істоту лише номер з'єднання — і показував
+## «монстр 22». Вид досить надіслати числом: назву, рівень, колір і зріст
+## клієнт бере з тих самих `data/mobs.json`, що й сервер.
+func _kind_of(who: Node) -> int:
+	return int(who.kind) if "kind" in who else 0
+
+
 @rpc("authority", "call_remote", "reliable")
-func client_spawn(id: int, pos: Vector3, look: float) -> void:
+func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
+		title: String = "", level: int = 1) -> void:
 	if creatures.has(id):
 		return
 	var a := spawn(id, pos)
 	a.place_at(pos, look)
+	a.level = level
+	# Монстрові дістається вигляд і назва з даних — тих самих, що в
+	# сервера. Досі клієнт малював усіх однаковими сірими фігурками, бо
+	# виду просто не знав.
+	if id < 0 and kind > 0:
+		var about: Dictionary = data.for_kind(kind)
+		a.kind = kind
+		a.apply_tuning(about)
+		_titles[id] = str(about.get("назва", "монстр"))
+		a.level = int(about.get("рівень", level))
+	else:
+		_titles[id] = title if title != "" else "гравець %d" % id
+	_tag(id)
 	if id == multiplayer.get_unique_id():
 		a.become_local()
 		view.entered_world()
 		hud = HUD.new()
 		hud.setup(self)
+		# Кнопка «Повернутися в місто» ходить тим самим шляхом, що й будь-яке
+		# натискання людини: показ нічого не вирішує (П-08), він лише просить.
+		hud.wants_revive.connect(func() -> void: rpc_id(1, "ask_revive"))
+		# Перекладену комірку підтверджує сервер: він перевіряє, чи скіл
+		# узагалі вивчено, і сам шле назад нову розкладку.
+		hud.wants_slot.connect(func(where: int, action: String) -> void:
+				rpc_id(1, "set_slot", where, action))
+		# Клік по комірці — те саме, що натиснути її число на клавіатурі,
+		# разом із підходом до цілі.
+		hud.wants_slot_used.connect(func(where: int) -> void:
+				view.use_slot(where, false))
+		# Речі: вдягти, зняти, ужити. Усе перевіряє сервер — показ лише
+		# просить (П-08).
+		hud.wants_wear.connect(func(at: int, slot: String) -> void:
+				rpc_id(1, "ask_wear", at, slot))
+		hud.wants_take_off.connect(func(slot: String) -> void:
+				rpc_id(1, "ask_take_off", slot))
+		hud.wants_use.connect(func(name: String) -> void:
+				rpc_id(1, "ask_use", name))
 		add_child(hud)
+
+
+## Імена всього, що видно: номер -> як підписувати.
+var _titles: Dictionary = {}
+## Мій рівень: від нього рахується колір чужого імені.
+var _my_level := 1
+
+
+## Підписати істоту над головою кольором за різницею рівнів.
+func _tag(id: int) -> void:
+	var who: Node = creatures.get(id)
+	if who == null or id == multiplayer.get_unique_id():
+		return          # над собою підпис не потрібен — це й так ти
+	var title: String = _titles.get(id, "?")
+	var text := "%s  [%d]" % [title, who.level] if id < 0 else title
+	who.show_tag(text, HUD.level_color(who.level - _my_level))
+
+
+## Перефарбувати всі підписи. Треба після кожного свого рівня: та сама
+## істота з «білої» стає «голубою», і це головна підказка, куди йти.
+func _tags_again() -> void:
+	for id in creatures:
+		_tag(id)
+
+
+## Як зветься істота — для рамки цілі в показі.
+func title_of(id: int) -> String:
+	return str(_titles.get(id, "монстр %d" % -id if id < 0 else "гравець"))
+
+
+## Колір імені цієї істоти для показу.
+func tint_of(id: int) -> Color:
+	var who: Node = creatures.get(id)
+	if who == null:
+		return Color(1, 1, 1)
+	return HUD.level_color(who.level - _my_level)
 
 
 ## Переставити стрибком: оживлення, а далі й телепорти. Окреме надійне
@@ -513,6 +907,33 @@ func client_hp(id: int, hp: int) -> void:
 		hud.set_hp(id, hp)
 
 
+## Що в торбі — для вікна «Речі».
+##
+## Не просто рядки: щоб річ можна було вдягти натиском, клієнтові
+## потрібен її НОМЕР у переліку, слот і те, чи вона вже на тілі.
+@rpc("authority", "call_remote", "reliable")
+func client_things(things: Array, stacks: Array) -> void:
+	if hud != null:
+		hud.set_things(things, stacks)
+
+
+## Що гравець уміє — для вікна «Скіли», з якого скіли тягнуть на панель.
+@rpc("authority", "call_remote", "reliable")
+func client_skills(list: Array) -> void:
+	if hud != null:
+		hud.set_skills(list)
+
+
+## Свої стати — для сторінки «Стати» в меню.
+##
+## Шлеться рідко: при вході й коли числа могли змінитись (рівень,
+## спорядження). Щотіку тут нема чого гнати — це не смуга здоров'я.
+@rpc("authority", "call_remote", "reliable")
+func client_stats(data: Dictionary) -> void:
+	if hud != null:
+		hud.set_stats(data)
+
+
 ## Скільки в істоти здоров'я всього — щоб смуга цілі мала від чого рахувати.
 @rpc("authority", "call_remote", "reliable")
 func client_vitals(id: int, hp: int, max_hp: int) -> void:
@@ -525,6 +946,9 @@ func client_vitals(id: int, hp: int, max_hp: int) -> void:
 func client_bar(bar: PackedStringArray) -> void:
 	if hud != null:
 		hud.set_bar(Array(bar))
+	# Ту саму розкладку знає й ввід: без неї він не скаже, чи потрібна
+	# натиснутій дії відстань (підхід до цілі).
+	view.set_bar(Array(bar))
 
 
 ## Свої числа щотіку: здоров'я, мана, відкат, замах, черга.
@@ -533,6 +957,9 @@ func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 		slots: PackedFloat32Array, busy_in: float,
 		queue: PackedStringArray, level: int, respect: int,
 		need: int) -> void:
+	if _my_level != level:
+		_my_level = level
+		_tags_again()
 	if hud != null:
 		hud.update_self(hp, max_hp, mp, max_mp, slots, busy_in, Array(queue))
 		hud.update_level(level, respect, need)
@@ -550,13 +977,6 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 func client_cast_end(id: int, done: bool) -> void:
 	if hud != null:
 		hud.cast_ended(id, done)
-
-
-## Торба: вдягнене й решта. Шлеться після кожної зміни.
-@rpc("authority", "call_remote", "reliable")
-func client_bag(worn: PackedStringArray, carried: PackedStringArray) -> void:
-	if hud != null:
-		hud.show_bag(Array(worn), Array(carried))
 
 
 ## Хтось замахнувся: показуємо рух рукою.
@@ -582,6 +1002,8 @@ func client_died(id: int) -> void:
 		creatures[id].lay_down()
 	if hud != null:
 		hud.set_hp(id, 0)
+		if id == multiplayer.get_unique_id():
+			hud.died()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -591,6 +1013,8 @@ func client_revive(id: int, hp: int) -> void:
 		creatures[id].stand_up()
 	if hud != null:
 		hud.set_hp(id, hp)
+		if id == multiplayer.get_unique_id():
+			hud.revived()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -602,6 +1026,7 @@ func client_notice(text: String) -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func client_despawn(id: int) -> void:
+	_titles.erase(id)
 	if creatures.has(id):
 		creatures[id].queue_free()
 		creatures.erase(id)

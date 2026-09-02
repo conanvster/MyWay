@@ -116,7 +116,10 @@ func _check() -> void:
 		_server_alive = status == StreamPeerTCP.STATUS_CONNECTED
 	probe.disconnect_from_host()
 	_paint()
-	if _probe != null and not _probe.get_http_client_status() != 0:
+	# Питаємо базу, лише коли попереднє питання вже відповіло: інакше
+	# HTTPRequest свариться, що зайнятий.
+	if _probe != null and _probe.get_http_client_status() \
+			== HTTPClient.STATUS_DISCONNECTED:
 		_probe.request(DB_URL + "/characters")
 
 

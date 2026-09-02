@@ -1,8 +1,11 @@
 extends SceneTree
 ## Парад істот: усі види в ряд, щоб бачити, хто на кого схожий.
 ##
-## Ганяти БЕЗ --headless, інакше нема чого знімати:
-##     godot --path game --script res://probes/parade.gd
+## Ганяти так:
+##     ./run.sh --парад
+##
+## Вікно лишається відкритим, камера сама обходить ряд. Esc — вийти,
+## пробіл — ще один знімок.
 ##
 ## Знімок лягає в user://; шлях друкується.
 
@@ -77,6 +80,26 @@ func _go() -> void:
 	for i in 8:
 		await process_frame
 	Shot.take(world)
-	await process_frame
-	await process_frame
+
+	# Далі вікно лишається відкритим: парад для того й потрібен, щоб на
+	# істот ДИВИТИСЯ. Камера повільно обходить ряд; вийти — Esc або
+	# хрестик, знімок — пробіл.
+	print("\n  Esc — вийти · пробіл — знімок · камера обходить сама")
+	root.close_requested.connect(quit)
+	var angle := 0.0
+	var shot_held := false
+	while true:
+		await process_frame
+		if Input.is_key_pressed(KEY_ESCAPE):
+			break
+		if Input.is_key_pressed(KEY_SPACE):
+			if not shot_held:
+				Shot.take(world)
+			shot_held = true
+		else:
+			shot_held = false
+		angle += 0.0035
+		var far := 17.0
+		eye.position = Vector3(sin(angle) * far, 3.6, cos(angle) * far)
+		eye.look_at(Vector3(0, 1.0, 0))
 	quit()

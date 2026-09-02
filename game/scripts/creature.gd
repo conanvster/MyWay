@@ -124,6 +124,9 @@ var queue: Array[String] = []
 
 
 func _ready() -> void:
+	var body := get_node_or_null("Mesh")
+	if body is CreatureModel:
+		body.build()
 	refresh_stats()
 	if hp == 0:
 		hp = stats.max_hp()
@@ -151,7 +154,7 @@ func refresh_stats() -> void:
 
 
 ## Скільки цього стата дає вдягнене. Стати речей названі українською —
-## так їх пишуть у `дані/речі.json`, і так їх читає людина.
+## так їх пишуть у `data/items.json`, і так їх читає людина.
 func _gear_bonus(stat: String) -> int:
 	var total := 0
 	for slot in gear:
@@ -228,6 +231,14 @@ func extend_corpse() -> void:
 
 func is_corpse() -> bool:
 	return hp <= 0 and corpse_left > 0.0
+
+
+## Тіло, яке видно: або фігурка з примітивів, або готова модель із
+## набору. Обидві вміють `dress`, `animate` і `swing`, тож решті коду
+## однаково, що саме там стоїть. Може бути порожнім у пробах.
+func model() -> Node3D:
+	var body := get_node_or_null("Mesh")
+	return body if body is CreatureModel or body is SkinnedModel else null
 
 
 ## Труп лягає. Викликає клієнт — це суто вигляд.

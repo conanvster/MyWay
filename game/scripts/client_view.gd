@@ -100,6 +100,12 @@ func entered_world() -> void:
 
 
 func _me() -> Node:
+	# Без живого з'єднання номера немає, і питати його — помилка в журнал
+	# щокадру. Спіймано, коли сервер упав раніше за клієнт.
+	if _world.multiplayer.multiplayer_peer == null \
+			or _world.multiplayer.multiplayer_peer.get_connection_status() \
+			!= MultiplayerPeer.CONNECTION_CONNECTED:
+		return null
 	return _creatures.get(_world.multiplayer.get_unique_id())
 
 
@@ -109,8 +115,15 @@ func smooth(delta: float) -> void:
 	var k := 1.0 - exp(-SMOOTHING * delta)
 	for id in _creatures:
 		var a: Node3D = _creatures[id]
+		var was := a.global_position
 		a.global_position = a.global_position.lerp(a.server_position, k)
 		a.rotation.y = lerp_angle(a.rotation.y, a.server_facing, k)
+		# Ноги переставляються за тим, як істота СПРАВДІ рухається на
+		# екрані. Так анімація не бреше: стоїть — стоїть, біжить — біжить,
+		# і серверові не треба слати ще й це.
+		var body: Node3D = a.model()
+		if body != null and a.is_alive():
+			body.animate(was.distance_to(a.global_position) / maxf(delta, 0.001))
 
 
 ## Показ: спершу взяти найближчого монстра (комірка 3), далі бити.
@@ -284,27 +297,7 @@ func id_of(node: Object) -> int:
 	return 0
 
 
-## Знімок екрана по F12.
-##
-## Потрібен, бо очима перевіряється те, чого не перевірити пробою: HUD,
-## камера, світло. Зовнішні знімалки під цим композитором не працюють
-## (grim: "compositor doesn't support wlr-screencopy"), а зсередини Godot
-## знімок виходить завжди.
-##
-## Знімати можна лише ПІСЛЯ того, як кадр намальовано, інакше в текстурі
-## порожнеча — звідси одноразове під'єднання до frame_post_draw.
+## Знімок екрана по F12. Саме знімання — у `shot.gd`: воно потрібне ще й
+## стартовій сторінці, а двічі писати те саме не варто.
 func take_shot() -> void:
-	RenderingServer.frame_post_draw.connect(_save_shot,
-			CONNECT_ONE_SHOT)
-
-
-func _save_shot() -> void:
-	var image := _world.get_viewport().get_texture().get_image()
-	var path := "user://знімок-%s.png" % Time.get_datetime_string_from_system(
-			false, true).replace(":", "-").replace(" ", "_")
-	var err := image.save_png(path)
-	if err != OK:
-		push_error("[знімок] не зберігся: %s" % error_string(err))
-		print("[знімок] ‼ не зберігся: %s" % error_string(err))
-		return
-	print("[знімок] ", ProjectSettings.globalize_path(path))
+	Shot.take(_world)

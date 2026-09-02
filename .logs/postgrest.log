@@ -1,0 +1,9 @@
+02/Sep/2026:15:55:23 +0300: Starting PostgREST 16.2...
+02/Sep/2026:15:55:23 +0300: Successfully connected to PostgreSQL 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, 64-bit
+02/Sep/2026:15:55:23 +0300: Connection Pool initialized with a maximum size of 10 connections
+02/Sep/2026:15:55:23 +0300: Listener connected to PostgreSQL 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, 64-bit on "127.0.0.1:5432" and listening for database notifications on the "pgrst" channel
+02/Sep/2026:15:55:23 +0300: Config reloaded
+02/Sep/2026:15:55:23 +0300: API server listening on 127.0.0.1:3000
+02/Sep/2026:15:55:23 +0300: Schema cache queried in 23.1 milliseconds 
+02/Sep/2026:15:55:23 +0300: Schema cache loaded 2 Relations, 2 Relationships, 3 RPCs, 0 Domain Representations, 4 Media Type Handlers
+02/Sep/2026:15:55:23 +0300: Schema cache loaded in 0.0 milliseconds

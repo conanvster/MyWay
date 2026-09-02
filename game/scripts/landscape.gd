@@ -2,7 +2,7 @@ class_name Landscape
 extends Node3D
 ## Краєвид: земля, місто з будинками й мешканцями, ліс, гори.
 ##
-## Будується кодом за числами з `дані/мапа.json`. Чому не руками в
+## Будується кодом за числами з `data/map.json`. Чому не руками в
 ## редакторі: сімдесят дерев і п'ять будинків — це сімдесят п'ять вузлів,
 ## які потім не посунути одним рухом. А так гора переїжджає правкою
 ## одного рядка, і видно її одразу.
@@ -243,11 +243,10 @@ func _city() -> void:
 
 	for house: Dictionary in city.get("будинки", []):
 		var at := _on_ground(_point(house["де"]))
-		var model := str(house.get("модель", ""))
-		if model != "" and ResourceLoader.exists(model):
-			_model_house(at, model, house)
+		if house.has("модулі") and ResourceLoader.exists(WALL % "Plaster_Straight"):
+			_kit_house(at, house)
 		else:
-			_house(at, _point(house["розмір"]),
+			_house(at, _point(house.get("розмір", [6, 4, 6])),
 					str(house.get("колір", "#8a6a4a")),
 					str(house.get("дах", "#6b3f2f")))
 
@@ -275,6 +274,98 @@ func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
 	top.position = where + Vector3(0, size.y + cap.height * 0.5, 0)
 	top.rotation.y = PI * 0.25
 	add_child(top)
+
+
+## Деталі набору Medieval Village MegaKit (Quaternius, CC0). Сітка в
+## наборі стала: стіна 2 метри завширшки й 3,12 заввишки, підлога 2×2,
+## дах на 4×4. Тому будинок описується в МОДУЛЯХ — «два на два», — а не
+## в метрах: інакше довелось би підганяти числа руками під кожну деталь.
+const WALL := "res://models/village/Wall_%s.gltf"
+const ROOF_4X4 := "res://models/village/Roof_RoundTiles_4x4.gltf"
+const FLOOR := "res://models/village/Floor_Brick.gltf"
+const MODULE := 2.0        ## ширина однієї деталі, метрів
+const WALL_HEIGHT := 3.12
+
+
+## Будинок, зібраний із деталей набору.
+##
+## Стіни ставляться по колу: кожна дивиться назовні, бо в деталі
+## зовнішній бік — це -Z. Одна зі стін спереду — з дверима, ще кілька —
+## з вікнами; решта глухі.
+func _kit_house(where: Vector3, house: Dictionary) -> void:
+	var modules: Vector2 = _pair(house.get("модулі", [2, 2]))
+	var wide := int(maxf(1.0, modules.x))
+	var deep := int(maxf(1.0, modules.y))
+	var stone: bool = bool(house.get("цегла", false))
+	var straight := WALL % ("UnevenBrick_Straight" if stone else "Plaster_Straight")
+	var window := WALL % ("UnevenBrick_Window_Wide_Round" if stone
+			else "Plaster_Window_Wide_Round")
+	var door := WALL % "Plaster_Door_Round"
+
+	var body := StaticBody3D.new()
+	body.name = _named("Будинок")
+	body.position = where
+	body.rotation.y = deg_to_rad(float(house.get("поворот", 0.0)))
+	add_child(body)
+
+	var half_x := (wide - 1) * MODULE * 0.5
+	var half_z := (deep - 1) * MODULE * 0.5
+	var edge_z := deep * MODULE * 0.5
+	var edge_x := wide * MODULE * 0.5
+
+	# Двері — посередині ближньої стіни; вікна — через одну деталь.
+	var door_at := wide / 2
+	for i in wide:
+		var x := -half_x + i * MODULE
+		_piece(body, door if i == door_at else (window if i % 2 == 0
+				else straight), Vector3(x, 0, edge_z), 180.0)
+		_piece(body, window if i % 2 == 1 else straight,
+				Vector3(x, 0, -edge_z), 0.0)
+	for i in deep:
+		var z := -half_z + i * MODULE
+		_piece(body, window if i % 2 == 0 else straight,
+				Vector3(-edge_x, 0, z), 270.0)
+		_piece(body, straight, Vector3(edge_x, 0, z), 90.0)
+
+	# Підлога всередині.
+	for ix in wide:
+		for iz in deep:
+			_piece(body, FLOOR, Vector3(-half_x + ix * MODULE, 0.02,
+					-half_z + iz * MODULE), 0.0)
+
+	# Дах: одна деталь на кожні 2×2 модулі.
+	for ix in range(0, wide, 2):
+		for iz in range(0, deep, 2):
+			var at := Vector3(-half_x + (ix + minf(1, wide - ix - 1)) * MODULE * 0.5,
+					WALL_HEIGHT + 0.5, -half_z + (iz + minf(1, deep - iz - 1)) * MODULE * 0.5)
+			_piece(body, ROOF_4X4, at, 0.0)
+
+	# Крізь будинок не пускає одна коробка на весь обрис.
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(wide * MODULE, WALL_HEIGHT, deep * MODULE)
+	var wall := CollisionShape3D.new()
+	wall.name = "Стіна"
+	wall.shape = shape
+	wall.position = Vector3(0, WALL_HEIGHT * 0.5, 0)
+	body.add_child(wall)
+
+
+## Одна деталь на своєму місці.
+func _piece(parent: Node3D, path: String, at: Vector3, turn: float) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var scene: PackedScene = load(path)
+	if scene == null:
+		return
+	var part: Node3D = scene.instantiate()
+	part.position = at
+	part.rotation.y = deg_to_rad(turn)
+	parent.add_child(part)
+
+
+static func _pair(from: Variant) -> Vector2:
+	var list: Array = from
+	return Vector2(float(list[0]), float(list[1]))
 
 
 ## Будинок із готової моделі (крок 6, П-15).
@@ -344,14 +435,17 @@ func _dweller(who: Dictionary) -> void:
 	body.collision_layer = 4
 	add_child(body)
 
-	var mesh := MeshInstance3D.new()
-	mesh.name = "Mesh"
-	mesh.mesh = CapsuleMesh.new()
-	body.add_child(mesh)
+	# Мешканці мають таке саме тіло, як гравці й монстри: голова, руки,
+	# ноги. Стоять вони нерухомо, тож анімація в них лише «дихає».
+	var figure := CreatureModel.new()
+	figure.name = "Mesh"
+	figure.tint = body.tint
+	body.add_child(figure)
+	figure.build()
 	var shape := CollisionShape3D.new()
 	shape.shape = CapsuleShape3D.new()
+	shape.position = Vector3(0, 0.1, 0)
 	body.add_child(shape)
-	body.repaint()
 
 
 ## Ліс: дерева з розкидом по колу, кожне трохи іншої висоти.

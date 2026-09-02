@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## Цей клас — про поодинокі. Складані обходяться без нього.
 
-var base := ""          ## ключ у `дані/речі.json`
+var base := ""          ## ключ у `data/items.json`
 var kind := ""          ## зброя · обладунок · амулет
 var slot := ""          ## куди вдягається
 var grade := "E"

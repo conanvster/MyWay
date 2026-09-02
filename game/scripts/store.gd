@@ -122,8 +122,13 @@ func call_rpc(name: String, args: Dictionary) -> void:
 					if parsed is Dictionary:
 						reply = parsed
 				else:
-					push_error("[база] %s: код %d" % [name, code])
-					print("[база] ‼ %s не вдалось, код %d" % [name, code])
+					# Друкуємо і код відповіді, і причину самого запиту:
+					# «код 0» без причини нічого не каже — це може бути і
+					# збій з'єднання, і скасований запит.
+					push_error("[база] %s: код %d, причина %d"
+							% [name, code, result])
+					print("[база] ‼ %s не вдалось: код %d, причина %d"
+							% [name, code, result])
 					reply = {"ok": false, "why": "база не відповіла"}
 				answered.emit(name, reply))
 	request.request("%s/rpc/%s" % [base_url, name],

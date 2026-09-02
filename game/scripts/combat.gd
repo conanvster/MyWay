@@ -53,6 +53,8 @@ func attack(me: int) -> bool:
 	a.face_point(victim.global_position)
 
 	a.attack_ready_in = a.stats.attack_cooldown()
+	# Замах бачать ті, хто бачить того, хто б'є.
+	_link.to_watchers(me, &"client_swing", [me])
 	var power: float = a.stats.physical_attack()
 	if behind:
 		# Чуття жертви зрізає надбавку: сприйняття захищає від удару в
@@ -96,7 +98,7 @@ func clear_corpses() -> Array:
 		c.place_at(Vector3(0, 1.5, 0), 0.0)
 		_link.to_watchers(id, &"client_revive", [id, c.hp])
 		# Окремим повідомленням, бо переставляння має бути стрибком:
-		# інакше труп проїде через усю мапу (вада 3 з ПЛАН.md).
+		# інакше труп проїде через усю мапу (вада 3 з PLAN.md).
 		_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])
 	return remove
 

@@ -4,7 +4,7 @@ extends Creature
 ## Поведінка за П-66: блукає біля свого місця, пасивний або агресивний,
 ## аґро веде таблиця загрози (П-71), при нападі кличе своїх на поміч.
 ##
-## Числа — не сталі, а поля: їх роздає `дані/монстри.json` через
+## Числа — не сталі, а поля: їх роздає `data/mobs.json` через
 ## `apply_tuning`, і сервер перечитує файл на ходу (крок 1.2). Значення
 ## нижче — запасні, на випадок, коли даних немає; вони ті самі, з якими
 ## гра жила до кроку 1.2, і взяті з пропозиції П-72.
@@ -82,7 +82,7 @@ func setup(at: Vector3, of_kind: int, is_aggressive: bool,
 	mp = stats.max_mp()
 
 
-## Роздати числа з `дані/монстри.json`. Викликається і при появі, і коли
+## Роздати числа з `data/mobs.json`. Викликається і при появі, і коли
 ## сервер помітив, що файл змінили: тоді монстр міняє вдачу на ходу.
 ##
 ## Здоров'я тут НЕ перераховується: живому монстрові посеред бою це
@@ -123,19 +123,29 @@ func apply_tuning(tuning: Dictionary) -> void:
 func _apply_look() -> void:
 	if look.is_empty():
 		return
-	var mesh: Node3D = get_node_or_null("Mesh")
-	if mesh == null:
+	# Якщо для виду названо готову модель — ставимо її замість фігурки з
+	# примітивів. Немає файла — лишається фігурка, і гра йде далі.
+	var made := str(look.get("модель", ""))
+	if made != "" and ResourceLoader.exists(made):
+		var old_body := get_node_or_null("Mesh")
+		if old_body != null and not (old_body is SkinnedModel):
+			old_body.name = "СтараФігурка"
+			old_body.queue_free()
+			var skin := SkinnedModel.new()
+			skin.name = "Mesh"
+			skin.path = made
+			skin.height = float(look.get("зріст", 1.0))
+			add_child(skin)
+			skin.build()
+	var body := model()
+	if body == null:
 		return
-	if look.has("колір"):
-		var paint := StandardMaterial3D.new()
-		paint.albedo_color = Color(str(look["колір"]))
-		mesh.set_surface_override_material(0, paint)
-	if look.has("зріст"):
-		var size := float(look["зріст"])
-		mesh.scale = Vector3(size, size, size)
-		var body: Node3D = get_node_or_null("Collision")
-		if body != null:
-			body.scale = Vector3(size, size, size)
+	body.dress(Color(str(look.get("колір", "#6b6b73"))),
+			float(look.get("зріст", 1.0)))
+	var shape: Node3D = get_node_or_null("Collision")
+	if shape != null:
+		var size := float(look.get("зріст", 1.0))
+		shape.scale = Vector3(size, size, size)
 
 
 func add_threat(id: int, amount: float) -> void:

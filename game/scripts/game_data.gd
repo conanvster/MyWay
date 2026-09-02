@@ -4,17 +4,17 @@ extends RefCounted
 ##
 ## Сервер раз на кілька секунд дивиться на час зміни файлів; змінився —
 ## перечитує й роздає живим монстрам. Тобто баланс правиться в
-## `дані/*.json` під час гри, і зміну видно на наступному ж ударі.
+## `data/*.json` під час гри, і зміну видно на наступному ж ударі.
 ##
 ## Помилку не ковтаємо: зіпсований файл друкує, ЩО саме не так, і
 ## лишається чинним попереднє значення, а не нулі.
 
-const MOBS_PATH := "res://дані/монстри.json"
-const BAR_PATH := "res://дані/панель.json"
-const SKILLS_PATH := "res://дані/скіли.json"
-const LEVELS_PATH := "res://дані/рівні.json"
-const ITEMS_PATH := "res://дані/речі.json"
-const MAP_PATH := "res://дані/мапа.json"
+const MOBS_PATH := "res://data/mobs.json"
+const BAR_PATH := "res://data/bar.json"
+const SKILLS_PATH := "res://data/skills.json"
+const LEVELS_PATH := "res://data/levels.json"
+const ITEMS_PATH := "res://data/items.json"
+const MAP_PATH := "res://data/map.json"
 ## Як часто перевіряти, чи файли змінились.
 const WATCH_EVERY := 2.0
 

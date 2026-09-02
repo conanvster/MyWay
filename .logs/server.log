@@ -1,0 +1,145 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[мережа] сервер на порту 24565
+[дані] видів монстрів: 2 (1=вовк, 2=заєць)
+[дані] скілів: 4 (енергетичний-вибух, енергетичний-промінь, вовчий-рик, вовчий-укус)
+[дані] сітка рівнів: основа 1000.0, показник 1.585, очок статів 3.0
+[дані] речей: 13
+[дані] мапа: будинків 5, мешканців 4, дерев 70, гір 4
+[дані] панель: ["attack", "next_player", "next_mob", "corpse_skill", "taunt", "скіл:енергетичний-вибух", "скіл:енергетичний-промінь"]
+[дані] стартові скіли: { "енергетичний-вибух": 1.0, "енергетичний-промінь": 1.0 }
+[база] http://127.0.0.1:3000, зберігаю раз на 30 с
+[світ] зон появи 3, монстрів 9
+[світ] сервер чекає гравців
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'idle', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'swing', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'НогаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаЛіва:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'РукаПрава:rotation:x'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+WARNING: AnimationMixer: 'walk', couldn't resolve track:  'Голова:position:y'. This warning can be disabled in Project Settings.
+     at: _update_caches (scene/animation/animation_mixer.cpp:725)
+ERROR: [база] login: код 0
+   at: push_error (core/variant/variant_utility.cpp:1023)
+   GDScript backtrace (most recent call first):
+       [0] <anonymous lambda> (res://scripts/store.gd:125)
+[база] ‼ login не вдалось, код 0
+[світ] пішов 661693389, лишилось 9

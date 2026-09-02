@@ -7,7 +7,7 @@ extends Node3D
 ## бачить (П-43). Готові вузли синхронізації Godot розсилають усім
 ## однаково і для цього не годяться.
 ##
-## Уся робота переїхала в модулі (крок 1.1 у ПЛАН.md); тут лишилися самі
+## Уся робота переїхала в модулі (крок 1.1 у PLAN.md); тут лишилися самі
 ## `@rpc` і створення істот. Чому саме так: шлях вузла має збігатися на
 ## клієнті й сервері, і возитися з цим для кожного модуля не варто.
 ##
@@ -17,7 +17,7 @@ extends Node3D
 ##     mob_ai.gd       поведінка монстрів
 ##     spawner.gd      гнізда й поява
 ##     mob_zone.gd     форма зони появи: те, що намальовано в редакторі
-##     game_data.gd    числа з дані/*.json, із перечитуванням на ходу
+##     game_data.gd    числа з data/*.json, із перечитуванням на ходу
 ##     client_view.gd  згладжування й ввід клієнта
 ##     hud.gd          що гравець бачить поверх світу
 ##     messenger.gd    єдиний вихід на клієнтів
@@ -82,6 +82,10 @@ func _ready() -> void:
 		store = Store.new()
 		add_child(store)
 		store.setup(Net.db)
+		if OS.get_cmdline_user_args().has("--перевірка-бази"):
+			store.answered.connect(func(name: String, reply: Dictionary) -> void:
+					print("[перевірка] %s -> %s" % [name, reply]))
+			store.call_rpc("login", {"login": "конан", "password": "таємниця"})
 		multiplayer.peer_disconnected.connect(_on_left)
 		spawner.start(_zones())
 		print("[світ] сервер чекає гравців")
@@ -110,7 +114,7 @@ func _physics_process(delta: float) -> void:
 		_tick_water(delta)
 		if store != null and store.due(delta):
 			_save_everyone()
-		# Числа правляться в дані/*.json під час гри: помітив зміну —
+		# Числа правляться в data/*.json під час гри: помітив зміну —
 		# роздав живим монстрам (крок 1.2).
 		if data.poll(delta):
 			print("[дані] нові числа роздано монстрам: %d"
@@ -506,7 +510,7 @@ func client_vitals(id: int, hp: int, max_hp: int) -> void:
 		hud.set_vitals(id, hp, max_hp)
 
 
-## Розкладка панелі з дані/панель.json (П-58).
+## Розкладка панелі з data/bar.json (П-58).
 @rpc("authority", "call_remote", "reliable")
 func client_bar(bar: PackedStringArray) -> void:
 	if hud != null:
@@ -543,6 +547,15 @@ func client_cast_end(id: int, done: bool) -> void:
 func client_bag(worn: PackedStringArray, carried: PackedStringArray) -> void:
 	if hud != null:
 		hud.show_bag(Array(worn), Array(carried))
+
+
+## Хтось замахнувся: показуємо рух рукою.
+@rpc("authority", "call_remote", "reliable")
+func client_swing(id: int) -> void:
+	if creatures.has(id):
+		var body: Node3D = creatures[id].model()
+		if body != null:
+			body.swing()
 
 
 ## Число шкоди над головою.

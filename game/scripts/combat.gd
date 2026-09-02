@@ -154,8 +154,14 @@ func cast(me: int, key: String) -> bool:
 func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 	a.skill_ready_in[skill.key] = a.stats.skill_cooldown(skill.cooldown_points)
 	var power: float = a.stats.magical_attack() * skill.power_share(level)
+	var state: Dictionary = skill.state_at(level)
 	for victim: Node in victims:
-		_land(me, a, victim, power)
+		if power > 0.0:
+			_land(me, a, victim, power)
+		# Баф або дебаф зі скіла — тим самим механізмом станів, що й усе
+		# інше (крок 2.1). Окремого коду для монстрів немає.
+		if not state.is_empty() and victim.is_alive():
+			victim.add_state(State.from_data(state))
 	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
 			% [me, skill.name, level, victims.size(), a.mp])
 
@@ -212,16 +218,19 @@ func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
 		# Вибух б'є все вороже навколо. Гравець зачіпає монстрів, монстр —
 		# гравців: PvP по площі це окреме питання (П-110), і мовчки
 		# вирішувати його за замовника не можна.
+		#
+		# «Свої-поруч» — навпаки: монстр бафить сусідів свого боку.
+		var friends: bool = skill.hits_friends()
 		var found: Array = []
 		for id in _creatures:
-			if id == me or (id < 0) == (me < 0):
+			if id == me or ((id < 0) == (me < 0)) != friends:
 				continue
 			var other: Node = _creatures[id]
 			if not other.is_alive():
 				continue
 			if a.global_position.distance_to(other.global_position) <= reach:
 				found.append(other)
-		if found.is_empty():
+		if found.is_empty() and not friends:
 			_link.notice(me, "поруч нікого немає")
 		return found
 

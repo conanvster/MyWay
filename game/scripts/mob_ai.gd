@@ -44,10 +44,13 @@ func think(id: int, delta: float) -> void:
 		m.wander(delta)
 		return
 
-	# Уперше завів ціль — гукає своїх (П-66).
+	# Уперше завів ціль — гукає своїх (П-66) і, якщо вміє, підбадьорює
+	# їх скілом: «якщо його атакували, він за власну ману бафить сусідів»
+	# (погоджено 02.09.2026).
 	if not m._had_target:
 		m._had_target = true
 		call_for_help(id, victim)
+		_use(m, id, "у відповідь")
 
 	m.target_id = victim
 	var target: Node3D = _creatures[victim]
@@ -59,7 +62,18 @@ func think(id: int, delta: float) -> void:
 		# Стоїть і дивиться на того, з ким б'ється, — увесь час, а не
 		# тільки в мить удару (П-85). Аґрений монстр спини не показує.
 		m.face_point(target.global_position)
-		_combat.attack(id)
+		# Спершу пробує кинути дебаф на кривдника; не вийшло (відкат,
+		# мана, задалеко) — б'є як завжди.
+		if not _use(m, id, "по кривднику"):
+			_combat.attack(id)
+
+
+## Застосувати скіл із того випадку, якщо він у монстра прописаний.
+func _use(m: Node, id: int, case: String) -> bool:
+	var key: String = m.skills_by_case.get(case, "")
+	if key == "" or m.is_casting():
+		return false
+	return _combat.cast(id, key)
 
 
 ## Монстр гукає своїх — тільки того самого виду й тільки поблизу.

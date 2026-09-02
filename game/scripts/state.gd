@@ -32,10 +32,31 @@ func _init(of_name: String = "", of_stat: String = "", of_factor: float = 1.0,
 	full = seconds
 
 
+## Стан із даних: {"назва", "стат", "множник", "строк"}.
+## Строк 0 або менше означає «поки живий» — саме такий постійний баф
+## монстр отримує при появі (погоджено 02.09.2026).
+static func from_data(data: Dictionary) -> State:
+	var seconds := float(data.get("строк", 0.0))
+	var state := State.new(
+			data.get("назва", "стан"),
+			data.get("стат", ""),
+			float(data.get("множник", 1.0)),
+			seconds if seconds > 0.0 else INF)
+	if seconds <= 0.0:
+		state.full = INF
+	return state
+
+
+func is_forever() -> bool:
+	return is_inf(left)
+
+
 func is_buff() -> bool:
 	return factor > 1.0
 
 
 ## Скільки лишилось, часткою від строку: 1,0 щойно повішений, 0,0 кінець.
 func share() -> float:
+	if is_forever():
+		return 1.0
 	return 0.0 if full <= 0.0 else clampf(left / full, 0.0, 1.0)

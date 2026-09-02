@@ -68,5 +68,15 @@ func power_share(level: int) -> float:
 	return float(at(level).get("шкода", 0.0))
 
 
+## Стан, який скіл вішає на зачеплених. Порожній — скіл лише б'є.
+func state_at(level: int) -> Dictionary:
+	return at(level).get("стан", {})
+
+
 func hits_many() -> bool:
-	return target == "усі-поруч"
+	return target == "усі-поруч" or target == "свої-поруч"
+
+
+## Скіл на своїх (бафи монстра на сусідів) чи на ворогів.
+func hits_friends() -> bool:
+	return target == "свої-поруч"

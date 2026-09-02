@@ -28,6 +28,13 @@ var wander_pace := 0.3
 ## Скільки загрози додає удар понад завдану шкоду.
 var threat_per_hit := 1.0
 
+## Скіли монстра з даних: "у відповідь" (бафить своїх, коли його
+## зачепили) і "по кривднику" (дебаф на того, хто вдарив). Погоджено
+## 02.09.2026: монстри воюють за тими самими правилами, що й гравець.
+var skills_by_case: Dictionary = {}
+## Постійний баф, який дається при появі. Строк 0 — поки живий.
+var spawn_buff: Dictionary = {}
+
 ## Місце, де монстр з'явився, і куди повертається.
 var home := Vector3.ZERO
 ## Вид: поклик на поміч чують лише свої.
@@ -59,6 +66,9 @@ func setup(at: Vector3, of_kind: int, is_aggressive: bool,
 	# 10 — тобто зі здоров'ям 100 замість 64. Спіймано пробою 02.09.
 	refresh_stats()
 	apply_tuning(tuning)
+	# Постійний баф вішається саме тут — при появі, як і сказано.
+	if not spawn_buff.is_empty():
+		add_state(State.from_data(spawn_buff))
 	hp = stats.max_hp()
 	mp = stats.max_mp()
 
@@ -80,6 +90,10 @@ func apply_tuning(tuning: Dictionary) -> void:
 	wander_radius = tuning.get("блукання_радіус", wander_radius)
 	wander_pace = tuning.get("блукання_темп", wander_pace)
 	threat_per_hit = tuning.get("загроза_за_удар", threat_per_hit)
+	skills_by_case = tuning.get("скіли", skills_by_case)
+	spawn_buff = tuning.get("баф при появі", spawn_buff)
+	for key in skills_by_case.values():
+		learn(key, 1)
 	var from_data: Dictionary = tuning.get("стати", {})
 	base_stats.strength = from_data.get("сила", base_stats.strength)
 	base_stats.stamina = from_data.get("витривалість", base_stats.stamina)

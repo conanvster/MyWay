@@ -40,6 +40,7 @@ func _go() -> void:
 	await _burst()
 	await _mana()
 	await _casting()
+	await _mob_skills()
 	quit()
 
 
@@ -224,3 +225,55 @@ func _casting() -> void:
 	print("  повідомлення: %s" % [link.notices()])
 	for id in w[0]:
 		w[0][id].queue_free()
+
+
+## Крок 2.4: монстри воюють за тими самими правилами.
+func _mob_skills() -> void:
+	print("\n— скіли монстрів (крок 2.4) —")
+	var data := GameData.new()
+	data.load_all()
+	var hero: Node3D = AVATAR.instantiate()
+	root.add_child(hero)
+	await process_frame
+	hero.place_at(Vector3(0, 1.5, 0), 0.0)
+	var creatures := {1: hero}
+	for i in 2:
+		var m: Node3D = MOB.instantiate()
+		root.add_child(m)
+		await process_frame
+		m.setup(Vector3.ZERO, 1, true, data.for_kind(1))
+		m.place_at(Vector3(2.0 + i * 2.0, 1.5, 0), 0.0)
+		creatures[-(i + 1)] = m
+	var vision := Vision.new(creatures)
+	vision.watch(1)
+	vision.update(1)
+	var link := Recorder.new(vision)
+	var combat := Combat.new(creatures, link)
+	combat.skills = data.skills
+	var mobs := MobAI.new(creatures, combat)
+
+	var wolf: Node3D = creatures[-1]
+	var other: Node3D = creatures[-2]
+	print("  баф при появі: станів %d, витривалість %d при базовій %d"
+			% [wolf.states.count(), wolf.stats.stamina,
+			   wolf.base_stats.stamina])
+	print("  вивчені скіли: %s" % [wolf.learned.keys()])
+
+	# Монстр помічає гравця — бафить своїх і кидає дебаф.
+	for i in 200:
+		mobs.think(-1, 1.0 / 60.0)
+		wolf.global_position = Vector3(2.0, 1.5, 0)
+		combat.tick_casts(1.0 / 60.0)
+		if other.states.has("вовчий рик") and hero.states.has("вовчий укус"):
+			break
+	print("  сусід під «вовчим риком»: %s, сила %d при базовій %d"
+			% [other.states.has("вовчий рик"), other.stats.strength,
+			   other.base_stats.strength])
+	print("  гравець під «вовчим укусом»: %s, спритність %d при базовій %d"
+			% [hero.states.has("вовчий укус"), hero.stats.agility,
+			   hero.base_stats.agility])
+	for state: State in hero.states.all():
+		print("    %s: лишилось %.1f с із %.0f" % [state.name, state.left,
+				state.full])
+	for id in creatures:
+		creatures[id].queue_free()

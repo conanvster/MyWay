@@ -21,11 +21,15 @@ var _login: LineEdit
 var _password: LineEdit
 var _why: Label
 var _sign_box: VBoxContainer
+var _sign_in: Button
+var _sign_up: Button
 var _pick_box: VBoxContainer
 var _list: VBoxContainer
 var _new_name: LineEdit
 var _race: OptionButton
 var _sex: OptionButton
+var _create: Button
+var _back: Button
 
 
 func setup() -> void:
@@ -41,8 +45,11 @@ func setup() -> void:
 	_sign_box = _column("Вхід", 0)
 	_login = _field(_sign_box, "акаунт", false)
 	_password = _field(_sign_box, "пароль", true)
-	_button(_sign_box, "Увійти", func() -> void: _send(false))
-	_button(_sign_box, "Завести акаунт", func() -> void: _send(true))
+	_login.text_submitted.connect(func(_t: String) -> void: _send(false))
+	_password.text_submitted.connect(func(_t: String) -> void: _send(false))
+	_sign_in = _button(_sign_box, "Увійти", func() -> void: _send(false))
+	_sign_up = _button(_sign_box, "Завести акаунт",
+			func() -> void: _send(true))
 
 	_pick_box = _column("Персонажі", 0)
 	_pick_box.visible = false
@@ -51,11 +58,17 @@ func setup() -> void:
 	_new_name = _field(_pick_box, "ім'я нового персонажа", false)
 	_race = _choice(_pick_box, ["людина", "орк", "ельф"])
 	_sex = _choice(_pick_box, ["чоловік", "жінка"])
-	_button(_pick_box, "Створити", func() -> void:
-			if _new_name.text.strip_edges() != "":
-				wants_new_character.emit(_new_name.text.strip_edges(),
-						_race.get_item_text(_race.selected),
-						_sex.get_item_text(_sex.selected)))
+	_new_name.text_submitted.connect(func(_t: String) -> void: _create_now())
+	_create = _button(_pick_box, "Створити", func() -> void: _create_now())
+	# «Назад» — на випадок, коли ввійшли не на той акаунт: без неї єдиний
+	# спосіб передумати — перезапустити клієнта цілком.
+	_back = _button(_pick_box, "← Назад", func() -> void:
+			_pick_box.visible = false
+			_sign_box.visible = true
+			_password.text = ""
+			_why.text = ""
+			_sign_in.disabled = false
+			_sign_up.disabled = false)
 
 	_why = Label.new()
 	_why.add_theme_color_override("font_color", Color(1, 0.6, 0.5))
@@ -114,12 +127,31 @@ func _send(register: bool) -> void:
 		_why.text = "акаунт і пароль не можуть бути порожні"
 		return
 	_why.text = "…"
+	_sign_in.disabled = true
+	_sign_up.disabled = true
 	wants_sign_in.emit(login, _password.text, register)
 
 
+func _create_now() -> void:
+	if _new_name.text.strip_edges() == "":
+		return
+	_why.text = "…"
+	_create.disabled = true
+	wants_new_character.emit(_new_name.text.strip_edges(),
+			_race.get_item_text(_race.selected),
+			_sex.get_item_text(_sex.selected))
+
+
 ## Сервер відповів «не вдалось» — кажемо чому, поле лишаємо як є.
+##
+## Кнопки, вимкнені на час очікування, вмикаємо назад: без цього після
+## однієї відмови (не той пароль, зайняте ім'я) екран лишався б мертвим,
+## поки людина не здогадається, що можна перезапустити клієнта.
 func failed(why: String) -> void:
 	_why.text = why
+	_sign_in.disabled = false
+	_sign_up.disabled = false
+	_create.disabled = false
 
 
 ## Увійшли: показуємо персонажів. Порожній перелік — теж відповідь, просто
@@ -128,6 +160,8 @@ func show_characters(list: Array) -> void:
 	_sign_box.visible = false
 	_pick_box.visible = true
 	_why.text = "" if not list.is_empty() else "персонажів ще немає — створи"
+	_create.disabled = false
+	_new_name.text = ""
 	for child in _list.get_children():
 		child.queue_free()
 	for who: Dictionary in list:

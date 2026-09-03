@@ -57,8 +57,8 @@ func _zones() -> void:
 	# матриці, тому дев'ять чисел, узятих як вектори осей, дають поворот
 	# у протилежний бік. Тут це вже враховано — коліна повернуті на -45°
 	# і -90°, і саме з такими знаками вони стикуються.
-	print("  тунель по колінах (початок -> кінець кожного):")
-	for part: Node3D in world.get_node("MobZones/Tunnel").get_children():
+	print("  Pass по колінах (початок -> кінець кожного):")
+	for part: Node3D in world.get_node("MobZones/Pass").get_children():
 		var half: float = part.shape.size.x * 0.5
 		var axis: Vector3 = part.global_transform.basis.x.normalized()
 		var a: Vector3 = part.global_position - axis * half

@@ -78,6 +78,7 @@ var _cast_full := 0.0
 var _messages: VBoxContainer
 var _cells: Array = []
 var _floats: Array = []
+var _coords_text: Label
 
 
 func setup(world: Node) -> void:
@@ -88,6 +89,7 @@ func setup(world: Node) -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 	_build_vitals()
+	_build_coords()
 	_build_target()
 	_build_panel()
 	_build_cast()
@@ -1017,6 +1019,23 @@ func _build_vitals() -> void:
 	_level_text.position = Vector2(0, 44)
 
 
+## Координати гравця — праворуч угорі. Клієнт нічого не рахує: позицію
+## бере з власного вузла, той самий `global_position`, за яким ходять і
+## по якому сервер звіряє намір (П-08 тут ні до чого — це не число гри,
+## а суто зручність для налагодження рельєфу).
+func _build_coords() -> void:
+	var box := Control.new()
+	box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	box.position = Vector2(-166, 8)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(box)
+
+	_plate(Vector2(150, 18), BACK, box)
+	_coords_text = _text(12, box)
+	_coords_text.position = Vector2(6, 1)
+	_coords_text.text = "x 0,0  y 0,0  z 0,0"
+
+
 ## Рамка цілі — угорі посередині. Ховається, коли цілі немає (П-31).
 func _build_target() -> void:
 	_target_box = Control.new()
@@ -1250,6 +1269,12 @@ func damage(id: int, amount: int, behind: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	if Net.connected():
+		var me: Node3D = _world.creatures.get(_world.multiplayer.get_unique_id())
+		if me != null:
+			_coords_text.text = "x %.1f  y %.1f  z %.1f" \
+					% [me.global_position.x, me.global_position.y,
+					   me.global_position.z]
 	if _target != 0 and _max_hp.has(_target):
 		var share := float(_hp.get(_target, 0)) / maxf(1.0, _max_hp[_target])
 		_target_fill.size.x = WIDE * clampf(share, 0.0, 1.0)

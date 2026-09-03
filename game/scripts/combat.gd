@@ -9,6 +9,12 @@ extends RefCounted
 var _creatures: Dictionary
 var _link: Messenger
 
+## Висота землі в точці підйому. Світ підставляє свій `ground_at`; проба
+## лишає нульову — землі там і так нема. Без цього тут стояв голий
+## `Vector3(0, 1.5, 0)`, і коли сушу підняли на 5 м (П-140), оживлений
+## опинявся на 3,5 м під новою землею.
+var ground_height: Callable = func(_x: float, _z: float) -> float: return 0.0
+
 
 func _init(creatures: Dictionary = {}, link: Messenger = null) -> void:
 	_creatures = creatures
@@ -120,7 +126,9 @@ func revive(id: int) -> bool:
 		return false
 	c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
 	c.corpse_left = 0.0
-	c.place_at(Vector3(0, 1.5, 0), 0.0)
+	# 6 м запасу, як і при вході (world.gd) та спавні монстрів
+	# (spawner.gd): падає сам, сідає на видиму поверхню, а не в ґрунт.
+	c.place_at(Vector3(0, ground_height.call(0.0, 0.0) + 6.0, 0), 0.0)
 	_link.to_watchers(id, &"client_revive", [id, c.hp])
 	# Окремим повідомленням, бо переставляння має бути стрибком:
 	# інакше труп проїде через усю мапу (вада 3 з PLAN.md).

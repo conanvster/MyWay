@@ -2,7 +2,7 @@
 # Перевірка перед комітом: чи компілюється код, чи підіймається сервер,
 # чи відповідає він клієнтові, чи не бреше стартова сторінка.
 #
-#   ./check.sh              усе, разом із вікном і боєм (близько 2 хвилин)
+#   ./check.sh              усе, разом із вікном, боєм і крамарем (~3 хв)
 #   ./check.sh --швидко     без вікна й бою (близько 40 секунд) — так
 #                           ганяє гачок перед комітом
 #   ./check.sh --лінт       лише лінтер
@@ -265,6 +265,83 @@ run_fight() {
         || say_ok "жодної дії не загублено через відстань"
 }
 
+# ── крамар: підійти, поговорити, купити, продати ─────────────────────
+#
+# Обгортка навколо ./run.sh --демо-крамар: показ сам полює, доки не
+# набере грошей, потім іде до Ліди, торгується задорогою річчю (сервер
+# МУСИТЬ відмовити), купує кристал душі й продає його назад.
+run_shop() {
+    head_of "Крамар: підійти, поговорити, купити, продати"
+    stop_server
+    start_server "$logs/server-shop.log" --полігон \
+        || { say_bad "сервер не піднявся"; return; }
+    : > "$logs/shop.log"
+    godot --headless --path game -- --демо --крамар > "$logs/shop.log" 2>&1 &
+    local player=$!
+    own_client=$player
+    local waited=0
+    while [ "$waited" -lt 90 ]; do
+        if grep -q '\[крамар\] показ закінчив торгувати' "$logs/shop.log"; then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    kill "$player" 2>/dev/null
+    wait "$player" 2>/dev/null
+    own_client=""
+    printf '    (крамар зайняв %d с)\n' "$waited"
+
+    grep -q 'приєднався' "$logs/server-shop.log" \
+        && say_ok "тестовий гравець зайшов" \
+        || say_bad "гравець не зайшов"
+    grep -q '\[крамар\] у мапі немає жодного крамаря' "$logs/shop.log" \
+        && say_bad "у мапі немає крамаря — Ліда зникла"
+    grep -q '\[гра\] не вистачає грошей' "$logs/shop.log" \
+        && say_ok "сервер відмовив у задорогій речі: $(grep -m1 -o \
+            '\[гра\] не вистачає грошей.*' "$logs/shop.log")" \
+        || say_bad "задорога річ не відхилена — сервер вірить клієнту"
+    grep -q '\[гра\] куплено:' "$logs/shop.log" \
+        && say_ok "куплено: $(grep -m1 -o '\[гра\] куплено:.*' \
+            "$logs/shop.log")" \
+        || say_bad "нічого не куплено"
+    grep -q '\[гра\] продано:' "$logs/shop.log" \
+        && say_ok "продано: $(grep -m1 -o '\[гра\] продано:.*' \
+            "$logs/shop.log")" \
+        || say_bad "нічого не продано"
+    grep -q '\[крамар\] показ закінчив торгувати' "$logs/shop.log" \
+        && say_ok "торгівля пройшла до кінця" \
+        || say_bad "торгівля не дійшла до кінця за 90 с"
+
+    # Звіряємо гроші: крамар купує за DEFAULT_BUYBACK = 40% від ціни
+    # продажу (shop.gd). Якщо ці числа розійдуться — щось порахувало
+    # інакше, ніж домовлено.
+    local buy_amount sell_amount expect
+    buy_amount=$(grep -m1 -o '\[гра\] куплено:.*за [0-9]*' "$logs/shop.log" \
+        | grep -o '[0-9]*$')
+    sell_amount=$(grep -m1 -o '\[гра\] продано:.*за [0-9]*' "$logs/shop.log" \
+        | grep -o '[0-9]*$')
+    if [ -n "$buy_amount" ] && [ -n "$sell_amount" ]; then
+        expect=$((buy_amount * 40 / 100))
+        [ "$expect" -lt 1 ] && expect=1
+        if [ "$sell_amount" -eq "$expect" ]; then
+            say_ok "гроші зійшлись: купив за $buy_amount, продав за \
+$sell_amount (40%)"
+        else
+            say_bad "гроші не зійшлись: купив за $buy_amount, продав за \
+$sell_amount, очікував $expect"
+        fi
+    else
+        say_bad "не вдалось звірити гроші — купівлю чи продаж не знайдено \
+в журналі"
+    fi
+
+    if grep -q 'ERROR' "$logs/shop.log"; then
+        say_bad "у журналі клієнта є помилки:"
+        grep -m3 'ERROR' "$logs/shop.log" | sed 's/^/      /'
+    fi
+}
+
 # ── пам'ять не росте ──────────────────────────────────────────────────
 #
 # Найдорожча вада проєкту була саме така: вічний цикл у показі набирав по
@@ -338,6 +415,7 @@ case "$mode" in
         run_page
         run_screen
         run_fight
+        run_shop
         run_memory
         ;;
 esac

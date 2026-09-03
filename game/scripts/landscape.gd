@@ -14,6 +14,11 @@ extends Node3D
 ## самий і на сервері, і в кожного клієнта, інакше дерево росло б у
 ## різних місцях у різних людей.
 const SEED := 20260902
+## Уся суша (не море) піднята на стільки за словом замовника 03.09.2026
+## (П-140, число зменшено з 5 на 3 того ж вечора). Додається останнім,
+## до вже готової форми рельєфу — самі числа шуму, підлоги над морем
+## (П-138) і насипів (Cave, Forest) не чіпалися.
+const LAND_LIFT := 3.0
 
 var data: Dictionary = {}
 
@@ -44,9 +49,13 @@ func _sky() -> void:
 	var air := Environment.new()
 	air.background_mode = Environment.BG_SKY
 	air.sky = sky
-	air.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	air.ambient_light_sky_contribution = 0.65
-	air.ambient_light_energy = 1.1
+	# Довкілля НЕ з неба (АРГБ синього #3f6ea8), а свій нейтральний колір:
+	# земля в тіні дерев не бачить прямого сонця взагалі, і при небесному
+	# джерелі вся тінь ставала синьо-сірою — зелений ґрунт (яким кольором
+	# його не пофарбуй) тонув у синяві (П-138, тест у лісі 03.09.2026).
+	air.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	air.ambient_light_color = Color("#c9cdb8")
+	air.ambient_light_energy = 0.9
 	# Легкий туман удалині: гори на краю світу мають танути, а не стояти
 	# картонкою. Справжній туман зони бачення — П-65, це не він.
 	air.fog_enabled = true
@@ -158,12 +167,44 @@ func height_at(x: float, z: float) -> float:
 	high += _noise.get_noise_2d(x * 3.1, z * 3.1) * 0.8
 	var far: float = Vector2(x - _city_at.x, z - _city_at.z).length()
 	if far < _city_flat:
-		return 0.0
+		return LAND_LIFT
 	# М'який перехід від міста до пагорбів: інакше на межі стіна.
 	var edge: float = float(data.get("земля", {}).get("поле", 14))
 	if far < _city_flat + edge:
 		high *= (far - _city_flat) / edge
-	return high
+
+	# Підлога НАД морем, не РІВНО на морі (П-116, П-138): суша острова
+	# ніколи не пірнає нижче моря сама собою — шум на розмаху 7,0 проти
+	# моря −2,20 топив випадкові латки де завгодно (7% лісу, ціла гора), а
+	# латання зона за зоною ганялось за краєм власного ж насипу (тест
+	# 03.09.2026: за межею «поле» ефект згасає до нуля, латка вилазить
+	# знову — «на обрії»). Запас 0,5 м навмисний: рівно на рівні моря
+	# земля й вода лежать в одній площині, і напівпрозора вода поверх
+	# співпадаючого ґрунту сама стає тією ж плямою, що й топлення (той
+	# самий знімок лісу 03.09.2026 підтвердив — річка лишалась видна й
+	# після підлоги рівно на -2,20). Справжнє море лишається морем — це
+	# не зачіпає ні його, ні відкриту воду за краєм сітки 240×240 (там
+	# `height_at` не рахує взагалі, землі там немає, лише сама площина).
+	high = maxf(high, sea_level() + 0.5)
+
+	# Підняті ділянки (П-116, П-138): де самої підлоги мало — окремий
+	# майданчик чи насип поверх неї. Два способи: «до» — пласке плато на
+	# фіксованій висоті (дно печери), «додати» — природний насип, що
+	# зберігає хвилі шуму (лука має лишитись горбистою). Обидва плавно
+	# згасають до звичайного рельєфу (уже не нижче моря) за межею «поле».
+	for mound: Dictionary in earth.get("підняти", []):
+		var center := Vector2(float(mound["де"][0]), float(mound["де"][2]))
+		var r: float = float(mound.get("радіус", 10.0))
+		var mound_edge: float = float(mound.get("поле", 6.0))
+		var d: float = Vector2(x, z).distance_to(center)
+		if d >= r + mound_edge:
+			continue
+		var t: float = 1.0 if d < r else 1.0 - (d - r) / mound_edge
+		if mound.has("додати"):
+			high += float(mound["додати"]) * t
+		else:
+			high = maxf(high, lerp(high, float(mound.get("до", 0.0)), t))
+	return high + LAND_LIFT
 
 
 ## Земля з рельєфом: сітка вершин, висота з шуму, і та сама висота —
@@ -253,8 +294,16 @@ func _sea() -> void:
 
 ## Поставити точку на землю: висота береться з того самого рельєфу, по
 ## якому ходять. Без цього дерева на схилі висіли б у повітрі.
+##
+## Не нижче моря: шум рельєфу подекуди пірнає під рівень моря й поза
+## пляжами (де сама земля цього не показує — вирівнювання діє тільки в
+## місті), і все, що ставиться цією функцією, там просто тонуло б —
+## заміряно 7% дерев лісу нижче -2,20 м і одну з чотирьох гір, чия основа
+## опинялась під водою (той самий клас вади, що П-116, тільки для лісу й
+## гір, а не для монстрів).
 func _on_ground(point: Vector3) -> Vector3:
-	return Vector3(point.x, height_at(point.x, point.z) + point.y, point.z)
+	var ground: float = maxf(height_at(point.x, point.z), sea_level())
+	return Vector3(point.x, ground + point.y, point.z)
 
 
 func sea_level() -> float:
@@ -301,7 +350,8 @@ func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
 	mesh.size = size
 	var shape := BoxShape3D.new()
 	shape.size = size
-	_solid(where + Vector3(0, size.y * 0.5, 0), mesh, shape, walls, "Будинок")
+	var body := _solid(where + Vector3(0, size.y * 0.5, 0), mesh, shape, walls,
+			"Будинок")
 
 	# Дах — чотиригранна піраміда: циліндр із нулем угорі й чотирма гранями.
 	var cap := CylinderMesh.new()
@@ -317,6 +367,18 @@ func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
 	top.rotation.y = PI * 0.25
 	add_child(top)
 
+	# Дах теж має зіткнення — інакше камера проходить крізь нього так само,
+	# як і в наборі кита (П-121, `ROOF_TOP` вище). Коробка замість піраміди:
+	# грубіше за форму, зате камеру напевно не пропустить.
+	var cap_shape := BoxShape3D.new()
+	cap_shape.size = Vector3(cap.bottom_radius * 2.0, cap.height,
+			cap.bottom_radius * 2.0)
+	var cap_wall := CollisionShape3D.new()
+	cap_wall.name = "Дах-стіна"
+	cap_wall.shape = cap_shape
+	cap_wall.position = Vector3(0, size.y * 0.5 + cap.height * 0.5, 0)
+	body.add_child(cap_wall)
+
 
 ## Деталі набору Medieval Village MegaKit (Quaternius, CC0). Сітка в
 ## наборі стала: стіна 2 метри завширшки й 3,12 заввишки, підлога 2×2,
@@ -327,6 +389,15 @@ const ROOF_4X4 := "res://models/village/Roof_RoundTiles_4x4.gltf"
 const FLOOR := "res://models/village/Floor_Brick.gltf"
 const MODULE := 2.0        ## ширина однієї деталі, метрів
 const WALL_HEIGHT := 3.12
+## Дах ставиться на `WALL_HEIGHT + 0.5` і сам заміряний 4,25 м угору, дном
+## на -0,52 від опорної точки (`probes/_measure_roof.gd`, разово) — тобто
+## вершина опиняється на 3,62 + 3,73 = 7,35 м, далеко за стінами. Стара
+## коробка зіткнення сягала лише WALL_HEIGHT, і камера проходила крізь дах
+## наскрізь (П-121): дах узагалі не мав зіткнення.
+const ROOF_TOP := 7.35
+## Дах звисає за стіни: заміряно, разова деталь ширша за свою клітину
+## модулів приблизно на 1,5 м — по 0,75 з кожного боку.
+const ROOF_OVERHANG := 0.8
 
 
 ## Будинок, зібраний із деталей набору.
@@ -382,13 +453,15 @@ func _kit_house(where: Vector3, house: Dictionary) -> void:
 					WALL_HEIGHT + 0.5, -half_z + (iz + minf(1, deep - iz - 1)) * MODULE * 0.5)
 			_piece(body, ROOF_4X4, at, 0.0)
 
-	# Крізь будинок не пускає одна коробка на весь обрис.
+	# Крізь будинок не пускає одна коробка на весь обрис — і вона мусить
+	# накривати ДАХ, а не спинятись на стінах (П-121, див. ROOF_TOP).
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(wide * MODULE, WALL_HEIGHT, deep * MODULE)
+	shape.size = Vector3(wide * MODULE + ROOF_OVERHANG * 2.0, ROOF_TOP,
+			deep * MODULE + ROOF_OVERHANG * 2.0)
 	var wall := CollisionShape3D.new()
 	wall.name = "Стіна"
 	wall.shape = shape
-	wall.position = Vector3(0, WALL_HEIGHT * 0.5, 0)
+	wall.position = Vector3(0, ROOF_TOP * 0.5, 0)
 	body.add_child(wall)
 
 

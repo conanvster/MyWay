@@ -140,7 +140,13 @@ func call_rpc(name: String, args: Dictionary) -> void:
 static func row_of(name: String, who: Node) -> Dictionary:
 	return {
 		"name": name,
-		"account": who.account,
+		# Порожній рядок — не NULL: зовнішній ключ на `accounts` таку річ
+		# не пускає (П-118). `null` для PostgREST — це справжня відсутність
+		# значення.
+		"account": who.account if who.account != "" else null,
+		# Колонка має `DEFAULT now()`, але це діє лише на вставці; без
+		# цього поля оновлення саму мітку не чіпає (П-117).
+		"saved_at": Time.get_datetime_string_from_system(true) + "Z",
 		"level": who.level,
 		"respect": who.respect,
 		"experience": who.experience,

@@ -107,8 +107,13 @@ func _ray() -> void:
 	hero.learn("енергетичний-промінь", 1)
 	hero.target_id = -1
 	var full: int = mob.hp
-	print("  ціль за 8,0 (дальність 12,0): %s, шкода %d, мани лишилось %d"
-			% [combat.cast(1, "енергетичний-промінь"), full - mob.hp, hero.mp])
+	# Крок 2.3: скіл читається, шкода приходить не з cast(), а після того,
+	# як `tick_casts` дочитає до кінця (П-119) — інакше тут завжди нуль.
+	var started: bool = combat.cast(1, "енергетичний-промінь")
+	combat.tick_casts(hero.casting_left + 0.01)
+	var first_damage: int = full - mob.hp
+	print("  ціль за 8,0 (дальність 12,0): почав %s, шкода %d, мани лишилось %d"
+			% [started, first_damage, hero.mp])
 	print("  одразу вдруге (відкат %.1f с): %s"
 			% [hero.skill_ready_in.get("енергетичний-промінь", 0.0),
 			   combat.cast(1, "енергетичний-промінь")])
@@ -124,8 +129,9 @@ func _ray() -> void:
 	hero.mp = 70
 	var before: int = mob.hp
 	var ok: bool = combat.cast(1, "енергетичний-промінь")
-	print("  рівень 4 по тій самій цілі: %s, шкода %d (було 9 на першому), мани %d"
-			% [ok, before - mob.hp, hero.mp])
+	combat.tick_casts(hero.casting_left + 0.01)
+	print("  рівень 4 по тій самій цілі: %s, шкода %d (було %d на першому), мани %d"
+			% [ok, before - mob.hp, first_damage, hero.mp])
 	for id in w[0]:
 		w[0][id].queue_free()
 
@@ -143,7 +149,9 @@ func _burst() -> void:
 	for id in w[0]:
 		if id < 0:
 			was[id] = w[0][id].hp
-	print("  застосував: %s" % combat.cast(1, "енергетичний-вибух"))
+	var started: bool = combat.cast(1, "енергетичний-вибух")
+	combat.tick_casts(hero.casting_left + 0.01)
+	print("  застосував: %s" % started)
 	for id in [-1, -2, -3]:
 		var m: Node3D = w[0][id]
 		print("    монстр за %4.1f: шкода %d" % [m.global_position.x,

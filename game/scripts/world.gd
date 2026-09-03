@@ -77,6 +77,7 @@ func _ready() -> void:
 	vision = Vision.new(creatures)
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
+	combat.ground_height = ground_at
 	combat.skills = data.skills
 	combat.progress = Progress.new(data.levels)
 	combat.goods = data.items
@@ -543,7 +544,8 @@ func _zones() -> Array:
 
 
 func _on_joined(id: int) -> void:
-	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 1.5, 0))
+	# 6 м запасу, як і в spawner.gd: падає сам, сідає на видиму поверхню.
+	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 6.0, 0))
 	a.account = _signed.get(id, {}).get("логін", "")
 	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
 	# базу, а база не жде гру.

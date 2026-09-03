@@ -344,6 +344,55 @@ func _city() -> void:
 	for i in dwellers.size():
 		_dweller(dwellers[i], i)
 
+	_fence(_on_ground(center), float(city.get("радіус", 20)))
+
+
+## Дерев'яний паркан по колу міста (Quaternius Medieval Village MegaKit,
+## `models/village/`) — розширення світу 03.09.2026. Не фортеця з вежами
+## й ворітьми: замовник просив просто паркан, **без воріт**, і вхід
+## лишається вільним на всі чотири сторони світу (проходи по 6 м у
+## північ/схід/південь/захід). Якщо моделі паркана немає на диску —
+## просто нічого не будуємо: паркан — прикраса, не межа гри.
+const FENCE_MODEL := "res://models/village/Prop_WoodenFence_Single.gltf"
+## Довжина панелі, заміряно `probes/_measure_nature.gd` (разово): 2,0641 м.
+const FENCE_PANEL := 2.0641
+const FENCE_GATE_WIDTH := 6.0
+
+
+func _fence(center: Vector3, radius: float) -> void:
+	if not ResourceLoader.exists(FENCE_MODEL):
+		return
+	var scene: PackedScene = load(FENCE_MODEL)
+	var count := int(TAU * radius / FENCE_PANEL)
+	var gate_half: float = (FENCE_GATE_WIDTH / radius) * 0.5
+	for i in count:
+		var angle := TAU * i / count
+		var at_gate := false
+		for side in 4:
+			if absf(wrapf(angle - side * PI * 0.5, -PI, PI)) < gate_half:
+				at_gate = true
+				break
+		if at_gate:
+			continue
+		var at := center + Vector3(cos(angle), 0, sin(angle)) * radius
+		var body := StaticBody3D.new()
+		body.name = _named("Паркан")
+		body.position = at
+		# Панель дивиться вздовж дотичної до кола, тильною стороною назовні.
+		body.rotation.y = angle + PI * 0.5
+		add_child(body)
+		var view: Node3D = scene.instantiate()
+		view.name = "Модель"
+		body.add_child(view)
+		_no_shadows(view)
+		var wall := CollisionShape3D.new()
+		wall.name = "Стіна"
+		var box := BoxShape3D.new()
+		box.size = Vector3(FENCE_PANEL, 1.2, 0.3)
+		wall.shape = box
+		wall.position = Vector3(0, 0.6, 0)
+		body.add_child(wall)
+
 
 func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
 	var mesh := BoxMesh.new()
@@ -483,6 +532,16 @@ static func _pair(from: Variant) -> Vector2:
 	return Vector2(float(list[0]), float(list[1]))
 
 
+## Вимкнути тіні на всіх мешах усередині моделі. Заміряно 03.09.2026: із
+## тінями від 70 дерев і паркану довкола міста показ ішов 1 кадр за
+## секунду; дерева й скелі — прикраса на видноті, а не те, що кидає тінь
+## на бій, тож вимикати безпечно.
+static func _no_shadows(node: Node) -> void:
+	for child in node.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = child
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
 ## Будинок із готової моделі (крок 6, П-15).
 ##
 ## Модель дає лише вигляд; крізь що не пройти — окрема коробка за її
@@ -591,15 +650,61 @@ func _forest() -> void:
 				str(wood.get("крона", "#2f5e33")))
 
 
+## Справжні моделі (Quaternius Stylized Nature MegaKit, CC0,
+## `models/nature/`) — розширення світу 03.09.2026. Якщо паку немає на
+## диску, дерево лишається примітивом, як і раніше (той самий принцип,
+## що й для будинків: гра має йти на чистій машині).
+const TREE_MODELS := [
+	"res://models/nature/CommonTree_1.gltf",
+	"res://models/nature/CommonTree_2.gltf",
+	"res://models/nature/CommonTree_3.gltf",
+	"res://models/nature/Pine_1.gltf",
+	"res://models/nature/Pine_2.gltf",
+	"res://models/nature/Pine_3.gltf",
+]
+## Висота моделі дерева в наборі, заміряно (7,3…9,4 м) — беремо середню
+## як опору для масштабу; свій розкид висот (`map.json`) лишається
+## множником поверх неї.
+const TREE_MODEL_HEIGHT := 8.0
+
+
 func _tree(where: Vector3, height: float, bark: String, leaves: String) -> void:
+	var body := StaticBody3D.new()
+	body.name = _named("Дерево")
+	body.position = where
+	add_child(body)
+	# Зіткнення — тонкий стовбур незалежно від того, є модель чи ні:
+	# крона лишається прохідною, як і завжди.
+	var wall := CollisionShape3D.new()
+	wall.name = "Стіна"
+	var shape := CylinderShape3D.new()
+	shape.radius = 0.32
+	shape.height = height
+	wall.shape = shape
+	wall.position = Vector3(0, height * 0.5, 0)
+	body.add_child(wall)
+
+	var model_path: String = TREE_MODELS[randi() % TREE_MODELS.size()]
+	if ResourceLoader.exists(model_path):
+		var view: Node3D = (load(model_path) as PackedScene).instantiate()
+		view.name = "Модель"
+		var scale := height / TREE_MODEL_HEIGHT
+		view.scale = Vector3(scale, scale, scale)
+		view.rotation.y = randf() * TAU
+		body.add_child(view)
+		_no_shadows(view)
+		return
+
 	var trunk := CylinderMesh.new()
 	trunk.top_radius = 0.22
 	trunk.bottom_radius = 0.32
 	trunk.height = height
-	var shape := CylinderShape3D.new()
-	shape.radius = 0.32
-	shape.height = height
-	_solid(where + Vector3(0, height * 0.5, 0), trunk, shape, bark, "Дерево")
+	var trunk_view := MeshInstance3D.new()
+	trunk_view.name = "Меш"
+	trunk_view.mesh = trunk
+	trunk_view.set_surface_override_material(0, _paint(bark))
+	trunk_view.position = Vector3(0, height * 0.5, 0)
+	body.add_child(trunk_view)
 
 	var crown := CylinderMesh.new()
 	crown.top_radius = 0.0
@@ -613,22 +718,58 @@ func _tree(where: Vector3, height: float, bark: String, leaves: String) -> void:
 	add_child(green)
 
 
-## Гори: конуси на краю світу. Через них не пройти — вони й є межа.
+## Моделі скель для гір — той самий пак, що й дерева.
+const MOUNTAIN_MODELS := [
+	"res://models/nature/Rock_Medium_1.gltf",
+	"res://models/nature/Rock_Medium_2.gltf",
+	"res://models/nature/Rock_Medium_3.gltf",
+]
+## Висота моделі скелі в наборі, заміряно (1,9…2,3 м).
+const ROCK_MODEL_HEIGHT := 2.3
+
+
+## Гори: скелі на краю світу, підняті до потрібної висоти. Через них не
+## пройти — вони й є межа.
 func _mountains() -> void:
 	for hill: Dictionary in data.get("гори", []):
 		var height := float(hill.get("висота", 20))
 		var radius := float(hill.get("радіус", 15))
+		var body := StaticBody3D.new()
+		body.name = _named("Гора")
+		body.position = _on_ground(_point(hill["де"]))
+		add_child(body)
+		var wall := CollisionShape3D.new()
+		wall.name = "Стіна"
+		var shape := CylinderShape3D.new()
+		shape.radius = radius * 0.7
+		shape.height = height
+		wall.shape = shape
+		wall.position = Vector3(0, height * 0.5, 0)
+		body.add_child(wall)
+
+		var model_path: String = MOUNTAIN_MODELS[randi() % MOUNTAIN_MODELS.size()]
+		if ResourceLoader.exists(model_path):
+			var view: Node3D = (load(model_path) as PackedScene).instantiate()
+			view.name = "Модель"
+			var scale := height / ROCK_MODEL_HEIGHT
+			view.scale = Vector3(scale, scale, scale)
+			view.rotation.y = randf() * TAU
+			body.add_child(view)
+			_no_shadows(view)
+			continue
+
 		var mesh := CylinderMesh.new()
 		mesh.top_radius = radius * 0.06
 		mesh.bottom_radius = radius
 		mesh.height = height
 		mesh.radial_segments = 12
-		var shape := CylinderShape3D.new()
-		shape.radius = radius * 0.7
-		shape.height = height
-		_solid(_on_ground(_point(hill["де"])) + Vector3(0, height * 0.5, 0),
-				mesh, shape,
-				str(hill.get("колір", "#6a6f74")), "Гора")
+		var mesh_view := MeshInstance3D.new()
+		mesh_view.name = "Меш"
+		mesh_view.mesh = mesh
+		mesh_view.set_surface_override_material(0,
+				_paint(str(hill.get("колір", "#6a6f74"))))
+		mesh_view.position = Vector3(0, height * 0.5, 0)
+		body.add_child(mesh_view)
 
 
 static func _point(from: Variant) -> Vector3:

@@ -7,9 +7,18 @@ extends SceneTree
 ## Вікно лишається відкритим, камера сама обходить ряд. Esc — вийти,
 ## пробіл — ще один знімок.
 ##
+## Кожна істота сама по колу стоїть → йде → б'є (П-150): без цього
+## парад лише ряд поз спокою, а саме рух і показує, чи набір із
+## анімаціями (`SkinnedModel._play_if_has`), чи без них (гойдання
+## кістками) — на місці все виглядає однаково.
+##
 ## Знімок лягає в user://; шлях друкується.
 
 const MOB := preload("res://scenes/mob.tscn")
+## Секунд на повне коло стій-іди-вдар; зсунуте на істоту, щоб рухались
+## не строєм, а кожна своїм ритмом — так парад читається, а не блимає.
+const CYCLE := 4.0
+const WALK_SPEED := 3.0
 
 
 func _init() -> void:
@@ -58,16 +67,22 @@ func _go() -> void:
 
 	var step := 3.4
 	var from := -step * (kinds.size() - 1) * 0.5
+	# Кожен запис: mob, model, at (позиція в ряду), swung (чи вже
+	# вдарив у цьому колі).
+	var parade: Array = []
 	for i in kinds.size():
 		var mob: Node3D = MOB.instantiate()
 		world.add_child(mob)
 		await process_frame
 		mob.setup(Vector3.ZERO, kinds[i], false, data.for_kind(kinds[i]))
-		mob.place_at(Vector3(from + i * step, 0.0, 0.0), PI)
+		var at := Vector3(from + i * step, 0.0, 0.0)
+		mob.place_at(at, PI)
 		print("  %2d %-10s %s" % [kinds[i],
 				data.for_kind(kinds[i]).get("назва", "?"),
 				data.for_kind(kinds[i]).get("вигляд", {}).get("модель",
 						"фігурка з примітивів")])
+		parade.append({"mob": mob, "model": mob.model(), "at": at,
+				"swung": false})
 
 	var eye := Camera3D.new()
 	eye.position = Vector3(0, 3.4, 15.0)
@@ -85,9 +100,12 @@ func _go() -> void:
 	# істот ДИВИТИСЯ. Камера повільно обходить ряд; вийти — Esc або
 	# хрестик, знімок — пробіл.
 	print("\n  Esc — вийти · пробіл — знімок · камера обходить сама")
+	print("  кожна істота сама: стоїть → йде → б'є, по колу %.0f с" % CYCLE)
 	root.close_requested.connect(quit)
 	var angle := 0.0
 	var shot_held := false
+	var clock := 0.0
+	var last := Time.get_ticks_msec() / 1000.0
 	while true:
 		await process_frame
 		if Input.is_key_pressed(KEY_ESCAPE):
@@ -102,4 +120,31 @@ func _go() -> void:
 		var far := 17.0
 		eye.position = Vector3(sin(angle) * far, 3.6, cos(angle) * far)
 		eye.look_at(Vector3(0, 1.0, 0))
+
+		var now := Time.get_ticks_msec() / 1000.0
+		var delta := now - last
+		last = now
+		clock += delta
+		for i in parade.size():
+			var row: Dictionary = parade[i]
+			var model = row["model"]
+			if model == null:
+				continue
+			var mob: Node3D = row["mob"]
+			var phase := fmod(clock + i * 0.6, CYCLE) / CYCLE
+			if phase < 0.35:
+				model.animate(0.0)
+				mob.place_at(row["at"], PI)
+				row["swung"] = false
+			elif phase < 0.75:
+				model.animate(WALK_SPEED)
+				# Крок уперед-назад: сам рух і вмикає ходу в статі
+				# (`_speed` рахує саме зміщення, не намір).
+				var walk := sin((phase - 0.35) / 0.4 * PI) * 1.2
+				mob.place_at(row["at"] + Vector3(0, 0, walk), PI)
+			else:
+				model.animate(0.0)
+				if not row["swung"]:
+					model.swing()
+					row["swung"] = true
 	quit()

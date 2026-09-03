@@ -151,6 +151,13 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"respect": who.respect,
 		"experience": who.experience,
 		"stat_points": who.stat_points,
+		"stats": {
+			"сила": who.base_stats.strength,
+			"спритність": who.base_stats.agility,
+			"витривалість": who.base_stats.stamina,
+			"інтелект": who.base_stats.intellect,
+			"чуття": who.base_stats.sense,
+		},
 		"race": who.race,
 		"sex": who.sex,
 		"hp": who.hp,
@@ -204,8 +211,16 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	who.respect = int(row.get("respect", who.respect))
 	who.experience = int(row.get("experience", who.experience))
 	who.stat_points = int(row.get("stat_points", who.stat_points))
+	var saved_stats: Dictionary = row.get("stats", {})
+	for field: String in Stats.STAT_FIELDS:
+		var prop: String = Stats.STAT_FIELDS[field]
+		who.base_stats.set(prop,
+				int(saved_stats.get(field, who.base_stats.get(prop))))
 	who.race = str(row.get("race", who.race))
 	who.sex = str(row.get("sex", who.sex))
+	# Стати треба перерахувати ДО того, як нижче обмежимо здоров'я й ману
+	# максимумом — інакше max_hp() тут ще читає старі базові стати.
+	who.refresh_stats()
 	# JSON не знає цілих: усе, що прийшло, — числа з комою. Без цього
 	# рівні скілів і кількість речей ставали б 1.0 замість 1, і будь-яке
 	# порівняння з цілим потім давало б несподіванки.

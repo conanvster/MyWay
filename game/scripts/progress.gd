@@ -124,6 +124,30 @@ func lose_items(who: Node, goods: Object) -> Array:
 	return lost
 
 
+## Розподілити одне вільне очко в стат (П-147). Разом із максимумом росте
+## й ПОТОЧНЕ здоров'я/мана — на ту саму різницю, інакше очко у
+## Витривалість нічого не давало б, поки гравець не долікується.
+##
+## Повертає порожній рядок, якщо вийшло, або причину — той самий стиль,
+## що й у `runes.gd`.
+func spend_stat(who: Node, field: String) -> String:
+	if not Stats.STAT_FIELDS.has(field):
+		return "такого стата немає"
+	if who.stat_points <= 0:
+		return "немає вільних очок"
+	var before_hp: int = who.stats.max_hp()
+	var before_mp: int = who.stats.max_mp()
+	var prop: String = Stats.STAT_FIELDS[field]
+	who.base_stats.set(prop, int(who.base_stats.get(prop)) + 1)
+	who.stat_points -= 1
+	who.refresh_stats()
+	who.hp = mini(who.stats.max_hp(),
+			who.hp + (who.stats.max_hp() - before_hp))
+	who.mp = mini(who.stats.max_mp(),
+			who.mp + (who.stats.max_mp() - before_mp))
+	return ""
+
+
 ## Частка поточного рівня, від 0 до 1 — для смуги в HUD.
 func share_of_level(who: Node) -> float:
 	return clampf(float(who.respect)

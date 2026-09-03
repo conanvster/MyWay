@@ -245,15 +245,21 @@ func _quit() -> void:
 ## Висота рахована під вміст, не на око: 26 на «хто це» плюс 13 рядків
 ## по 21 плюс три смужки по 14 = 341. На 330 останній рядок наполовину
 ## вилазив за край вікна.
-const STATS_INNER := Vector2(248, 344)
+const STATS_INNER := Vector2(276, 344)
 
 ## Скільки місця на групу: рядок і повітря під смужкою.
 const STAT_ROW := 21.0
 const STAT_GAP := 14.0
 
+## Стати, у які можна вкладати очки (П-147) — саме ці рядки й отримують
+## кнопку «+», решта (рівень, здоров'я, атака...) тільки показуються.
+const SPENDABLE := ["сила", "спритність", "витривалість", "інтелект", "чуття"]
+
 var _stats_box: WindowBox
 var _stats_fields: Dictionary = {}
+var _stats_spend: Dictionary = {}
 var _stats_who: Label
+var _stats_points := 0
 
 
 func _build_stats() -> void:
@@ -287,9 +293,20 @@ func _build_stats() -> void:
 			value.name = field
 			value.text = "—"
 			value.position = Vector2(STATS_INNER.x - 98, at)
-			value.size = Vector2(96, 18)
+			value.size = Vector2(70, 18)
 			value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			_stats_fields[field] = value
+			if SPENDABLE.has(field):
+				var plus := Button.new()
+				plus.text = "+"
+				plus.position = Vector2(STATS_INNER.x - 24, at - 2)
+				plus.size = Vector2(22, 22)
+				plus.custom_minimum_size = plus.size
+				plus.disabled = true
+				plus.pressed.connect(
+						func() -> void: wants_spend_stat.emit(field))
+				page.add_child(plus)
+				_stats_spend[field] = plus
 			at += STAT_ROW
 		# Смужка між групами: саме повітря око не розділяє, і чотири
 		# групи читались як один довгий стовпчик.
@@ -312,14 +329,19 @@ func set_stats(data: Dictionary) -> void:
 	_stats_who.text = "%s, %s" % [str(data.get("раса", "?")),
 			str(data.get("стать", "?"))]
 	_put("рівень", "%d" % int(data.get("рівень", 1)))
-	_put("вільних очок", "%d" % int(data.get("очки", 0)))
+	_stats_points = int(data.get("очки", 0))
+	_put("вільних очок", "%d" % _stats_points,
+			Color(1, 0.85, 0.4) if _stats_points > 0 else Color(1, 1, 1))
 	# Чинне значення, а в дужках базове — коли спорядження чи баф їх
 	# зсунули. Так одразу видно, що твоє власне, а що від речей.
-	for field in ["сила", "спритність", "витривалість", "інтелект", "чуття"]:
+	for field in SPENDABLE:
 		var now: int = int(data.get(field, 0))
 		var base: int = int(data.get(field + " базова", now))
 		_put(field, "%d" % now if base == now else "%d  (%d)" % [now, base],
 				Color(1, 1, 1) if base == now else Color(0.62, 0.88, 0.62))
+		var plus: Button = _stats_spend.get(field)
+		if plus != null:
+			plus.disabled = _stats_points <= 0
 	_put("здоров'я", "%d" % int(data.get("здоров'я", 0)))
 	_put("мана", "%d" % int(data.get("мана", 0)))
 	_put("фіз. атака", "%.1f" % float(data.get("атака", 0.0)))
@@ -770,6 +792,9 @@ signal wants_withdraw_stack(at: int, name: String)
 signal wants_guild(at: int)
 signal wants_learn_skill(at: int, key: String)
 signal wants_raise_skill(at: int, key: String)
+
+## Розподілити одне вільне очко в стат (П-147).
+signal wants_spend_stat(field: String)
 
 const TALK_INNER := Vector2(240, 172)
 ## Прилавок: та сама комірка, що в торбі, по чотири в ряд.

@@ -278,6 +278,9 @@ func input(event: InputEvent) -> void:
 		if event.keycode == KEY_F12:
 			take_shot()
 			return
+		if event.keycode == KEY_ESCAPE:
+			cancel()
+			return
 		var slot := slot_of(event.keycode)
 		if slot != -1:
 			use_slot(slot, event.shift_pressed)
@@ -351,6 +354,19 @@ func _aim_resident(body: NPC) -> void:
 ## Те саме ззовні: сервер сказав, що ціллю став хтось інший.
 func forget_resident() -> void:
 	_forget_resident()
+
+
+## Скасувати все відразу (П-149): чергу дій на сервері, ціль і власний
+## підхід до неї — той самий підхід, що веде до далекої цілі чи до
+## мешканця, інакше персонаж однаково дійшов би куди йшов і вдарив.
+func cancel() -> void:
+	_link.to_server(&"ask_cancel")
+	_wait_slot = -1
+	_wait_talk = -1
+	_forget_resident()
+	var me: Node = _me()
+	if me != null:
+		me.walk_to = Vector3.ZERO
 
 
 func _forget_resident() -> void:

@@ -1026,6 +1026,40 @@ func ask_raise_skill(at: int, key: String) -> void:
 	rpc_id(id, "client_guild", at, _guild_rows(a))
 
 
+## Розподілити одне вільне очко (П-147). Разом із максимумом росте й
+## ПОТОЧНЕ здоров'я/мана — на ту саму різницю, інакше очко у Витривалість
+## нічого не давало б, поки гравець не долікується.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_spend_stat(field: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var why: String = combat.progress.spend_stat(a, field)
+	if why != "":
+		link.notice(id, why)
+		return
+	send_stats(id)
+
+
+## Скасувати чергу й ціль одним натисканням (П-149): передумав бити
+## далеку ціль, а поруч уже хтось б'є. Черга просто спорожняється —
+## жодна дія з неї не встигає спрацювати.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_cancel() -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	a.queue.clear()
+	a.target_id = 0
+	rpc_id(id, "client_target", 0)
+
+
 ## Після будь-якої зміни в торбі: сама торба, стати (спорядження їх
 ## зсуває) і перелік речей для вікна.
 func _after_bag(id: int, a: Node) -> void:
@@ -1169,6 +1203,8 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_learn_skill", at, key))
 		hud.wants_raise_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_raise_skill", at, key))
+		hud.wants_spend_stat.connect(func(field: String) -> void:
+				rpc_id(1, "ask_spend_stat", field))
 		add_child(hud)
 
 

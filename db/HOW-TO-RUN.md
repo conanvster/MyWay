@@ -46,6 +46,15 @@ sudo -u postgres psql -d myway < db/migration-step4.sql
 sudo -u postgres psql -d myway < db/migration-warehouse.sql
 ```
 
+### Якщо база вже стояла до розподілу очок статів (П-147)
+
+Новий стовпець `stats` — куди подіті очки за рівень (сила, спритність,
+витривалість, інтелект, чуття):
+
+```
+sudo -u postgres psql -d myway < db/migration-stats.sql
+```
+
 ## 2. PostgREST
 
 ```

@@ -24,6 +24,7 @@ func _go() -> void:
 	_difference(progress)
 	await _example(progress)
 	await _kill_reward(data, progress)
+	await _spend(progress)
 	quit()
 
 
@@ -122,3 +123,32 @@ func _kill_reward(data: GameData, progress: Progress) -> void:
 		print("    %-28s %d" % [name, drops[name]])
 	hero.queue_free()
 	mob.queue_free()
+
+
+## Розподіл очок статів (П-147): і успіх, і обидві відмови.
+func _spend(progress: Progress) -> void:
+	print("\n— розподіл очок статів (П-147) —")
+	var hero: Node3D = AVATAR.instantiate()
+	root.add_child(hero)
+	await process_frame
+
+	var why: String = progress.spend_stat(hero, "витривалість")
+	print("  без очок: %s" % ["ПОМИЛКА: пройшло" if why == "" else why])
+
+	hero.stat_points = 2
+	var before_hp: int = hero.stats.max_hp()
+	var was_hp: int = hero.hp
+	why = progress.spend_stat(hero, "витривалість")
+	print("  +1 витривалість: %s, здоров'я %d → %d (було %d), очок лишилось %d"
+			% ["вийшло" if why == "" else why, before_hp,
+			   hero.stats.max_hp(), was_hp, hero.stat_points])
+	print("  поточне здоров'я зросло разом із максимумом: %d → %d"
+			% [was_hp, hero.hp])
+
+	why = progress.spend_stat(hero, "не стат")
+	print("  невідомий стат: %s" % ["ПОМИЛКА: пройшло" if why == "" else why])
+
+	progress.spend_stat(hero, "сила")
+	why = progress.spend_stat(hero, "сила")
+	print("  очки скінчились: %s" % ["ПОМИЛКА: пройшло" if why == "" else why])
+	hero.queue_free()

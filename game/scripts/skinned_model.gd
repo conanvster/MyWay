@@ -16,6 +16,11 @@ extends Node3D
 
 const STEP := deg_to_rad(26.0)      ## розмах кроку, коли гойдаємо самі
 const SWING_TIME := 0.4
+## Фаза стоячи: без цього вона застигає рівно там, де швидкість впала
+## до нуля, — а якщо істота ще й ЖОДНОГО разу не рухалась, це рівно
+## нульова фаза, тобто спокійна Т-поза (П-120: у Imp.glb і Puglin.glb
+## немає жодної анімації, лишається тільки цей шлях гойдання кістками).
+const IDLE_PHASE_SPEED := 0.6
 
 var path := ""
 var height := 1.0
@@ -111,7 +116,9 @@ func swing() -> void:
 func _process(delta: float) -> void:
 	_swing_left = maxf(0.0, _swing_left - delta)
 	if _player == null and _skeleton != null:
-		_phase += delta * clampf(_speed, 0.0, 6.0) * 2.2
+		var rate := clampf(_speed, 0.0, 6.0) * 2.2 if _speed > 0.35 \
+				else IDLE_PHASE_SPEED
+		_phase += delta * rate
 		_swing_bones(_speed)
 
 

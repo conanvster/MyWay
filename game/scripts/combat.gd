@@ -257,6 +257,9 @@ func _try_interrupt(victim: Node, id: int, hit: int) -> void:
 ## Кого зачепить скіл. Тут-таки й повідомлення про невдачу, бо причина
 ## залежить від типу цілі (П-42).
 func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
+	# Клич чи стійка (П-150): б'є самого себе, дальність тут ні до чого.
+	if skill.target == "себе":
+		return [a]
 	var reach: float = skill.range_at(level)
 	if skill.hits_many():
 		# Вибух б'є все вороже навколо. Гравець зачіпає монстрів, монстр —

@@ -16,6 +16,7 @@ func _go() -> void:
 	await process_frame
 	await _learning()
 	await _regen()
+	await _tree()
 	quit()
 
 
@@ -107,3 +108,45 @@ func _regen() -> void:
 			% [hero.sitting, hero.hp, hero.in_fight])
 	hero.queue_free()
 	mob.queue_free()
+
+
+## Дерево скілів (П-150): передумова й ціль «себе».
+func _tree() -> void:
+	print("\n— дерево скілів (П-150) —")
+	var data := GameData.new()
+	data.load_all()
+	var runes := Runes.new(data.skills)
+	var hero: Node3D = await _hero()
+	hero.learned.clear()
+	hero.level = 10
+
+	var advanced: Skill = data.skills.get_skill("потужний-удар")
+	print("  потужний удар: передумова «%s», вкладка «%s», місце %s"
+			% [advanced.requires, advanced.category, advanced.position])
+	print("  без передумови: %s" % runes.learn(hero, "потужний-удар"))
+
+	var root_skill: Skill = data.skills.get_skill("енергетичний-промінь")
+	hero.give_item(root_skill.rune)
+	hero.experience = root_skill.learn_cost
+	runes.learn(hero, "енергетичний-промінь")
+	hero.give_item(advanced.rune)
+	hero.experience = advanced.learn_cost
+	var why: String = runes.learn(hero, "потужний-удар")
+	print("  із передумовою:  %s -> вивчено: %s"
+			% ["вийшло" if why == "" else why, why == ""])
+
+	print("\n— ціль «себе»: клич хоробрості —")
+	var cry: Skill = data.skills.get_skill("клич-хоробрості")
+	hero.give_item(cry.rune)
+	hero.experience = cry.learn_cost
+	runes.learn(hero, "клич-хоробрості")
+	var creatures := {1: hero}
+	var combat := Combat.new(creatures, Messenger.new())
+	combat.skills = data.skills
+	var before: int = hero.stats.strength
+	hero.target_id = 0        # цілі немає взагалі — і не треба
+	combat.cast(1, "клич-хоробрості")
+	combat.tick_casts(cry.cast_points * 0.5 + 0.1)   # каст читається час
+	print("  сила до %d, після %d (без жодної цілі на екрані)"
+			% [before, hero.stats.strength])
+	hero.queue_free()

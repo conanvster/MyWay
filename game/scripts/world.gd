@@ -955,10 +955,15 @@ func ask_withdraw_stack(at: int, name: String) -> void:
 # перевіряти й міняти вивчене вміла, а покликати нікуди не було. Гільд-
 # майстер саме те місце, звідки її нарешті можна викликати.
 
+## Лише скіли з дерева (П-150): у мобів «вкладки» немає — вони тут не
+## показуються, лишаються тим, чим і були, вміннями монстра, не
+## гільдії.
 func _guild_rows(a: Node) -> Array:
 	var out: Array = []
 	for key: String in data.skills.keys():
 		var skill: Skill = data.skills.get_skill(key)
+		if skill.category == "":
+			continue
 		var known: bool = a.knows(key)
 		var level: int = int(a.learned.get(key, 0))
 		out.append({
@@ -973,6 +978,11 @@ func _guild_rows(a: Node) -> Array:
 			"руна підняття": Runes.level_rune_for(skill.grade),
 			"досвід вивчення": skill.learn_cost,
 			"досвід підняття": Runes.raise_cost(skill, maxi(level, 1)),
+			"вкладка": skill.category,
+			"місце": [skill.position.x, skill.position.y],
+			"передумова": skill.requires,
+			"передумова відома":
+					skill.requires == "" or a.knows(skill.requires),
 		})
 	return out
 

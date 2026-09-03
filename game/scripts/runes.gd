@@ -41,6 +41,10 @@ func learn(who: Node, key: String) -> String:
 		return "%s уже вивчено" % skill.name
 	if who.level < skill.from_level:
 		return "%s вивчається з %d рівня" % [skill.name, skill.from_level]
+	if skill.requires != "" and not who.knows(skill.requires):
+		var need: Skill = _skills.get_skill(skill.requires)
+		return "спершу потрібно: %s" \
+				% (need.name if need != null else skill.requires)
 	if skill.rune != "" and not who.has_item(skill.rune):
 		return "потрібна %s" % skill.rune
 	if who.experience < skill.learn_cost:

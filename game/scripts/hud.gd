@@ -135,6 +135,20 @@ func _text(size: int, parent: Control) -> Label:
 	return label
 
 
+## Теплий пергаментний текст для вікон «камінь і золото» (П-150): білий
+## з чорним обрисом сюди не пасує, а на темному камені губиться.
+const PARCHMENT := Color(0.86, 0.79, 0.62)
+const PARCHMENT_DIM := Color(0.52, 0.47, 0.38)
+
+
+func _gothic_text(size: int, parent: Control,
+		color: Color = PARCHMENT) -> Label:
+	var label := _text(size, parent)
+	label.add_theme_constant_override("outline_size", 0)
+	label.add_theme_color_override("font_color", color)
+	return label
+
+
 ## Вікно смерті.
 ##
 ## Досі труп гравця лежав **двадцять хвилин** і підводився сам (П-69):
@@ -274,17 +288,16 @@ var _stats_points := 0
 func _build_stats() -> void:
 	_stats_box = WindowBox.new()
 	_stats_box.name = "СторінкаСтатів"
-	_stats_box.setup("Стати", STATS_INNER)
+	_stats_box.setup("Стати", STATS_INNER, true)
 	_stats_box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_stats_box.position = Vector2(-_stats_box.size.x - 24,
 			-_stats_box.size.y - 52)
 	_root.add_child(_stats_box)
 	var page: Control = _stats_box.body
 
-	_stats_who = _text(12, page)
+	_stats_who = _gothic_text(13, page, WindowBox.GOTHIC_GOLD)
 	_stats_who.name = "Хто"
 	_stats_who.text = "—"
-	_stats_who.modulate = Color(0.72, 0.76, 0.68)
 
 	var at := 26.0
 	var groups: Array = [
@@ -294,11 +307,10 @@ func _build_stats() -> void:
 			["фіз. атака", "маг. атака", "фіз. захист", "маг. захист"]]
 	for group_at in groups.size():
 		for field: String in groups[group_at]:
-			var name_text := _text(13, page)
+			var name_text := _gothic_text(13, page, PARCHMENT_DIM)
 			name_text.text = field
 			name_text.position = Vector2(2, at)
-			name_text.modulate = Color(0.78, 0.8, 0.76)
-			var value := _text(13, page)
+			var value := _gothic_text(13, page)
 			value.name = field
 			value.text = "—"
 			value.position = Vector2(STATS_INNER.x - 98, at)
@@ -312,6 +324,8 @@ func _build_stats() -> void:
 				plus.size = Vector2(22, 22)
 				plus.custom_minimum_size = plus.size
 				plus.disabled = true
+				plus.add_theme_color_override(
+						"font_color", WindowBox.GOTHIC_GOLD)
 				plus.pressed.connect(
 						func() -> void: wants_spend_stat.emit(field))
 				page.add_child(plus)
@@ -321,7 +335,7 @@ func _build_stats() -> void:
 		# групи читались як один довгий стовпчик.
 		if group_at < groups.size() - 1:
 			var line := _plate(Vector2(STATS_INNER.x, 1),
-					Color(0.28, 0.29, 0.27, 0.7), page)
+					WindowBox.GOTHIC_GOLD_DIM, page)
 			line.position = Vector2(0, at + STAT_GAP * 0.5)
 			at += STAT_GAP
 
@@ -340,14 +354,14 @@ func set_stats(data: Dictionary) -> void:
 	_put("рівень", "%d" % int(data.get("рівень", 1)))
 	_stats_points = int(data.get("очки", 0))
 	_put("вільних очок", "%d" % _stats_points,
-			Color(1, 0.85, 0.4) if _stats_points > 0 else Color(1, 1, 1))
+			WindowBox.GOTHIC_GOLD if _stats_points > 0 else PARCHMENT)
 	# Чинне значення, а в дужках базове — коли спорядження чи баф їх
 	# зсунули. Так одразу видно, що твоє власне, а що від речей.
 	for field in SPENDABLE:
 		var now: int = int(data.get(field, 0))
 		var base: int = int(data.get(field + " базова", now))
 		_put(field, "%d" % now if base == now else "%d  (%d)" % [now, base],
-				Color(1, 1, 1) if base == now else Color(0.62, 0.88, 0.62))
+				PARCHMENT if base == now else Color(0.62, 0.82, 0.58))
 		var plus: Button = _stats_spend.get(field)
 		if plus != null:
 			plus.disabled = _stats_points <= 0
@@ -359,11 +373,11 @@ func set_stats(data: Dictionary) -> void:
 	_put("маг. захист", "%.1f" % float(data.get("магічний захист", 0.0)))
 
 
-func _put(field: String, value: String, tint: Color = Color(1, 1, 1)) -> void:
+func _put(field: String, value: String, tint: Color = PARCHMENT) -> void:
 	var label: Label = _stats_fields.get(field)
 	if label != null:
 		label.text = value
-		label.modulate = tint
+		label.add_theme_color_override("font_color", tint)
 
 
 ## Вікно «Скіли»: усе вивчене, звідки скіл тягнуть мишею на панель.
@@ -1219,79 +1233,245 @@ func set_warehouse(things: Array, stacks: Array) -> void:
 		_fill_kept_side()
 
 
-# ── гільдія (крок 5, П-145) ──────────────────────────────────────────
+# ── гільдія: дерево скілів (крок 5, П-145; дерево П-150) ───────────────
 #
-## Вивчення й підняття рівня скіла через `Runes` (написано 02.09.2026,
-## але до цього вечора не було мешканця, який би це пропонував).
+## Вивчення й підняття рівня скіла через `Runes`. Дерево — три вкладки
+## (спершу тільки людина), сітка 2×3 на кожну, лінії передумов; та сама
+## сітка вузлів переставляється між вкладками — категорій три, а форма
+## одна й та сама (П-150).
 
-const GUILD_ROWS := 8
+const TREE_CATEGORIES := ["Бойові кличі", "Бойові стійки", "Бойові навички"]
+const TREE_COLS := 2
+const TREE_ROWS := 3
+const NODE := 48.0
+const NODE_GAP := 30.0
+const TREE_W := TREE_COLS * NODE + (TREE_COLS - 1) * NODE_GAP
+const TREE_H := TREE_ROWS * NODE + (TREE_ROWS - 1) * NODE_GAP
+const TREE_TOP := 40.0
+const DETAIL_W := 220.0
+const GUILD_INNER := Vector2(TREE_W + 24.0 + DETAIL_W, TREE_TOP + TREE_H)
 
 var _guild_box: WindowBox
-var _guild_rows_ui: Array = []
 var _guild_with := -1
+var _guild_data: Array = []          # останній перелік від сервера
+var _guild_tab := 0
+var _guild_selected := ""
+var _guild_tabs_ui: Array = []
+var _guild_nodes: Dictionary = {}    # Vector2i(колонка,ряд) -> Button
+var _guild_lines: TreeLines
+var _guild_detail_name: Label
+var _guild_detail_info: Label
+var _guild_detail_press: Button
 
 
 func _build_guild() -> void:
-	var inner := Vector2(460.0, 18.0 + GUILD_ROWS * (ROW_H + 4.0))
 	_guild_box = WindowBox.new()
 	_guild_box.name = "ВікноГільдії"
-	_guild_box.setup("Гільдія", inner)
+	_guild_box.setup("Гільдія", GUILD_INNER, true)
 	_guild_box.set_anchors_preset(Control.PRESET_CENTER)
 	_guild_box.position = -_guild_box.size * 0.5
 	_root.add_child(_guild_box)
 	var page: Control = _guild_box.body
 
-	for i in GUILD_ROWS:
-		var y := 18.0 + i * (ROW_H + 4.0)
-		var label := _text(12, page)
-		label.position = Vector2(0, y + 5.0)
-		label.custom_minimum_size = Vector2(230, ROW_H)
-		var press := Button.new()
-		press.size = Vector2(210, ROW_H)
-		press.custom_minimum_size = press.size
-		press.position = Vector2(240, y)
-		page.add_child(press)
-		_guild_rows_ui.append({"label": label, "press": press})
+	var tab_w := (TREE_W + 24.0 + DETAIL_W - 8.0) / 3.0
+	for i in TREE_CATEGORIES.size():
+		var tab := Button.new()
+		tab.text = TREE_CATEGORIES[i]
+		tab.add_theme_font_size_override("font_size", 11)
+		tab.size = Vector2(tab_w, 26.0)
+		tab.position = Vector2(i * (tab_w + 4.0), 0)
+		tab.pressed.connect(func() -> void: _pick_guild_tab(i))
+		page.add_child(tab)
+		_guild_tabs_ui.append(tab)
+
+	_guild_lines = TreeLines.new()
+	_guild_lines.position = Vector2(0, TREE_TOP)
+	_guild_lines.size = Vector2(TREE_W, TREE_H)
+	_guild_lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page.add_child(_guild_lines)
+
+	for row in TREE_ROWS:
+		for col in TREE_COLS:
+			var press := Button.new()
+			press.size = Vector2(NODE, NODE)
+			press.position = Vector2(col * (NODE + NODE_GAP),
+					TREE_TOP + row * (NODE + NODE_GAP))
+			press.add_theme_font_size_override("font_size", 13)
+			press.visible = false
+			page.add_child(press)
+			_guild_nodes[Vector2i(col, row)] = press
+
+	var detail_x := TREE_W + 24.0
+	_guild_detail_name = _gothic_text(14, page, WindowBox.GOTHIC_GOLD)
+	_guild_detail_name.position = Vector2(detail_x, TREE_TOP)
+	_guild_detail_name.size = Vector2(DETAIL_W, 40)
+	_guild_detail_name.autowrap_mode = TextServer.AUTOWRAP_WORD
+
+	_guild_detail_info = _gothic_text(12, page)
+	_guild_detail_info.position = Vector2(detail_x, TREE_TOP + 42.0)
+	_guild_detail_info.size = Vector2(DETAIL_W, TREE_H - 76.0)
+	_guild_detail_info.autowrap_mode = TextServer.AUTOWRAP_WORD
+
+	_guild_detail_press = Button.new()
+	_guild_detail_press.position = Vector2(detail_x, TREE_TOP + TREE_H - 30.0)
+	_guild_detail_press.size = Vector2(DETAIL_W, 28.0)
+	page.add_child(_guild_detail_press)
+
+
+func _pick_guild_tab(i: int) -> void:
+	_guild_tab = i
+	_guild_selected = ""
+	_render_guild_tree()
+
+
+## Осередок вузла в сітці — центр, для лінії передумови.
+func _node_center(at: Vector2i) -> Vector2:
+	return Vector2(at.x * (NODE + NODE_GAP),
+			TREE_TOP + at.y * (NODE + NODE_GAP)) + Vector2(NODE, NODE) * 0.5
 
 
 func show_guild(at: int, rows: Array) -> void:
 	if _guild_box == null:
 		return
 	_guild_with = at
+	_guild_data = rows
 	if _talk_box != null:
 		_talk_box.visible = false
 	_guild_box.visible = true
-	for i in _guild_rows_ui.size():
-		var ui: Dictionary = _guild_rows_ui[i]
-		var label: Label = ui["label"]
-		var press: Button = ui["press"]
-		_unlink(press)
-		if i >= rows.size():
-			label.text = ""
-			press.text = ""
-			press.disabled = true
+	_render_guild_tree()
+	_guild_box._keep_on_screen()
+
+
+## Перемальовує сітку й лінії для поточної вкладки — тими самими вузлами,
+## що й інші вкладки, лише з іншим наповненням (форма спільна, П-150).
+func _render_guild_tree() -> void:
+	if _guild_box == null:
+		return
+	for i in _guild_tabs_ui.size():
+		var tab: Button = _guild_tabs_ui[i]
+		tab.disabled = i == _guild_tab
+
+	var category: String = TREE_CATEGORIES[_guild_tab]
+	var by_place: Dictionary = {}     # Vector2i -> row
+	var by_key: Dictionary = {}       # ключ -> row
+	for row: Dictionary in _guild_data:
+		if str(row.get("вкладка", "")) != category:
 			continue
-		var row: Dictionary = rows[i]
+		var at: Array = row.get("місце", [0, 0])
+		var place := Vector2i(int(at[0]), int(at[1]))
+		by_place[place] = row
+		by_key[str(row["ключ"])] = row
+
+	for place: Vector2i in _guild_nodes:
+		var press: Button = _guild_nodes[place]
+		_unlink(press)
+		var row: Dictionary = by_place.get(place, {})
+		if row.is_empty():
+			press.visible = false
+			continue
+		press.visible = true
 		var key: String = str(row["ключ"])
 		var known: bool = bool(row["вивчено"])
-		var level: int = int(row["рівень"])
-		var max_level: int = int(row["максимум"])
-		label.text = "%s (%s) %d/%d" \
-				% [str(row["назва"]), str(row["грейд"]), level, max_level]
-		if not known:
-			press.text = "Вивчити (%s)" % str(row["руна вивчення"])
-			press.disabled = false
-			press.pressed.connect(func() -> void:
-					wants_learn_skill.emit(_guild_with, key))
-		elif level < max_level:
-			press.text = "Підняти (%s)" % str(row["руна підняття"])
-			press.disabled = false
-			press.pressed.connect(func() -> void:
-					wants_raise_skill.emit(_guild_with, key))
-		else:
-			press.text = "найвищий рівень"
-			press.disabled = true
-	_guild_box._keep_on_screen()
+		var open: bool = bool(row.get("передумова відома", true))
+		var name: String = str(row["назва"])
+		var initials := ""
+		for word in name.split(" "):
+			if word.length() > 0:
+				initials += word.substr(0, 1).to_upper()
+		press.text = initials.substr(0, 2)
+		press.add_theme_stylebox_override(
+				"normal", _node_style(known, open))
+		press.add_theme_stylebox_override(
+				"hover", _node_style(known, open, true))
+		press.add_theme_color_override("font_color",
+				WindowBox.GOTHIC_GOLD if known else
+				(PARCHMENT if open else PARCHMENT_DIM))
+		press.pressed.connect(func() -> void: _select_guild_skill(key))
+
+	var lines: Array = []
+	for key: String in by_key:
+		var row: Dictionary = by_key[key]
+		var req: String = str(row.get("передумова", ""))
+		if req == "" or not by_key.has(req):
+			continue
+		var parent_row: Dictionary = by_key[req]
+		var parent_at: Array = parent_row.get("місце", [0, 0])
+		var here_at: Array = row.get("місце", [0, 0])
+		lines.append({
+			"a": _node_center(Vector2i(int(parent_at[0]), int(parent_at[1]))),
+			"b": _node_center(Vector2i(int(here_at[0]), int(here_at[1]))),
+			"color": WindowBox.GOTHIC_GOLD if bool(parent_row["вивчено"])
+					else WindowBox.GOTHIC_GOLD_DIM,
+		})
+	_guild_lines.set_segments(lines)
+
+	if not by_key.has(_guild_selected):
+		_guild_selected = by_key.keys()[0] if not by_key.is_empty() else ""
+	_select_guild_skill(_guild_selected)
+
+
+func _node_style(known: bool, open: bool, hover: bool = false) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.set_corner_radius_all(4)
+	box.set_border_width_all(2)
+	if known:
+		box.bg_color = Color(0.28, 0.21, 0.09, 0.95 if not hover else 1.0)
+		box.border_color = WindowBox.GOTHIC_GOLD
+	elif open:
+		box.bg_color = WindowBox.GOTHIC_INSET
+		box.border_color = WindowBox.GOTHIC_GOLD_DIM
+	else:
+		box.bg_color = Color(0.05, 0.045, 0.04, 0.95)
+		box.border_color = Color(0.22, 0.2, 0.16)
+	return box
+
+
+func _select_guild_skill(key: String) -> void:
+	_guild_selected = key
+	_unlink(_guild_detail_press)
+	if key == "":
+		_guild_detail_name.text = ""
+		_guild_detail_info.text = ""
+		_guild_detail_press.text = ""
+		_guild_detail_press.disabled = true
+		return
+	var row: Dictionary = {}
+	for r: Dictionary in _guild_data:
+		if str(r["ключ"]) == key:
+			row = r
+			break
+	if row.is_empty():
+		return
+	var known: bool = bool(row["вивчено"])
+	var open: bool = bool(row.get("передумова відома", true))
+	var level: int = int(row["рівень"])
+	var max_level: int = int(row["максимум"])
+	_guild_detail_name.text = "%s (%s)" \
+			% [str(row["назва"]), str(row["грейд"])]
+	_guild_detail_info.text = "рівень: %d / %d\nз рівня персонажа: %d" \
+			% [level, max_level, int(row["з рівня"])]
+	if not open:
+		var req: String = str(row.get("передумова", ""))
+		var req_name := req
+		for r: Dictionary in _guild_data:
+			if str(r["ключ"]) == req:
+				req_name = str(r["назва"])
+		_guild_detail_info.text += "\n\nспершу: %s" % req_name
+		_guild_detail_press.text = "недоступно"
+		_guild_detail_press.disabled = true
+	elif not known:
+		_guild_detail_press.text = "Вивчити (%s)" % str(row["руна вивчення"])
+		_guild_detail_press.disabled = false
+		_guild_detail_press.pressed.connect(func() -> void:
+				wants_learn_skill.emit(_guild_with, key))
+	elif level < max_level:
+		_guild_detail_press.text = "Підняти (%s)" % str(row["руна підняття"])
+		_guild_detail_press.disabled = false
+		_guild_detail_press.pressed.connect(func() -> void:
+				wants_raise_skill.emit(_guild_with, key))
+	else:
+		_guild_detail_press.text = "найвищий рівень"
+		_guild_detail_press.disabled = true
 
 
 ## Свої здоров'я й мана — ліворуч угорі.

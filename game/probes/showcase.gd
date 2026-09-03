@@ -48,6 +48,7 @@ func _go() -> void:
 	_hud.show_windows()
 	if _hud.has_method("_toggle_skills"):
 		_hud._toggle_skills()
+	_hud.show_guild(0, _guild_rows(data))
 	await process_frame
 
 	# Друга сторінка вітрини — крамар. Вікна торгівлі в грі не побачити
@@ -239,6 +240,39 @@ func _skills() -> Array:
 		 "грейд": "E", "рівень": 1, "рівнів": 3, "мана": 20,
 		 "дальність": 5.0},
 	]
+
+
+## Дерево скілів (П-150) удаваним персонажем 10 рівня: корені вивчені,
+## одна гілка тягнеться далі, друга стоїть замкненою — щоб на знімку
+## були відразу всі три стани вузла.
+func _guild_rows(data: GameData) -> Array:
+	var known := {
+		"енергетичний-вибух": 2, "потужний-удар": 0,
+		"клич-хоробрості": 3, "клич-люті": 1,
+		"стійка-щита": 2, "залізна-шкіра": 1,
+	}
+	var out: Array = []
+	for key: String in data.skills.keys():
+		var skill: Skill = data.skills.get_skill(key)
+		if skill.category == "":
+			continue
+		var level: int = int(known.get(key, -1))
+		var is_known: bool = level >= 1
+		out.append({
+			"ключ": key, "назва": skill.name, "грейд": skill.grade,
+			"вивчено": is_known, "рівень": maxi(level, 0),
+			"максимум": skill.max_level(), "з рівня": skill.from_level,
+			"руна вивчення": skill.rune,
+			"руна підняття": Runes.level_rune_for(skill.grade),
+			"досвід вивчення": skill.learn_cost,
+			"досвід підняття": Runes.raise_cost(skill, maxi(level, 1)),
+			"вкладка": skill.category,
+			"місце": [skill.position.x, skill.position.y],
+			"передумова": skill.requires,
+			"передумова відома": skill.requires == ""
+					or int(known.get(skill.requires, -1)) >= 1,
+		})
+	return out
 
 
 ## Що вийшло — числами, бо на знімку «трохи не туди» не видно.

@@ -26,6 +26,13 @@ var learn_cost := 0
 ## Рівні ВСЕРЕДИНІ грейду. Кожен — словник: мана, дальність, шкода.
 var levels: Array = []
 
+## Дерево скілів (П-150): вкладка, місце в сітці й ключ скіла, який
+## треба знати ПЕРШИМ. Порожня передумова — корінь гілки. Тільки один
+## батько на скіл: розгалуження тут «одне дерево», не «і те, і те».
+var category := ""
+var position := Vector2i.ZERO
+var requires := ""
+
 
 static func from_data(of_key: String, data: Dictionary) -> Skill:
 	var s := Skill.new()
@@ -40,6 +47,11 @@ static func from_data(of_key: String, data: Dictionary) -> Skill:
 	s.rune = learn.get("руна", "")
 	s.learn_cost = int(learn.get("досвід", 0))
 	s.levels = data.get("рівні", [])
+	s.category = data.get("вкладка", "")
+	var at: Array = data.get("місце", [0, 0])
+	s.position = Vector2i(int(at[0]), int(at[1])) if at.size() >= 2 \
+			else Vector2i.ZERO
+	s.requires = data.get("передумова", "")
 	return s
 
 

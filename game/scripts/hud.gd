@@ -210,10 +210,26 @@ func _build_menu() -> void:
 		_menu_box.add_child(press)
 
 
-## Виходимо тим самим шляхом, що й закриття вікна: сервер побачить
-## від'єднання і збереже персонажа сам (`_on_left`).
+## Не закриваємо вікно — вертаємось на стартову сторінку. Сервер і базу
+## лишаємо жити: там, звідки прийшли, є кнопка «Зупинити сервер», і
+## гравець зупиняє сам, коли хоче, а не щоразу наосліп при виході.
+##
+## Від'єднання те саме, що й було: закриваємо мережевого одноранга
+## самі — сервер бачить його й зберігає персонажа (`_on_left`), так само,
+## як при закритті вікна.
 func _quit() -> void:
-	_world.get_tree().quit()
+	var tree := _world.get_tree()
+	var peer := _world.multiplayer.multiplayer_peer
+	if peer != null:
+		peer.close()
+	_world.multiplayer.multiplayer_peer = null
+	Net.joined = false
+	var launcher: Node = load("res://scenes/launcher.tscn").instantiate()
+	var old_world := _world
+	launcher.tree_entered.connect(func() -> void:
+			tree.current_scene = launcher
+			old_world.queue_free(), CONNECT_ONE_SHOT)
+	tree.root.add_child.call_deferred(launcher)
 
 
 ## Вікно «Стати».

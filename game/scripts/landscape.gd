@@ -22,9 +22,32 @@ const LAND_LIFT := 3.0
 
 var data: Dictionary = {}
 
+## Підвантаження ділянками (П-63). Дерева й паркан — найдорожчі
+## декорації (137 і ~109 з 489 мс, заміряно 03.09.2026), і жоден код
+## більше ніде не звертається до них за іменем (`grep` по
+## `Дерево`/`Паркан` за межами цього файлу — порожньо), тож їх безпечно
+## відкладати. Земля, зіткнення, будинки, мешканці й гори лишаються
+## одразу для всіх: перше — бо гравець чи монстр може опинитись де
+## завгодно, друге — бо це NPC, з якими говорять, а не прикраса.
+##
+## Сервер СТРІМІНГ НЕ ВМИКАЄ НІКОЛИ (`build()` без другого доводу) —
+## йому потрібне зіткнення й дерева, і паркан скрізь одразу, так само,
+## як і сьогодні. Це вмикається лише для клієнта (`world.gd`).
+var _streaming := false
+## Специфікації — постійний реєстр, не «черга»: сектор лишається тут і
+## після вивантаження, щоб підняти той самий розкид дерев ще раз, а не
+## рахувати випадковість наново (вона й так одна на весь `build()`).
+var _tree_specs: Dictionary = {}     # сектор -> Array[Dictionary]
+var _tree_nodes: Dictionary = {}     # сектор -> Array[Node], лише завантажені
+var _fence_specs: Dictionary = {}
+var _fence_nodes: Dictionary = {}
+var _loaded_sectors: Dictionary = {}   # сектор -> true, якщо збудовано
+var _sector_seen_at: Dictionary = {}   # сектор -> мс, коли гравець там був
 
-func build(from_data: Dictionary) -> void:
+
+func build(from_data: Dictionary, stream: bool = false) -> void:
 	data = from_data
+	_streaming = stream
 	seed(SEED)
 	_counts.clear()
 	_sky()
@@ -32,6 +55,79 @@ func build(from_data: Dictionary) -> void:
 	_city()
 	_forest()
 	_mountains()
+
+
+## Скільки метрів до межі сектора тримати сусідній сектор завантаженим —
+## інакше дерева зникали б і з'являлись просто на очах, щойно перейшов
+## межу x=0 чи z=0 туди-сюди.
+const STREAM_MARGIN := 15.0
+## Секунд поза сектором, перш ніж вивантажити його: не миттю на першому
+## кроці назад, а з запасом, щоб не смикати туди-сюди на самій межі.
+const STREAM_UNLOAD_AFTER := 12.0
+
+
+## Кличе клієнт (`world.gd`) періодично зі своєю позицією. Сервер це
+## НЕ кличе ніколи — у нього все побудовано одразу (`build()` без
+## `stream`), і `_streaming` лишається `false`.
+func stream_to(pos: Vector3) -> void:
+	if not _streaming:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	var want := _wanted_sectors(pos)
+	for key: String in want:
+		_sector_seen_at[key] = now
+		if not _loaded_sectors.get(key, false):
+			_load_sector(key)
+	for key: String in SECTORS:
+		if not _loaded_sectors.get(key, false) or want.has(key):
+			continue
+		if now - float(_sector_seen_at.get(key, now)) > STREAM_UNLOAD_AFTER:
+			_unload_sector(key)
+
+
+## Свій сектор завжди, і сусідній через межу x=0/z=0, якщо до неї
+## ближче за `STREAM_MARGIN` — саме так гравець біля центру міста
+## (де сходяться всі чотири) тримає їх завантаженими одразу, а не по
+## одному щоразу, як переступить лінію.
+func _wanted_sectors(pos: Vector3) -> Array:
+	var want: Array = [_sector_at(pos.x, pos.z)]
+	var near_x := absf(pos.x) < STREAM_MARGIN
+	var near_z := absf(pos.z) < STREAM_MARGIN
+	var flip_x: float = -1.0 if pos.x >= 0.0 else 1.0
+	var flip_z: float = -1.0 if pos.z >= 0.0 else 1.0
+	if near_x:
+		var key := _sector_at(flip_x, pos.z)
+		if not want.has(key):
+			want.append(key)
+	if near_z:
+		var key := _sector_at(pos.x, flip_z)
+		if not want.has(key):
+			want.append(key)
+	if near_x and near_z:
+		var key := _sector_at(flip_x, flip_z)
+		if not want.has(key):
+			want.append(key)
+	return want
+
+
+func _load_sector(key: String) -> void:
+	_loaded_sectors[key] = true
+	for spec: Dictionary in _tree_specs.get(key, []):
+		_tree_nodes.get_or_add(key, []).append(_tree(spec))
+	for spec: Dictionary in _fence_specs.get(key, []):
+		_fence_nodes.get_or_add(key, []).append(_fence_panel(spec))
+
+
+func _unload_sector(key: String) -> void:
+	_loaded_sectors[key] = false
+	for node: Node in _tree_nodes.get(key, []):
+		if is_instance_valid(node):
+			node.queue_free()
+	for node: Node in _fence_nodes.get(key, []):
+		if is_instance_valid(node):
+			node.queue_free()
+	_tree_nodes[key] = []
+	_fence_nodes[key] = []
 
 
 ## Небо й розсіяне світло. Без цього все, чого не торкнувся промінь
@@ -416,10 +512,12 @@ const FENCE_PANEL := 2.0641
 const FENCE_GATE_WIDTH := 6.0
 
 
+## Паркан не має жодної випадковості (сама тригонометрія), тож розбити
+## на «специфікація/побудова» можна просто фільтром, без турбот про
+## порядок `randf()` (на відміну від дерев).
 func _fence(center: Vector3, radius: float) -> void:
 	if not ResourceLoader.exists(FENCE_MODEL):
 		return
-	var scene: PackedScene = load(FENCE_MODEL)
 	var count := int(TAU * radius / FENCE_PANEL)
 	var gate_half: float = (FENCE_GATE_WIDTH / radius) * 0.5
 	for i in count:
@@ -432,23 +530,33 @@ func _fence(center: Vector3, radius: float) -> void:
 		if at_gate:
 			continue
 		var at := center + Vector3(cos(angle), 0, sin(angle)) * radius
-		var body := StaticBody3D.new()
-		body.name = _named("Паркан")
-		body.position = at
-		# Панель дивиться вздовж дотичної до кола, тильною стороною назовні.
-		body.rotation.y = angle + PI * 0.5
-		add_child(body)
-		var view: Node3D = scene.instantiate()
-		view.name = "Модель"
-		body.add_child(view)
-		_no_shadows(view)
-		var wall := CollisionShape3D.new()
-		wall.name = "Стіна"
-		var box := BoxShape3D.new()
-		box.size = Vector3(FENCE_PANEL, 1.2, 0.3)
-		wall.shape = box
-		wall.position = Vector3(0, 0.6, 0)
-		body.add_child(wall)
+		var key := _sector_at(at.x, at.z)
+		var spec := {"at": at, "angle": angle}
+		_fence_specs.get_or_add(key, []).append(spec)
+		if not _streaming or _loaded_sectors.get(key, false):
+			_fence_nodes.get_or_add(key, []).append(_fence_panel(spec))
+
+
+func _fence_panel(spec: Dictionary) -> Node:
+	var scene: PackedScene = load(FENCE_MODEL)
+	var body := StaticBody3D.new()
+	body.name = _named("Паркан")
+	body.position = spec["at"]
+	# Панель дивиться вздовж дотичної до кола, тильною стороною назовні.
+	body.rotation.y = float(spec["angle"]) + PI * 0.5
+	add_child(body)
+	var view: Node3D = scene.instantiate()
+	view.name = "Модель"
+	body.add_child(view)
+	_no_shadows(view)
+	var wall := CollisionShape3D.new()
+	wall.name = "Стіна"
+	var box := BoxShape3D.new()
+	box.size = Vector3(FENCE_PANEL, 1.2, 0.3)
+	wall.shape = box
+	wall.position = Vector3(0, 0.6, 0)
+	body.add_child(wall)
+	return body
 
 
 func _house(where: Vector3, size: Vector3, walls: String, roof: String) -> void:
@@ -690,6 +798,10 @@ func _dweller(who: Dictionary, at: int) -> void:
 
 
 ## Ліс: дерева з розкидом по колу, кожне трохи іншої висоти.
+## Дерева рахуються завжди в тому самому порядку виклику `randf()` —
+## розкид лишається однаковим і на сервері, і в кожного клієнта (П-63
+## не сміє це порушити), незалежно від того, коли саме дерево з'явиться
+## на екрані.
 func _forest() -> void:
 	var wood: Dictionary = data.get("ліс", {})
 	if wood.is_empty():
@@ -697,14 +809,37 @@ func _forest() -> void:
 	var center := _point(wood.get("центр", [0, 0, 0]))
 	var radius := float(wood.get("радіус", 20))
 	var heights: Array = wood.get("висота", [4.0, 8.0])
+	var bark := str(wood.get("стовбур", "#5b4632"))
+	var leaves := str(wood.get("крона", "#2f5e33"))
 	for i in int(wood.get("дерев", 40)):
 		var angle := randf() * TAU
 		var far := radius * sqrt(randf())
 		var at := _on_ground(center + Vector3(cos(angle) * far, 0.0,
 				sin(angle) * far))
-		_tree(at, randf_range(float(heights[0]), float(heights[1])),
-				str(wood.get("стовбур", "#5b4632")),
-				str(wood.get("крона", "#2f5e33")))
+		var height := randf_range(float(heights[0]), float(heights[1]))
+		# Модель і поворот — тут-таки, а не всередині `_tree()`: та може
+		# покликатись пізніше за підвантаженням, і якби `randi()`/`randf()`
+		# для моделі чекали на цей момент, розкид розійшовся б на
+		# сервері й клієнті (перевірено пробою — розходився, звідси й
+		# коментар не просто про акуратність).
+		var model: String = TREE_MODELS[randi() % TREE_MODELS.size()]
+		var spin := randf() * TAU
+		_place_tree(at, height, bark, leaves, model, spin)
+
+
+## Одразу будує дерево, якщо секторами не підвантажуємо (сервер, або
+## проби, що ганяють `build()` напряму), або кладе специфікацію на
+## пізніше, якщо сектор ще не потрібен клієнтові. Жодної випадковості
+## тут і нижче — вся вже витрачена вище, в одному незалежному від
+## підвантаження проході.
+func _place_tree(at: Vector3, height: float, bark: String, leaves: String,
+		model: String, spin: float) -> void:
+	var key := _sector_at(at.x, at.z)
+	var spec := {"at": at, "height": height, "bark": bark, "leaves": leaves,
+			"model": model, "spin": spin}
+	_tree_specs.get_or_add(key, []).append(spec)
+	if not _streaming or _loaded_sectors.get(key, false):
+		_tree_nodes.get_or_add(key, []).append(_tree(spec))
 
 
 ## Справжні моделі (Quaternius Stylized Nature MegaKit, CC0,
@@ -725,7 +860,17 @@ const TREE_MODELS := [
 const TREE_MODEL_HEIGHT := 8.0
 
 
-func _tree(where: Vector3, height: float, bark: String, leaves: String) -> void:
+## Повертає корінь дерева (`StaticBody3D`) — підвантаження ділянками
+## (П-63) має що вивантажувати назад, коли гравець піде геть.
+##
+## Без жодної випадковості: модель і поворот уже вибрані в `_forest()`,
+## сюди приходять готовим `spec`, щоб виклик можна було відкласти, не
+## зачепивши спільний потік `randf()`.
+func _tree(spec: Dictionary) -> Node:
+	var where: Vector3 = spec["at"]
+	var height: float = spec["height"]
+	var bark: String = spec["bark"]
+	var leaves: String = spec["leaves"]
 	var body := StaticBody3D.new()
 	body.name = _named("Дерево")
 	body.position = where
@@ -741,16 +886,16 @@ func _tree(where: Vector3, height: float, bark: String, leaves: String) -> void:
 	wall.position = Vector3(0, height * 0.5, 0)
 	body.add_child(wall)
 
-	var model_path: String = TREE_MODELS[randi() % TREE_MODELS.size()]
+	var model_path: String = spec["model"]
 	if ResourceLoader.exists(model_path):
 		var view: Node3D = (load(model_path) as PackedScene).instantiate()
 		view.name = "Модель"
 		var scale := height / TREE_MODEL_HEIGHT
 		view.scale = Vector3(scale, scale, scale)
-		view.rotation.y = randf() * TAU
+		view.rotation.y = spec["spin"]
 		body.add_child(view)
 		_no_shadows(view)
-		return
+		return body
 
 	var trunk := CylinderMesh.new()
 	trunk.top_radius = 0.22
@@ -768,11 +913,15 @@ func _tree(where: Vector3, height: float, bark: String, leaves: String) -> void:
 	crown.bottom_radius = height * 0.42
 	crown.height = height * 0.9
 	var green := MeshInstance3D.new()
-	green.name = _named("Крона")
+	green.name = "Крона"
 	green.mesh = crown
 	green.set_surface_override_material(0, _paint(leaves))
-	green.position = where + Vector3(0, height + crown.height * 0.35, 0)
-	add_child(green)
+	# Локально відносно `body` (не світова точка): без цього дерево без
+	# моделі мало крону сиротою поруч, а не в собі — підвантаження мусить
+	# мати ОДИН вузол на дерево, щоб вивантажувати його цілим.
+	green.position = Vector3(0, height + crown.height * 0.35, 0)
+	body.add_child(green)
+	return body
 
 
 ## Моделі скель для гір — той самий пак, що й дерева.

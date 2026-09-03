@@ -26,6 +26,10 @@ const AVATAR := preload("res://scenes/avatar.tscn")
 const MOB := preload("res://scenes/mob.tscn")
 ## Скільки разів на секунду сервер розсилає позиції.
 const TICK_HZ := 20.0
+## Як часто клієнт питає краєвид, чи потрібно підвантажити/вивантажити
+## ділянку (П-63). Раз на секунду досить: гравець не перебігає сектор
+## швидше, ніж за цей час.
+const STREAM_HZ := 1.0
 
 ## Монстри живуть у від'ємних номерах, гравці — у додатних (номер
 ## з'єднання). Так одна таблиця тримає і тих, і тих. Словник спільний:
@@ -59,6 +63,7 @@ var _names: Dictionary = {}
 var _signed: Dictionary = {}
 
 var _since_tick := 0.0
+var _since_stream := 0.0
 ## Відбиток статів кожного гравця: щоб слати сторінку «Стати» лише тоді,
 ## коли числа змінились.
 var _stats_mark: Dictionary = {}
@@ -94,9 +99,11 @@ func _ready() -> void:
 
 	# Краєвид будується однаково й на сервері, і в клієнта: серверові
 	# потрібні стіни, щоб крізь будинки не бігали, клієнтові — картинка.
+	# Дерева й паркан підвантажуються ділянками (П-63) — лише в клієнта:
+	# сервер тримає зіткнення й монстрів скрізь одразу, як і раніше.
 	var land: Node = get_node_or_null("Landscape")
 	if land != null:
-		land.build(data.map)
+		land.build(data.map, not Net.is_server)
 
 	if Net.is_server:
 		store = Store.new()
@@ -235,6 +242,13 @@ func _process(delta: float) -> void:
 		view.smooth(delta)
 		view.approach(delta)
 		view.demo(delta)
+		_since_stream += delta
+		if _since_stream >= 1.0 / STREAM_HZ:
+			_since_stream = 0.0
+			var me: Node = creatures.get(multiplayer.get_unique_id())
+			var land: Node = get_node_or_null("Landscape")
+			if me != null and land != null:
+				land.stream_to(me.global_position)
 		return
 
 	_since_tick += delta

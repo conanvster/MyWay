@@ -296,7 +296,10 @@ func _ground() -> void:
 					heights[(iz + 1) * points + ix + 1], a.z + step)
 			var st: SurfaceTool = surfaces[_sector_at(
 					a.x + step * 0.5, a.z + step * 0.5)]
-			for corner: Vector3 in [a, c, b, b, c, d]:
+			# Порядок за годинниковою стрілкою зверху — інакше нормаль
+			# дивиться вниз, і рушій відсікає землю як тильну грань
+			# (знайдено 03.09.2026: то й була причина «моря крізь сушу»).
+			for corner: Vector3 in [a, b, c, b, d, c]:
 				st.add_vertex(corner)
 
 	var body := StaticBody3D.new()

@@ -25,6 +25,11 @@ const IDLE_PHASE_SPEED := 0.6
 var path := ""
 var height := 1.0
 var tint := Color(1, 1, 1)
+## Окремий набір рухів (П-150): база й анімації часто йдуть різними
+## файлами (Quaternius Base Characters + Animation Library), той самий
+## кістяк, той самий шлях `Armature/Skeleton3D` від кореня. Порожньо —
+## анімації беруться з `path`, як і раніше.
+var anim_path := ""
 
 var _skeleton: Skeleton3D
 var _player: AnimationPlayer
@@ -50,6 +55,9 @@ func build() -> void:
 	_fit(body)
 
 	_player = body.find_child("AnimationPlayer", true, false)
+	if _player == null and anim_path != "" \
+			and ResourceLoader.exists(anim_path):
+		_player = _borrow_player(body, anim_path)
 	_skeleton = body.find_child("*Skeleton3D*", true, false)
 	if _skeleton == null:
 		for child in body.find_children("*", "Skeleton3D", true, false):
@@ -63,6 +71,30 @@ func build() -> void:
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
 	if _player != null:
 		_play_if_has(["Idle"])
+
+
+## Забрати `AnimationPlayer` із окремого файла (П-150): пряма пересадка,
+## не перецілювання (retarget) — працює, бо в обох файлів однаковий
+## кістяк на однаковій глибині (`Armature/Skeleton3D` від кореня), а
+## Godot зберігає шляхи кісткових доріжок відносно `root_node`
+## (тут — `".."`, тобто «батько програвача»). Переставивши сам вузол
+## програвача на те саме місце в НОВОМУ дереві, шляхи лишаються
+## правильними без жодної ручної підміни.
+func _borrow_player(body: Node, from_path: String) -> AnimationPlayer:
+	var scene: PackedScene = load(from_path)
+	if scene == null:
+		return null
+	var donor: Node = scene.instantiate()
+	var found: AnimationPlayer = \
+			donor.find_child("AnimationPlayer", true, false)
+	if found == null:
+		donor.queue_free()
+		return null
+	donor.remove_child(found)
+	found.owner = null      # був власником вузол-донор, якого зараз звільнимо
+	body.add_child(found)
+	donor.queue_free()
+	return found
 
 
 ## Пофарбувати. У готових моделей свої кольори, тож фарбу не чіпаємо —

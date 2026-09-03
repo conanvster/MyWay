@@ -14,6 +14,14 @@ extends Creature
 var bar: Array[String] = ["attack", "next_player", "next_mob",
 		"corpse_skill", "taunt", "", ""]
 
+## Модель людини (П-150): Quaternius Universal Base Characters + Universal
+## Animation Library, обидва CC0 (game/models/player/LICENSE_CC0_*.txt).
+## Лише «Superhero» statура є в безкоштовному рівні набору — «Regular» і
+## «Teen» лишаються за платною версією (звідси не всі шість тіл).
+const MODEL_MALE := "res://models/player/Superhero_Male_FullBody.gltf"
+const MODEL_FEMALE := "res://models/player/Superhero_Female_FullBody.gltf"
+const MODEL_ANIM := "res://models/player/animations/UAL1_Standard.glb"
+
 var is_local := false
 ## Куди йти, коли ведуть мишею: клік по землі ставить сюди точку, і
 ## персонаж іде до неї сам. Порожній вектор — веде клавіатура.
@@ -35,6 +43,27 @@ func _ready() -> void:
 	# Камера є в кожного аватара, але працює тільки у свого.
 	_rig.set_process(false)
 	_rig.set_process_unhandled_input(false)
+
+
+## Поставити справжню модель замість капсули — той самий прийом, що й у
+## `mob.gd::_apply_look()`, тільки за статтю, не за видом монстра.
+func apply_sex(sex: String) -> void:
+	var made := MODEL_FEMALE if sex == "жінка" else MODEL_MALE
+	if not ResourceLoader.exists(made):
+		return
+	var old_body := get_node_or_null("Mesh")
+	if old_body is SkinnedModel and old_body.path == made:
+		return          # уже та сама модель — нічого не робимо
+	if old_body != null:
+		old_body.name = "СтараФігурка"
+		old_body.queue_free()
+	var skin := SkinnedModel.new()
+	skin.name = "Mesh"
+	skin.path = made
+	skin.anim_path = MODEL_ANIM
+	skin.height = 1.75
+	add_child(skin)
+	skin.build()
 
 
 func become_local() -> void:

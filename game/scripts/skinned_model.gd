@@ -110,13 +110,21 @@ func _fit(body: Node) -> void:
 	if body == null:
 		return
 	body.scale = Vector3.ONE
+	# Рахувати відносно `body`, А НЕ світу (П-150, спіймано наживо: гравець
+	# спавниться за 6 м над землею й ще падає, коли `build()` уже кличе
+	# `_fit()` — `global_transform` у ту мить несе в собі ці тимчасові
+	# 6 метрів, і вони назавжди застигали в локальному зсуві моделі. Раз
+	# на кожен спавн — і кожен новий гравець опинявся закопаним на ту
+	# саму глибину, з якої щойно впав).
+	var from_body: Transform3D = body.global_transform.affine_inverse()
 	var box := AABB()
 	var first := true
 	for child in body.find_children("*", "MeshInstance3D", true, false):
 		var mesh: MeshInstance3D = child
 		if mesh.mesh == null:
 			continue
-		var part: AABB = mesh.global_transform * mesh.mesh.get_aabb()
+		var here: Transform3D = from_body * mesh.global_transform
+		var part: AABB = here * mesh.mesh.get_aabb()
 		box = part if first else box.merge(part)
 		first = false
 	var tall: float = box.size.y if not first else 1.0
@@ -181,17 +189,42 @@ func _bend(name: String, by: float) -> void:
 ## У наборах імена з приставкою від скелета: «Armature|Idle»,
 ## «SkeletonArmature|Skeleton_Running», «BatArmature|Bat_Flying». Точного
 ## збігу шукати марно — беремо за кінцівкою імені.
+##
+## Два проходи, не один (П-150, спіймано наживо — гравець «зникав»,
+## насправді стояв у «Crouch_Idle» по коліна в землі). У наборі з 43
+## рухами на «idle» закінчується сім назв одразу (Crouch_Idle,
+## Pistol_Idle, Sword_Idle...), і перший-стрічний з чистого `ends_with`
+## брав «Crouch_Idle» — він у списку раніше за просто «Idle» лише тому,
+## що «C» стоїть перед «I». Спершу шукаємо ТОЧНИЙ збіг (ціле ім'я або
+## після «|», як у «Armature|Idle»), і лише як його немає — стару
+## нечітку відповідність за кінцівкою, для наборів на кшталт скелета
+## («SkeletonArmature|Skeleton_Idle»), де точного варіанта нема взагалі.
 func _play_if_has(names: Array, loop: bool = true) -> void:
 	if _player == null:
 		return
 	var have := _player.get_animation_list()
 	for want: String in names:
-		for name: String in have:
-			if not name.to_lower().ends_with(want.to_lower()):
-				continue
-			if _player.current_animation == name and loop:
-				return
-			_player.play(name)
-			_player.get_animation(name).loop_mode = Animation.LOOP_LINEAR \
-					if loop else Animation.LOOP_NONE
+		var exact := _find_animation(have, want, true)
+		var found: String = exact if exact != "" \
+				else _find_animation(have, want, false)
+		if found == "":
+			continue
+		if _player.current_animation == found and loop:
 			return
+		_player.play(found)
+		_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR \
+				if loop else Animation.LOOP_NONE
+		return
+
+
+func _find_animation(have: PackedStringArray, want: String,
+		exact_only: bool) -> String:
+	var low_want := want.to_lower()
+	for name: String in have:
+		var low_name := name.to_lower()
+		if exact_only:
+			if low_name == low_want or low_name.ends_with("|" + low_want):
+				return name
+		elif low_name.ends_with(low_want):
+			return name
+	return ""

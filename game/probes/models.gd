@@ -58,6 +58,7 @@ func _player() -> void:
 			hero.queue_free()
 			continue
 		var moves := player.get_animation_list().size()
+		var idle_at_start: String = player.current_animation
 		body.animate(3.0)
 		await process_frame
 		await process_frame
@@ -65,6 +66,32 @@ func _player() -> void:
 		body.swing()
 		await process_frame
 		var swung: String = player.current_animation
-		print("  %-8s рухів %d, ходьба: %s, удар: %s"
-				% [sex, moves, walking, swung])
+		print("  %-8s рухів %d, спокій одразу: %s, ходьба: %s, удар: %s"
+				% [sex, moves, idle_at_start, walking, swung])
 		hero.queue_free()
+	await _player_fit_at_height()
+
+
+## Гравець спавниться за 6 м над землею й падає (`world.gd`); `_fit()` не
+## має нічого про це знати — зсув моделі рахується ВІДНОСНО тіла, не
+## світу. Спіймано наживо: коли рахувалось відносно світу, кожен новий
+## гравець опинявся закопаним рівно на ту висоту, з якої щойно впав.
+## Перевірка: той самий підйом на різній висоті над «землею» — той самий
+## локальний зсув моделі, з точністю до сантиметра.
+func _player_fit_at_height() -> void:
+	var offsets: Array = []
+	for at_y: float in [0.0, 9.0]:
+		var hero: Node3D = AVATAR.instantiate()
+		root.add_child(hero)
+		await process_frame
+		hero.place_at(Vector3(0, at_y, 0), 0.0)
+		hero.apply_sex("чоловік")
+		await process_frame
+		var body: Node3D = hero.model().get_node_or_null("Тіло")
+		offsets.append(body.position.y if body != null else NAN)
+		hero.queue_free()
+	var same: bool = absf(offsets[0] - offsets[1]) < 0.001
+	print("  зсув моделі на висоті 0 і 9 м: %.4f і %.4f — %s"
+			% [offsets[0], offsets[1],
+			   "однаковий, як і має бути" if same
+					else "‼ РІЗНИЙ — гравець закопається на різну глибину"])

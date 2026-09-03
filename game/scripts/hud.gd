@@ -101,6 +101,8 @@ func setup(world: Node) -> void:
 	_build_things()
 	_build_talk()
 	_build_shop()
+	_build_warehouse()
+	_build_guild()
 
 
 # ── збирання ──────────────────────────────────────────────────────────
@@ -758,7 +760,18 @@ signal wants_buy(at: int, name: String)
 signal wants_sell(at: int, thing_at: int)
 signal wants_sell_stack(at: int, name: String)
 
-const TALK_INNER := Vector2(240, 96)
+## Склад і гільдія (крок 5, П-145) — та сама «спитай сервер, він
+## вирішить» логіка, що й у прилавка.
+signal wants_warehouse(at: int)
+signal wants_store_thing(at: int, thing_at: int)
+signal wants_store_stack(at: int, name: String)
+signal wants_withdraw_thing(at: int, thing_at: int)
+signal wants_withdraw_stack(at: int, name: String)
+signal wants_guild(at: int)
+signal wants_learn_skill(at: int, key: String)
+signal wants_raise_skill(at: int, key: String)
+
+const TALK_INNER := Vector2(240, 172)
 ## Прилавок: та сама комірка, що в торбі, по чотири в ряд.
 const SHOP_COLUMNS := 4
 const SHOP_ROWS := 6
@@ -767,6 +780,8 @@ const HINT_H := 26.0
 var _talk_box: WindowBox
 var _talk_title: Label
 var _talk_trade: Button
+var _talk_warehouse: Button
+var _talk_guild: Button
 var _talk_with := -1
 
 var _shop_box: WindowBox
@@ -804,6 +819,26 @@ func _build_talk() -> void:
 				wants_shop.emit(_talk_with))
 	page.add_child(_talk_trade)
 
+	_talk_warehouse = Button.new()
+	_talk_warehouse.text = "Склад"
+	_talk_warehouse.position = Vector2(0, 80)
+	_talk_warehouse.size = Vector2(TALK_INNER.x, 32)
+	_talk_warehouse.custom_minimum_size = _talk_warehouse.size
+	_talk_warehouse.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_warehouse.emit(_talk_with))
+	page.add_child(_talk_warehouse)
+
+	_talk_guild = Button.new()
+	_talk_guild.text = "Гільдія"
+	_talk_guild.position = Vector2(0, 120)
+	_talk_guild.size = Vector2(TALK_INNER.x, 32)
+	_talk_guild.custom_minimum_size = _talk_guild.size
+	_talk_guild.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_guild.emit(_talk_with))
+	page.add_child(_talk_guild)
+
 
 ## Мешканця вибрано ціллю: показуємо ім'я там-таки, де ім'я монстра.
 ##
@@ -821,12 +856,15 @@ func aim_resident(title: String, trades: bool) -> void:
 	_target_fill.size.x = 0.0
 
 
-func show_talk(at: int, title: String, trades: bool) -> void:
+func show_talk(at: int, title: String, trades: bool,
+		warehouse_keeper: bool = false, guild_master: bool = false) -> void:
 	if _talk_box == null:
 		return
 	_talk_with = at
 	_talk_title.text = title
 	_talk_trade.visible = trades
+	_talk_warehouse.visible = warehouse_keeper
+	_talk_guild.visible = guild_master
 	_talk_box.visible = true
 	_talk_box._keep_on_screen()
 
@@ -1007,6 +1045,219 @@ func _money() -> int:
 		if str(row.get("назва", "")) == "гроші":
 			return int(row.get("скільки", 0))
 	return 0
+
+
+# ── склад (крок 5, П-145) ────────────────────────────────────────────
+#
+## Простий список кнопок, не сітка з іконками, як у прилавка: склад не
+## про вигляд, а про «куди це поділось» — рядок з назвою й кількістю
+## досить, щоб знайти річ.
+
+const WAREHOUSE_ROWS := 10
+const ROW_H := 26.0
+
+var _warehouse_box: WindowBox
+var _bag_rows: Array = []       ## кнопки зліва — з торби на склад
+var _kept_rows: Array = []      ## кнопки справа — зі складу в торбу
+var _warehouse_with := -1
+var _warehouse_things: Array = []
+var _warehouse_stacks: Array = []
+
+
+func _build_warehouse() -> void:
+	var col := 220.0
+	var inner := Vector2(col * 2.0 + 20.0,
+			18.0 + WAREHOUSE_ROWS * (ROW_H + 2.0))
+	_warehouse_box = WindowBox.new()
+	_warehouse_box.name = "ВікноСкладу"
+	_warehouse_box.setup("Склад", inner)
+	_warehouse_box.set_anchors_preset(Control.PRESET_CENTER)
+	_warehouse_box.position = -_warehouse_box.size * 0.5
+	_root.add_child(_warehouse_box)
+	var page: Control = _warehouse_box.body
+
+	var left := _text(11, page)
+	left.text = "торба — клікни, щоб покласти"
+	left.modulate = CAPTION_COLOR
+	var right := _text(11, page)
+	right.text = "склад — клікни, щоб забрати"
+	right.modulate = CAPTION_COLOR
+	right.position = Vector2(col + 20.0, 0)
+
+	for i in WAREHOUSE_ROWS:
+		var y := 18.0 + i * (ROW_H + 2.0)
+		var giving := Button.new()
+		giving.size = Vector2(col, ROW_H)
+		giving.custom_minimum_size = giving.size
+		giving.position = Vector2(0, y)
+		giving.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		page.add_child(giving)
+		_bag_rows.append(giving)
+
+		var keeping := Button.new()
+		keeping.size = Vector2(col, ROW_H)
+		keeping.custom_minimum_size = keeping.size
+		keeping.position = Vector2(col + 20.0, y)
+		keeping.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		page.add_child(keeping)
+		_kept_rows.append(keeping)
+
+
+## Ліворуч — торба (та сама, що й у прилавка): вдягнене й гроші не
+## пропонуємо класти на склад — вдягнене спершу треба зняти, а гроші й
+## так лежать в акаунті, окремий склад на них не потрібен.
+func _fill_bag_side() -> void:
+	var rows: Array = []
+	for row: Dictionary in _things:
+		if not bool(row.get("вдягнене", false)):
+			rows.append(row)
+	for row: Dictionary in _stacks:
+		if str(row.get("назва", "")) != "гроші":
+			rows.append(row)
+
+	for i in _bag_rows.size():
+		var press: Button = _bag_rows[i]
+		_unlink(press)
+		if i >= rows.size():
+			press.text = ""
+			press.disabled = true
+			continue
+		var row: Dictionary = rows[i]
+		var name: String = str(row.get("назва", "?"))
+		press.disabled = false
+		if row.has("номер"):
+			var thing_at: int = int(row["номер"])
+			press.text = name
+			press.pressed.connect(func() -> void:
+					wants_store_thing.emit(_warehouse_with, thing_at))
+		else:
+			var count: int = int(row.get("скільки", 0))
+			press.text = "%s ×%d" % [name, count]
+			press.pressed.connect(func() -> void:
+					wants_store_stack.emit(_warehouse_with, name))
+
+
+func _fill_kept_side() -> void:
+	var rows: Array = []
+	rows.append_array(_warehouse_things)
+	rows.append_array(_warehouse_stacks)
+
+	for i in _kept_rows.size():
+		var press: Button = _kept_rows[i]
+		_unlink(press)
+		if i >= rows.size():
+			press.text = ""
+			press.disabled = true
+			continue
+		var row: Dictionary = rows[i]
+		var name: String = str(row.get("назва", "?"))
+		press.disabled = false
+		if row.has("номер"):
+			var thing_at: int = int(row["номер"])
+			press.text = name
+			press.pressed.connect(func() -> void:
+					wants_withdraw_thing.emit(_warehouse_with, thing_at))
+		else:
+			var count: int = int(row.get("скільки", 0))
+			press.text = "%s ×%d" % [name, count]
+			press.pressed.connect(func() -> void:
+					wants_withdraw_stack.emit(_warehouse_with, name))
+
+
+func show_warehouse(at: int) -> void:
+	if _warehouse_box == null:
+		return
+	_warehouse_with = at
+	if _talk_box != null:
+		_talk_box.visible = false
+	_warehouse_box.visible = true
+	_fill_bag_side()
+	_fill_kept_side()
+	_warehouse_box._keep_on_screen()
+
+
+## Сервер надіслав, що лежить на складі — після відкриття вікна і після
+## кожної зміни (клали чи брали).
+func set_warehouse(things: Array, stacks: Array) -> void:
+	_warehouse_things = things
+	_warehouse_stacks = stacks
+	if _warehouse_box != null and _warehouse_box.visible:
+		_fill_kept_side()
+
+
+# ── гільдія (крок 5, П-145) ──────────────────────────────────────────
+#
+## Вивчення й підняття рівня скіла через `Runes` (написано 02.09.2026,
+## але до цього вечора не було мешканця, який би це пропонував).
+
+const GUILD_ROWS := 8
+
+var _guild_box: WindowBox
+var _guild_rows_ui: Array = []
+var _guild_with := -1
+
+
+func _build_guild() -> void:
+	var inner := Vector2(460.0, 18.0 + GUILD_ROWS * (ROW_H + 4.0))
+	_guild_box = WindowBox.new()
+	_guild_box.name = "ВікноГільдії"
+	_guild_box.setup("Гільдія", inner)
+	_guild_box.set_anchors_preset(Control.PRESET_CENTER)
+	_guild_box.position = -_guild_box.size * 0.5
+	_root.add_child(_guild_box)
+	var page: Control = _guild_box.body
+
+	for i in GUILD_ROWS:
+		var y := 18.0 + i * (ROW_H + 4.0)
+		var label := _text(12, page)
+		label.position = Vector2(0, y + 5.0)
+		label.custom_minimum_size = Vector2(230, ROW_H)
+		var press := Button.new()
+		press.size = Vector2(210, ROW_H)
+		press.custom_minimum_size = press.size
+		press.position = Vector2(240, y)
+		page.add_child(press)
+		_guild_rows_ui.append({"label": label, "press": press})
+
+
+func show_guild(at: int, rows: Array) -> void:
+	if _guild_box == null:
+		return
+	_guild_with = at
+	if _talk_box != null:
+		_talk_box.visible = false
+	_guild_box.visible = true
+	for i in _guild_rows_ui.size():
+		var ui: Dictionary = _guild_rows_ui[i]
+		var label: Label = ui["label"]
+		var press: Button = ui["press"]
+		_unlink(press)
+		if i >= rows.size():
+			label.text = ""
+			press.text = ""
+			press.disabled = true
+			continue
+		var row: Dictionary = rows[i]
+		var key: String = str(row["ключ"])
+		var known: bool = bool(row["вивчено"])
+		var level: int = int(row["рівень"])
+		var max_level: int = int(row["максимум"])
+		label.text = "%s (%s) %d/%d" \
+				% [str(row["назва"]), str(row["грейд"]), level, max_level]
+		if not known:
+			press.text = "Вивчити (%s)" % str(row["руна вивчення"])
+			press.disabled = false
+			press.pressed.connect(func() -> void:
+					wants_learn_skill.emit(_guild_with, key))
+		elif level < max_level:
+			press.text = "Підняти (%s)" % str(row["руна підняття"])
+			press.disabled = false
+			press.pressed.connect(func() -> void:
+					wants_raise_skill.emit(_guild_with, key))
+		else:
+			press.text = "найвищий рівень"
+			press.disabled = true
+	_guild_box._keep_on_screen()
 
 
 ## Свої здоров'я й мана — ліворуч угорі.

@@ -161,6 +161,8 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"skills": who.learned,
 		"items": who.items,
 		"things": _things_row(who),
+		"warehouse_items": who.warehouse_items,
+		"warehouse_things": _things_row_of(who.warehouse_things),
 		"gear": who.gear,
 		# Розкладка панелі — своя в кожного (її тягають мишею у вікні
 		# «Скіли»), тож без неї персонаж щоразу вертався б до типової.
@@ -171,8 +173,12 @@ static func row_of(name: String, who: Node) -> Dictionary:
 ## Поодинокі речі зберігаються з афіксами: інакше після перезапуску
 ## «гострий меч вовчої зграї» став би звичайним мечем.
 static func _things_row(who: Node) -> Array:
+	return _things_row_of(who.things)
+
+
+static func _things_row_of(things: Array) -> Array:
 	var out: Array = []
-	for item: Item in who.things:
+	for item: Item in things:
 		out.append(item.to_row())
 	return out
 
@@ -189,6 +195,11 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 			var item: Item = Item.from_row(thing, goods)
 			if item != null:
 				who.things.append(item)
+		who.warehouse_things.clear()
+		for thing: Dictionary in row.get("warehouse_things", []):
+			var stored: Item = Item.from_row(thing, goods)
+			if stored != null:
+				who.warehouse_things.append(stored)
 	who.level = int(row.get("level", who.level))
 	who.respect = int(row.get("respect", who.respect))
 	who.experience = int(row.get("experience", who.experience))
@@ -200,6 +211,7 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	# порівняння з цілим потім давало б несподіванки.
 	who.learned = _whole(row.get("skills", {}))
 	who.items = _whole(row.get("items", {}))
+	who.warehouse_items = _whole(row.get("warehouse_items", {}))
 	who.gear = _whole(row.get("gear", {}))
 	# Порожня розкладка — це «ще не розкладав»: тоді лишається типова з
 	# data/bar.json, яку вже поставив світ.

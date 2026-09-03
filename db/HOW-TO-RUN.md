@@ -36,6 +36,16 @@ PostgREST) і роль `game_anon` (її права й видно назовні
 sudo -u postgres psql -d myway < db/migration-step4.sql
 ```
 
+### Якщо база вже стояла до складу (П-145)
+
+Завідувач складу додав ще два стовпці — `warehouse_items` і
+`warehouse_things`, друга пара до вже наявних `items`/`things`, тільки
+для складу, не торби:
+
+```
+sudo -u postgres psql -d myway < db/migration-warehouse.sql
+```
+
 ## 2. PostgREST
 
 ```

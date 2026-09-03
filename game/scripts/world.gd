@@ -41,6 +41,8 @@ var mobs: MobAI
 var spawner: Spawner
 ## Крамар: асортимент, ціни й перевірки торгівлі (П-132).
 var shop: Shop
+var warehouse: Warehouse
+var runes: Runes
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
@@ -86,6 +88,8 @@ func _ready() -> void:
 	mobs = MobAI.new(creatures, combat)
 	spawner = Spawner.new(creatures, self, data)
 	shop = Shop.new(data)
+	warehouse = Warehouse.new()
+	runes = Runes.new(data.skills)
 	view = ClientView.new(creatures, self, link)
 
 	# Краєвид будується однаково й на сервері, і в клієнта: серверові
@@ -775,7 +779,8 @@ func ask_talk(at: int) -> void:
 	var who: NPC = _resident(id, at)
 	if who == null:
 		return
-	rpc_id(id, "client_talk", at, who.title(), who.trades())
+	rpc_id(id, "client_talk", at, who.title(), who.trades(),
+			who.craft == "завідувач складу", who.craft == "гільдмайстер")
 
 
 ## Показати прилавок. Асортимент шлемо цілком: він короткий і не
@@ -852,11 +857,199 @@ func ask_sell_stack(at: int, name: String) -> void:
 	_after_bag(id, a)
 
 
+# ── склад (крок 5, П-145) ────────────────────────────────────────────
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_warehouse(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "завідувач складу":
+		return
+	send_things(id)
+	send_warehouse(id, at)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_store_thing(at: int, thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "завідувач складу":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = warehouse.store_thing(a, thing_at)
+	if why != "":
+		link.notice(id, why)
+		return
+	_after_warehouse(id, a, at)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_withdraw_thing(at: int, thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "завідувач складу":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = warehouse.withdraw_thing(a, thing_at)
+	if why != "":
+		link.notice(id, why)
+		return
+	_after_warehouse(id, a, at)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_store_stack(at: int, name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "завідувач складу":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = warehouse.store_stack(a, name)
+	if why != "":
+		link.notice(id, why)
+		return
+	_after_warehouse(id, a, at)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_withdraw_stack(at: int, name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "завідувач складу":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = warehouse.withdraw_stack(a, name)
+	if why != "":
+		link.notice(id, why)
+		return
+	_after_warehouse(id, a, at)
+
+
+# ── гільдія: вивчення й підняття рівня скілів (крок 5, П-145) ───────
+#
+# Сама логіка (`Runes`) написана 02.09.2026, задовго до цього мешканця —
+# перевіряти й міняти вивчене вміла, а покликати нікуди не було. Гільд-
+# майстер саме те місце, звідки її нарешті можна викликати.
+
+func _guild_rows(a: Node) -> Array:
+	var out: Array = []
+	for key: String in data.skills.keys():
+		var skill: Skill = data.skills.get_skill(key)
+		var known: bool = a.knows(key)
+		var level: int = int(a.learned.get(key, 0))
+		out.append({
+			"ключ": key,
+			"назва": skill.name,
+			"грейд": skill.grade,
+			"вивчено": known,
+			"рівень": level,
+			"максимум": skill.max_level(),
+			"з рівня": skill.from_level,
+			"руна вивчення": skill.rune,
+			"руна підняття": Runes.level_rune_for(skill.grade),
+			"досвід вивчення": skill.learn_cost,
+			"досвід підняття": Runes.raise_cost(skill, maxi(level, 1)),
+		})
+	return out
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_guild(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "гільдмайстер":
+		return
+	var a: Node = creatures.get(id)
+	rpc_id(id, "client_guild", at, _guild_rows(a))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_learn_skill(at: int, key: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "гільдмайстер":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = runes.learn(a, key)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "вивчено: %s" % data.skills.get_skill(key).name)
+	send_stats(id)
+	rpc_id(id, "client_guild", at, _guild_rows(a))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_raise_skill(at: int, key: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or who.craft != "гільдмайстер":
+		return
+	var a: Node = creatures.get(id)
+	var why: String = runes.raise(a, key)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "піднято рівень: %s → %d"
+			% [data.skills.get_skill(key).name, int(a.learned[key])])
+	send_stats(id)
+	rpc_id(id, "client_guild", at, _guild_rows(a))
+
+
 ## Після будь-якої зміни в торбі: сама торба, стати (спорядження їх
 ## зсуває) і перелік речей для вікна.
 func _after_bag(id: int, a: Node) -> void:
 	send_things(id)
 	send_stats(id)
+
+
+## Те саме після зміни на складі: і торба (річ туди-сюди йде з неї), і
+## сам склад, бо вікно показує обидва списки одночасно.
+func _after_warehouse(id: int, a: Node, at: int) -> void:
+	send_things(id)
+	send_stats(id)
+	send_warehouse(id, at)
+
+
+func _warehouse_thing_row(things: Array) -> Array:
+	var out: Array = []
+	for at in things.size():
+		var item: Item = things[at]
+		out.append({"номер": at, "назва": item.title(), "вид": item.kind})
+	return out
+
+
+func _warehouse_stack_row(items: Dictionary) -> Array:
+	var out: Array = []
+	for name in items:
+		var base: Dictionary = data.items.base_of(str(name))
+		out.append({"назва": str(name), "вид": str(base.get("вид", "")),
+				"скільки": int(items[name])})
+	return out
+
+
+func send_warehouse(id: int, at: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or id <= 0:
+		return
+	rpc_id(id, "client_warehouse", at, _warehouse_thing_row(a.warehouse_things),
+			_warehouse_stack_row(a.warehouse_items))
 
 
 ## Переслати гравцеві його стати. Кличеться там, де числа могли змінитись.
@@ -945,6 +1138,23 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_sell", at, thing_at))
 		hud.wants_sell_stack.connect(func(at: int, name: String) -> void:
 				rpc_id(1, "ask_sell_stack", at, name))
+		# Склад і гільдія (П-145) — та сама «спитай, сервер вирішить».
+		hud.wants_warehouse.connect(func(at: int) -> void:
+				rpc_id(1, "ask_warehouse", at))
+		hud.wants_store_thing.connect(func(at: int, thing_at: int) -> void:
+				rpc_id(1, "ask_store_thing", at, thing_at))
+		hud.wants_store_stack.connect(func(at: int, name: String) -> void:
+				rpc_id(1, "ask_store_stack", at, name))
+		hud.wants_withdraw_thing.connect(func(at: int, thing_at: int) -> void:
+				rpc_id(1, "ask_withdraw_thing", at, thing_at))
+		hud.wants_withdraw_stack.connect(func(at: int, name: String) -> void:
+				rpc_id(1, "ask_withdraw_stack", at, name))
+		hud.wants_guild.connect(func(at: int) -> void:
+				rpc_id(1, "ask_guild", at))
+		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
+				rpc_id(1, "ask_learn_skill", at, key))
+		hud.wants_raise_skill.connect(func(at: int, key: String) -> void:
+				rpc_id(1, "ask_raise_skill", at, key))
 		add_child(hud)
 
 
@@ -1126,9 +1336,10 @@ func client_cast_end(id: int, done: bool) -> void:
 
 ## Мешканець відповів: вікно розмови (П-132).
 @rpc("authority", "call_remote", "reliable")
-func client_talk(at: int, title: String, trades: bool) -> void:
+func client_talk(at: int, title: String, trades: bool,
+		warehouse_keeper: bool = false, guild_master: bool = false) -> void:
 	if hud != null:
-		hud.show_talk(at, title, trades)
+		hud.show_talk(at, title, trades, warehouse_keeper, guild_master)
 
 
 ## Прилавок: що продають і за скільки. `buyback` — у відсотках, щоб у
@@ -1138,6 +1349,22 @@ func client_shop(at: int, title: String, goods: Array,
 		buyback: int) -> void:
 	if hud != null:
 		hud.show_shop(at, title, goods, buyback)
+
+
+## Вікно складу: список того, що вже там лежить (крок 5, П-145).
+@rpc("authority", "call_remote", "reliable")
+func client_warehouse(at: int, things: Array, stacks: Array) -> void:
+	if hud != null:
+		hud.show_warehouse(at)
+		hud.set_warehouse(things, stacks)
+
+
+## Вікно гільдії: усі скіли з даних і чи вже вивчені, щоб гравець бачив,
+## що можна, а що ще ні, ще до підходу до вимог.
+@rpc("authority", "call_remote", "reliable")
+func client_guild(at: int, rows: Array) -> void:
+	if hud != null:
+		hud.show_guild(at, rows)
 
 
 ## Хтось замахнувся: показуємо рух рукою.

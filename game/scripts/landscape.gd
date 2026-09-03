@@ -119,6 +119,21 @@ func _speckled(color: String, size: float, strength: float
 	return paint
 
 
+## Поверхня зі справжньою фотографією (П-143, 03.09.2026) — той самий
+## трипланарний принцип, що й `_speckled()`, тільки замість шуму поверх
+## кольору лягає готова текстура з `models/nature/` (Quaternius Stylized
+## Nature MegaKit, CC0). Якщо файлу немає на диску — просто білий
+## матеріал: гра має йти без пака, як і з будинками.
+func _textured(path: String, size: float) -> StandardMaterial3D:
+	var paint := StandardMaterial3D.new()
+	paint.roughness = 0.95
+	if ResourceLoader.exists(path):
+		paint.albedo_texture = load(path)
+	paint.uv1_triplanar = true
+	paint.uv1_scale = Vector3.ONE / maxf(0.5, size)
+	return paint
+
+
 ## Godot стирає ім'я, якщо таке вже є в батька: другий «Будинок» стає
 ## «@StaticBody3D@8». Тому нумеруємо самі — у редакторі має бути видно,
 ## де що, а не сорок однакових значків.
@@ -207,9 +222,41 @@ func height_at(x: float, z: float) -> float:
 	return high + LAND_LIFT
 
 
+## Чотири сектори поверхні (П-143, 03.09.2026): ліс, поле, пісок,
+## каміння — приблизно за чвертю світу від центру міста, за словом
+## замовника. Розкладка підігнана під те, де вже стоять зони появи:
+## поле (північний схід) — де Meadow; ліс (південний схід) — де Forest і
+## DeepForest; пісок (південний захід) — де Cave й Lair; каміння
+## (північний захід) — де Ruins і гори.
+const SECTORS := ["поле", "ліс", "пісок", "каміння"]
+
+
+static func _sector_at(x: float, z: float) -> String:
+	if x >= 0.0:
+		return "поле" if z >= 0.0 else "ліс"
+	return "каміння" if z >= 0.0 else "пісок"
+
+
+## Матеріал сектора. Пісок і каміння — справжні фотографії з
+## `models/nature/` (той самий пак, що дав скелі гір); ліс і поле
+## лишаються трипланарним крапом `_speckled()`, як і брук міста, — просто
+## різного кольору.
+func _sector_material(key: String, earth: Dictionary) -> StandardMaterial3D:
+	match key:
+		"пісок":
+			return _textured("res://models/nature/Rocks_Desert_Diffuse.png", 20.0)
+		"каміння":
+			return _textured("res://models/nature/Rocks_Diffuse.png", 20.0)
+		"поле":
+			return _speckled("#8aa050", 12.0, 0.22)
+		_:
+			return _speckled(str(earth.get("колір", "#5c8a42")), 12.0, 0.22)
+
+
 ## Земля з рельєфом: сітка вершин, висота з шуму, і та сама висота —
 ## у форму зіткнення. `HeightMapShape3D` бере рівно ті самі числа, тож
-## картинка й те, по чому ходять, не розходяться.
+## картинка й те, по чому ходять, не розходяться. Візерунок ділиться на
+## чотири сектори (вище), колізія лишається одна на всю землю.
 func _ground() -> void:
 	var earth: Dictionary = data.get("земля", {})
 	var side: float = float(earth.get("сторона", 240))
@@ -225,14 +272,20 @@ func _ground() -> void:
 	var points := int(side / step) + 1
 	var heights := PackedFloat32Array()
 	heights.resize(points * points)
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for iz in points:
 		for ix in points:
 			var x := -side * 0.5 + ix * step
 			var z := -side * 0.5 + iz * step
 			heights[iz * points + ix] = height_at(x, z)
-	# Дві трикутні грані на кожну клітинку сітки.
+
+	var surfaces := {}
+	for key: String in SECTORS:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		surfaces[key] = st
+
+	# Дві трикутні грані на кожну клітинку сітки, у поверхню свого
+	# сектора — за серединою клітинки, щоб цілі трикутники не рвались.
 	for iz in points - 1:
 		for ix in points - 1:
 			var a := Vector3(-side * 0.5 + ix * step,
@@ -241,21 +294,22 @@ func _ground() -> void:
 			var c := Vector3(a.x, heights[(iz + 1) * points + ix], a.z + step)
 			var d := Vector3(a.x + step,
 					heights[(iz + 1) * points + ix + 1], a.z + step)
+			var st: SurfaceTool = surfaces[_sector_at(
+					a.x + step * 0.5, a.z + step * 0.5)]
 			for corner: Vector3 in [a, c, b, b, c, d]:
-				surface.add_vertex(corner)
-	surface.generate_normals()
+				st.add_vertex(corner)
 
 	var body := StaticBody3D.new()
 	body.name = "Земля"
 	add_child(body)
-	var view := MeshInstance3D.new()
-	view.name = "Меш"
-	view.mesh = surface.commit()
-	# Земля — найбільша поверхня у грі, і саме на ній рівний колір
-	# найпомітніший. Візерунок через 12 метрів: дрібніше рябіє здалеку.
-	view.set_surface_override_material(0,
-			_speckled(str(earth.get("колір", "#4a5c3a")), 12.0, 0.22))
-	body.add_child(view)
+	for key: String in SECTORS:
+		var st: SurfaceTool = surfaces[key]
+		st.generate_normals()
+		var view := MeshInstance3D.new()
+		view.name = "Меш-" + key
+		view.mesh = st.commit()
+		view.set_surface_override_material(0, _sector_material(key, earth))
+		body.add_child(view)
 
 	var shape := HeightMapShape3D.new()
 	shape.map_width = points

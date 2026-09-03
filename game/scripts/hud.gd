@@ -21,6 +21,13 @@ const MESSAGE_TIME := 6.0
 const FLOAT_TIME := 1.1    ## скільки летить число шкоди
 const FLOAT_RISE := 46.0
 
+## Дві комірки черги дій поруч зі здоров'ям/маною (П-149): координати
+## лівого верхнього кута відносно тієї самої `box`, що й смуги.
+const QUEUE_SIDE := 34.0
+const QUEUE_GAP := WIDE + 10.0
+const QUEUE_CELLS := [
+	Vector2(QUEUE_GAP, 0.0), Vector2(QUEUE_GAP + QUEUE_SIDE + 4.0, 0.0)]
+
 const BACK := Color(0, 0, 0, 0.55)
 const HP_COLOR := Color(0.72, 0.21, 0.18)
 const MP_COLOR := Color(0.24, 0.42, 0.76)
@@ -68,6 +75,8 @@ var _target_box: Control
 var _target_name: Label
 var _target_fill: ColorRect
 var _queue_text: Label
+## Дві комірки черги дій поруч зі здоров'ям/маною (П-149).
+var _queue_cells: Array[Label] = []
 var _cast_box: Control
 var _cast_fill: ColorRect
 var _cast_text: Label
@@ -1310,6 +1319,20 @@ func _build_vitals() -> void:
 	_level_text = _text(12, box)
 	_level_text.position = Vector2(0, 44)
 
+	# Черга дій — двома комірками поруч зі здоров'ям і маною (П-149):
+	# ліва — те, що спрацює НАЙПЕРШИМ, права — те, що після нього.
+	# Коли ліва спрацьовує й іде з черги, права сама займає її місце —
+	# показ просто перемальовує обидві з тієї самої `queue` щотіку.
+	for i in QUEUE_CELLS.size():
+		var at: Vector2 = QUEUE_CELLS[i]
+		var plate := _plate(Vector2(QUEUE_SIDE, QUEUE_SIDE), BACK, box)
+		plate.position = at
+		var label := _text(11, box)
+		label.position = at + Vector2(2, 9)
+		label.size = Vector2(QUEUE_SIDE - 4, QUEUE_SIDE)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_queue_cells.append(label)
+
 
 ## Координати гравця — праворуч угорі. Клієнт нічого не рахує: позицію
 ## бере з власного вузла, той самий `global_position`, за яким ходять і
@@ -1479,12 +1502,12 @@ func update_self(hp: int, max_hp: int, mp: int, max_mp: int,
 		cell["shade"].color = Color(0, 0, 0, 0.62)
 		cell["left"].text = "%.1f" % left if left > 0.0 else ""
 
-	var names: Array[String] = []
-	for action in queue:
-		names.append(_title(action))
-	var tail := "  ·  замах %.2f" % busy_in if busy_in > 0.0 else ""
-	_queue_text.text = ("черга: " + " · ".join(names) + tail) \
-			if not names.is_empty() else tail.strip_edges()
+	# Дві комірки поруч зі здоров'ям/маною: ліва — те, що спрацює
+	# найпершим, права — наступне. Коли ліва йде з черги, права сама
+	# посувається на її місце — це просто той самий масив на кадр пізніше.
+	for i in _queue_cells.size():
+		_queue_cells[i].text = _title(queue[i]) if i < queue.size() else ""
+	_queue_text.text = "замах %.2f" % busy_in if busy_in > 0.0 else ""
 
 
 ## Почалося читання. Чуже поки не показуємо окремо — своє важливіше, а

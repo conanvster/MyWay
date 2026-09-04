@@ -13,6 +13,13 @@ extends SceneTree
 ## Esc — вийти, пробіл — знімок, колесо миші — ближче/далі.
 
 const MOB := preload("res://scenes/mob.tscn")
+## Моделі, які вже лежать у репозиторії, але ще не заведені видом у
+## data/mobs.json — без "kind" `Mob.setup()` їх не підняти, тож ідуть
+## окремим шляхом: гола модель, без Creature/AI навколо (05.09.2026,
+## замовник попросив показати щойно доданого орка).
+const EXTRA_PREVIEWS := [
+	{"title": "орк (ще не в грі)", "path": "res://models/monsters/Orc.glb"},
+]
 const COLUMNS := 6
 const STEP_X := 2.6
 const STEP_Z := 3.4
@@ -94,6 +101,24 @@ func _go() -> void:
 		for m: String in moves:
 			slots.append({"kind": kind, "title": title, "move": m, "opis": ""})
 
+	# Ряд 2: щойно завантажені моделі, ще без "kind" у даних (П-15).
+	for extra: Dictionary in EXTRA_PREVIEWS:
+		var path: String = extra["path"]
+		if not ResourceLoader.exists(path):
+			continue
+		var scene: PackedScene = load(path)
+		var probe: Node3D = scene.instantiate()
+		var player: AnimationPlayer = \
+				probe.find_child("AnimationPlayer", true, false)
+		var moves: Array = []
+		if player != null:
+			moves = Array(player.get_animation_list())
+		probe.queue_free()
+		moves.sort()
+		for m: String in moves:
+			slots.append({"kind": -1, "title": extra["title"], "move": m,
+					"opis": "", "extra_path": path})
+
 	var ground := MeshInstance3D.new()
 	var plate := BoxMesh.new()
 	var rows := ceili(float(slots.size()) / COLUMNS)
@@ -114,11 +139,23 @@ func _go() -> void:
 		var at_row := i / COLUMNS
 		var at := Vector3(from_x + col * STEP_X, 0.0, from_z + at_row * STEP_Z)
 
-		var mob: Node3D = MOB.instantiate()
-		world.add_child(mob)
-		mob.setup(Vector3.ZERO, slot["kind"], false,
-				data.for_kind(slot["kind"]))
-		mob.place_at(at, 0.0)
+		var mob: Node3D
+		var body: Node3D
+		if slot.has("extra_path"):
+			# Гола модель, без Mob/Creature навколо — ще не kind, нема
+			# чим setup() годувати.
+			mob = Node3D.new()
+			world.add_child(mob)
+			body = load(slot["extra_path"]).instantiate()
+			mob.add_child(body)
+			mob.position = at
+		else:
+			mob = MOB.instantiate()
+			world.add_child(mob)
+			mob.setup(Vector3.ZERO, slot["kind"], false,
+					data.for_kind(slot["kind"]))
+			mob.place_at(at, 0.0)
+			body = mob.model()
 		await process_frame
 
 		var label_text: String
@@ -126,7 +163,6 @@ func _go() -> void:
 			label_text = "%s (%s)" % [slot["title"], slot["opis"]]
 		else:
 			label_text = "%s: %s" % [slot["title"], slot["move"]]
-			var body: Node3D = mob.model()
 			var player: AnimationPlayer = \
 					body.find_child("AnimationPlayer", true, false) if body != null \
 					else null

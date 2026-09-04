@@ -64,6 +64,11 @@ func apply_sex(sex: String) -> void:
 	skin.height = 1.75
 	add_child(skin)
 	skin.build()
+	# Модель Superhero змонтована обличчям у +Z, рушій усюди рахує
+	# вперед як -Z (face_to, camera_rig) — без цього гравець ходить
+	# спиною вперед у ЛЮБОМУ русі, не лише при відступі в бою.
+	# Заміряно: камера з +Z у спокої бачить обличчя, з -Z — потилицю.
+	skin.rotation.y = PI
 
 
 func become_local() -> void:

@@ -125,6 +125,12 @@ func set_stage(to: Stage) -> void:
 	_show_stage()
 
 
+## Наскільки вбік від святині запалюється портал. Стале число, а не
+## випадок: портал будують обидва боки — і сервер, і клієнт — із того
+## самого стану, і розійтися їм нема з чого лише поки зсув однаковий.
+const PORTAL_AT := Vector3(4.5, 0.0, 2.5)
+
+
 func _show_stage() -> void:
 	if _shards != null:
 		# Уламки — підказка ДО зачистки; після неї гаснуть.
@@ -134,6 +140,23 @@ func _show_stage() -> void:
 		_runes.visible = stage != Stage.ПІД_ОХОРОНОЮ
 	if _glow != null:
 		_glow.light_energy = 2.4 if stage == Stage.ПІД_ОХОРОНОЮ else 4.2
+
+	# Портал запалюється рівно на активації й гасне, якщо стан відкотили.
+	var gate: Node = get_node_or_null("Портал")
+	if stage == Stage.АКТИВОВАНА and gate == null:
+		var made := Portal.new()
+		made.name = "Портал"
+		made.grade = grade
+		add_child(made)
+		made.position = PORTAL_AT
+	elif stage != Stage.АКТИВОВАНА and gate != null:
+		remove_child(gate)
+		gate.queue_free()
+
+
+## Портал біля цієї святині, якщо вже запалений.
+func portal() -> Portal:
+	return get_node_or_null("Портал") as Portal
 
 
 ## Сама постать святині за формою.

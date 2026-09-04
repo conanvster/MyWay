@@ -569,6 +569,82 @@ func _tick_shrines(delta: float) -> void:
 		link.to_all(&"client_shrine", [i, stage])
 
 
+## Наскільки близько треба підійти, щоб активувати святиню. Та сама
+## дальність, що й розмова з мешканцем: більше однієї міри «підійшов» у
+## грі бути не повинно.
+const SHRINE_REACH := Shop.TALK_RANGE
+
+
+## Активувати святиню ключем (П-153).
+##
+## Усе рахує СЕРВЕР (П-08): і відстань, і те, чи зачищено охорону, і чи
+## є ключ потрібного грейду. Клієнт лише просить — інакше активація
+## була б найкоротшим шляхом до безкоштовного підземелля.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_activate(at: int) -> void:
+	if not Net.is_server:
+		return
+	activate_shrine(multiplayer.get_remote_sender_id(), at)
+
+
+## Те саме без мережі — щоб перевірялось пробою.
+##
+## Виносити тіло з `@rpc` у звичайний метод довелось не з любові до
+## чистоти: `get_remote_sender_id()` поза справжнім викликом дає 0, і
+## проба перевіряла порожнечу, думаючи, що все гаразд (спіймано
+## 05.09.2026 — чотири «зелені» кроки насправді нічого не робили). Той
+## самий урок, що вже змусив винести бій із `world.gd`.
+func activate_shrine(id: int, at: int) -> void:
+	var a: Node = creatures.get(id)
+	var land: Node = get_node_or_null("Landscape")
+	if a == null or land == null or not land.has_method("shrines"):
+		return
+	var all: Array = land.shrines()
+	if at < 0 or at >= all.size():
+		return
+	var shrine: Shrine = all[at]
+	if a.global_position.distance_to(shrine.global_position) > SHRINE_REACH:
+		link.notice(id, "святиня задалеко")
+		return
+	if shrine.stage == Shrine.Stage.АКТИВОВАНА:
+		link.notice(id, "святиня вже відкрита")
+		return
+	if shrine.stage != Shrine.Stage.ЗАЧИЩЕНА:
+		link.notice(id, "спершу зачисти охорону святині")
+		return
+	var key := "ключ святині %s" % shrine.grade
+	if int(a.items.get(key, 0)) <= 0:
+		# Дослівно те, що просив замовник у П-153.
+		link.notice(id, "немає ключа відповідного рівня")
+		return
+	a.items[key] = int(a.items[key]) - 1
+	if int(a.items[key]) <= 0:
+		a.items.erase(key)
+	shrine.set_stage(Shrine.Stage.АКТИВОВАНА)
+	_shrine_sent[at] = Shrine.Stage.АКТИВОВАНА
+	link.to_all(&"client_shrine", [at, Shrine.Stage.АКТИВОВАНА])
+	link.notice(id, "святиня активована: %s відкрито портал" % shrine.grade)
+	_after_bag(id, a)
+
+
+## Розповісти новому гравцеві, які святині вже зачищені чи відкриті.
+##
+## Без цього той, хто зайшов пізніше, бачив би світ, якого немає: сервер
+## шле лише ЗМІНИ стану, а зміни сталися до його приходу. Спіймано на
+## живому прогоні 05.09.2026 — не пробою, а міркуванням про те, що
+## станеться з другим гравцем.
+func _tell_shrines(peer: int) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("shrines"):
+		return
+	var all: Array = land.shrines()
+	for i in all.size():
+		var shrine: Shrine = all[i]
+		if shrine.stage == Shrine.Stage.ПІД_ОХОРОНОЮ:
+			continue      # це і є стан за замовчуванням у клієнта
+		link.to_one(peer, &"client_shrine", [i, shrine.stage])
+
+
 ## Стан святині: зачищено її чи ще ні (П-153).
 @rpc("authority", "call_remote", "reliable")
 func client_shrine(at: int, stage: int) -> void:
@@ -620,6 +696,7 @@ func _zones() -> Array:
 func _on_joined(id: int) -> void:
 	# 6 м запасу, як і в spawner.gd: падає сам, сідає на видиму поверхню.
 	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 6.0, 0))
+	_tell_shrines(id)
 	a.account = _signed.get(id, {}).get("логін", "")
 	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
 	# базу, а база не жде гру.

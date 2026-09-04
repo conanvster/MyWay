@@ -154,8 +154,60 @@ func _me() -> Node:
 
 ## Підтягування до надісланої позиції. Стрибком переставляє `place_at`
 ## (поява, оживлення, телепорти) — саме тому воно окремим повідомленням.
+## Святині: як близько підійти, щоб з'явилось запрошення. Трохи менше за
+## серверну дальність (`world.gd:SHRINE_REACH`) — щоб запрошення не
+## вискакувало рівно на межі, звідки сервер уже відповість «задалеко».
+const SHRINE_ASK := Shop.TALK_RANGE * 0.85
+## Як часто дивитись, чи ми біля святині. Їх пів сотні, а підходимо ми
+## пішки — щокадру перебирати всі ні до чого.
+const SHRINE_LOOK := 0.4
+
+var _shrine_clock := 0.0
+## Номер святині, біля якої вже питали. Доки не відійшов — не питаємо
+## вдруге: те саме правило, що й у порталі («відмовився — вийди й зайди
+## знову»), і без нього вікно вискакувало б щокадру.
+var _asked_shrine := -1
+
+
+## Запрошення активувати святиню ключем (П-153). Друге запрошення — на
+## сам телепорт — окреме, і його ще немає: воно з'явиться разом із
+## підземеллям за порталом.
+func _watch_shrines(delta: float) -> void:
+	_shrine_clock -= delta
+	if _shrine_clock > 0.0:
+		return
+	_shrine_clock = SHRINE_LOOK
+	var me: Node = _me()
+	var land: Node = _world.get_node_or_null("Landscape")
+	if me == null or land == null or not land.has_method("shrines"):
+		return
+	if _world.hud == null:
+		return
+	var all: Array = land.shrines()
+	var near := -1
+	for i in all.size():
+		var shrine: Shrine = all[i]
+		if shrine.stage != Shrine.Stage.ЗАЧИЩЕНА:
+			continue
+		if me.global_position.distance_to(shrine.global_position) <= SHRINE_ASK:
+			near = i
+			break
+	if near < 0:
+		# Відійшов від усіх — наступний підхід знову спитає.
+		_asked_shrine = -1
+		return
+	if near == _asked_shrine:
+		return
+	_asked_shrine = near
+	var shrine: Shrine = all[near]
+	_world.hud.ask_confirm(
+			"Активувати святиню ключем грейду %s?" % shrine.grade,
+			func() -> void: _link.to_server(&"ask_activate", [near]))
+
+
 func smooth(delta: float) -> void:
 	var k := 1.0 - exp(-SMOOTHING * delta)
+	_watch_shrines(delta)
 	for id in _creatures:
 		var a: Node3D = _creatures[id]
 		var was := a.global_position

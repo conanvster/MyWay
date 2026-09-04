@@ -19,6 +19,10 @@ const SEED := 20260902
 ## до вже готової форми рельєфу — самі числа шуму, підлоги над морем
 ## (П-138) і насипів (Cave, Forest) не чіпалися.
 const LAND_LIFT := 3.0
+## Мешканці міста — та сама модель, що й гравці (П-162); шляхи беремо
+## зі скрипта аватара, не дублюємо — немає `class_name Avatar`, тому
+## через сам ресурс скрипта.
+const AvatarScript := preload("res://scripts/avatar.gd")
 
 var data: Dictionary = {}
 
@@ -784,13 +788,25 @@ func _dweller(who: Dictionary, at: int) -> void:
 	body.collision_layer = 4
 	add_child(body)
 
-	# Мешканці мають таке саме тіло, як гравці й монстри: голова, руки,
-	# ноги. Стоять вони нерухомо, тож анімація в них лише «дихає».
-	var figure := CreatureModel.new()
+	# Мешканці — та сама модель людини, що й гравці (замовник просив
+	# 05.09.2026): стать — за останньою літерою імені («Ліда» → жінка,
+	# «Горан»/«Отець Мирон» → чоловік — свою назву, не титул, завжди
+	# останню в рядку). Стоять нерухомо, але з анімацією спілкування
+	# (Idle_Talking, не Idle) — сигнал «до нього можна підійти», навіть
+	# коли самого вікна розмови ще нема (П-113).
+	var name_ends: String = str(who.get("хто", "")).strip_edges()
+	var is_female: bool = name_ends.ends_with("а") or name_ends.ends_with("я")
+	var made: String = AvatarScript.MODEL_FEMALE if is_female \
+			else AvatarScript.MODEL_MALE
+	var figure := SkinnedModel.new()
 	figure.name = "Mesh"
-	figure.tint = body.tint
+	figure.path = made
+	figure.anim_path = AvatarScript.MODEL_ANIM
+	figure.height = 1.75
 	body.add_child(figure)
 	figure.build()
+	figure.show_move("Idle_Talking")
+	body.show_name()
 	var shape := CollisionShape3D.new()
 	shape.shape = CapsuleShape3D.new()
 	shape.position = Vector3(0, 0.1, 0)

@@ -73,6 +73,18 @@ func respawn(slot: int) -> int:
 	return id
 
 
+## Скільки живих монстрів лишилось у цій зоні. Потрібне святиням
+## (П-153): «зачищено» — це саме нуль живих в її кільці охорони.
+func alive_in(zone: Node) -> int:
+	var alive := 0
+	for slot: Dictionary in _slots:
+		if slot["zone"] != zone:
+			continue
+		if slot["id"] != 0 and _creatures.has(slot["id"]):
+			alive += 1
+	return alive
+
+
 ## Роздати живим монстрам перечитані числа (крок 1.2: баланс на ходу).
 func apply_tuning() -> int:
 	var touched := 0

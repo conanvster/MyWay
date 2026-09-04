@@ -40,6 +40,20 @@ func to_watchers(subject: int, method: StringName, args: Array = []) -> void:
 		to_one(peer, method, args)
 
 
+## Кожному, хто в грі — незалежно від того, хто що бачить.
+##
+## Це виняток із П-43, і він навмисний: є речі, які стосуються всього
+## світу, а не однієї істоти. Перша така — стан святині (П-153):
+## зачистили її на іншому кінці мапи, і про це має знати кожен, бо
+## далі туди йти всім. Для істот лишається `to_watchers` — щоб не
+## розсилати позиції тим, хто нічого не бачить.
+func to_all(method: StringName, args: Array = []) -> void:
+	if _node == null:
+		return
+	for peer in _node.multiplayer.get_peers():
+		to_one(peer, method, args)
+
+
 ## З клієнта на сервер. Сервер — завжди номер 1.
 func to_server(method: StringName, args: Array = []) -> void:
 	if _node != null:

@@ -216,6 +216,7 @@ func _physics_process(delta: float) -> void:
 		for id in combat.clear_corpses():
 			remove(id)
 		spawner.tick(delta)
+		_tick_shrines(delta)
 		_tick_grace_places()
 		_tick_water(delta)
 		if store != null and store.due(delta):
@@ -527,6 +528,57 @@ func _link_death(id: int, who: Node) -> void:
 	if id > 0:
 		var lost: int = combat.progress.death_loss(who)
 		link.notice(id, "втрачено %d поваги" % lost)
+
+
+## Святині (П-153): «зачищено» — це нуль живих у кільці охорони. Стан
+## рахує СЕРВЕР і шле номером; клієнт лише показує (П-08).
+##
+## Не щокадру: святинь тридцять із гаком, а міняється стан рідко —
+## рівно тоді, коли впав останній охоронець.
+const SHRINE_CHECK := 1.0
+
+var _shrine_clock := 0.0
+## Номер святині -> стан, який уже надіслано. Щоб не слати те саме.
+var _shrine_sent: Dictionary = {}
+
+
+func _tick_shrines(delta: float) -> void:
+	_shrine_clock -= delta
+	if _shrine_clock > 0.0:
+		return
+	_shrine_clock = SHRINE_CHECK
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("shrines"):
+		return
+	var all: Array = land.shrines()
+	for i in all.size():
+		var shrine: Shrine = all[i]
+		# Активовану не чіпаємо: назад в «під охороною» її вертає лише
+		# закриття підземелля, якого ще немає.
+		if shrine.stage == Shrine.Stage.АКТИВОВАНА:
+			continue
+		var zone: Node = shrine.get_node_or_null("Охорона")
+		if zone == null:
+			continue
+		var stage: int = Shrine.Stage.ПІД_ОХОРОНОЮ \
+				if spawner.alive_in(zone) > 0 else Shrine.Stage.ЗАЧИЩЕНА
+		if int(_shrine_sent.get(i, -1)) == stage:
+			continue
+		_shrine_sent[i] = stage
+		shrine.set_stage(stage)
+		link.to_all(&"client_shrine", [i, stage])
+
+
+## Стан святині: зачищено її чи ще ні (П-153).
+@rpc("authority", "call_remote", "reliable")
+func client_shrine(at: int, stage: int) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("shrines"):
+		return
+	var all: Array = land.shrines()
+	if at < 0 or at >= all.size():
+		return
+	all[at].set_stage(stage)
 
 
 ## Благодатні місця: зони, де відновлюють швидко (П-113). Перевіряємо

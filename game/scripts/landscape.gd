@@ -59,6 +59,7 @@ func build(from_data: Dictionary, stream: bool = false) -> void:
 	_city()
 	_forest()
 	_mountains()
+	_shrines()
 
 
 ## Скільки метрів до межі сектора тримати сусідній сектор завантаженим —
@@ -811,6 +812,80 @@ func _dweller(who: Dictionary, at: int) -> void:
 	shape.shape = CapsuleShape3D.new()
 	shape.position = Vector3(0, 0.1, 0)
 	body.add_child(shape)
+
+
+## Святині (П-153) — точки, біля яких відкривають портал у підземелля.
+##
+## Беруться з даних, а не кидаються випадково: рішення каже
+## «заздалегідь вибрані об'єкти», і саме тому перелік заморожений у
+## `map.json` (як будинки й гори). Стрімінгом не чіпаються: їх 31 на
+## весь світ, вони дешеві, і зникати вони не мають — по них гравець
+## орієнтується.
+func _shrines() -> void:
+	var guard: Dictionary = data.get("охорона святинь", {})
+	for spot: Dictionary in data.get("святині", []):
+		var shrine := Shrine.new()
+		shrine.name = _named("Святиня")
+		shrine.form = str(spot.get("форма", "камінь"))
+		shrine.grade = str(spot.get("грейд", "E"))
+		shrine.shard_red = str(spot.get("уламки", "сині")) == "червоні"
+		add_child(shrine)
+		shrine.position = _on_ground(_point(spot["де"]))
+		if not guard.is_empty():
+			_shrine_guard(shrine, guard)
+
+
+## Скупчення монстрів довкола святині — НЕ впритул до неї, а кільцем на
+## відстані (П-153). Кільце робиться кількома малими формами, а не одним
+## великим циліндром: `MobZone` бере точку з-поміж дочірніх форм
+## пропорційно об'єму, тож кілька форм по колу дають саме кільце, і в
+## самої святині ніхто не з'являється.
+##
+## Зона стає дитиною святині — тоді `world.gd:_zones()`, який шукає
+## `MobZone` по всьому дереву, підбирає її сам, і другого списку зон
+## заводити не треба.
+func _shrine_guard(shrine: Shrine, guard: Dictionary) -> void:
+	var by_grade: Dictionary = guard.get("вид за грейдом", {})
+	var kind := int(by_grade.get(shrine.grade, 1))
+	var zone := MobZone.new()
+	zone.name = "Охорона"
+	zone.kind = kind
+	zone.count = int(guard.get("скільки", 3))
+	# Охорона святині чекає на гравця, а не полює: аґресивною її робить
+	# лише слово замовника, якого поки нема.
+	zone.aggressive = false
+	zone.respawn_after = float(guard.get("вертається через", 180.0))
+	zone.respawn_spread = 20.0
+	shrine.add_child(zone)
+
+	var far := float(guard.get("відстань", 14.0))
+	var spread := float(guard.get("розкид", 4.0))
+	for i in 4:
+		var turn := TAU * float(i) / 4.0
+		var shape := CollisionShape3D.new()
+		var ball := CylinderShape3D.new()
+		ball.radius = spread
+		ball.height = 4.0
+		shape.shape = ball
+		shape.position = Vector3(cos(turn) * far, 0.0, sin(turn) * far)
+		zone.add_child(shape)
+
+
+## Усі святині в тому самому порядку, що й у даних. Порядок важить:
+## сервер шле клієнтові стан святині НОМЕРОМ, а не іменем вузла.
+func shrines() -> Array[Node]:
+	var out: Array[Node] = []
+	for child in find_children("Святиня*", "", false, false):
+		out.append(child)
+	return out
+
+
+## Де стоять святині — щоб не читати даних удруге.
+func shrine_spots() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for child in shrines():
+		out.append(child.global_position)
+	return out
 
 
 ## Ліс: дерева з розкидом по колу, кожне трохи іншої висоти.

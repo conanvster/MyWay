@@ -1,10 +1,22 @@
 extends SceneTree
-## Парад щойно завантажених персонажів (05.09.2026): RPG Character Pack
-## (6 класів) + Ultimate Animated Character Pack (50 людей/тварин) —
-## жоден із них ще НЕ скопійований у репозиторій (разом 112 МБ, зашироко
-## для «лише потрібні файли», П-15). Читає напряму з `~/assets/` через
-## `GLTFDocument` — офіційний спосіб завантажити glTF поза `res://` без
-## імпорту в проєкт.
+## Парад щойно завантажених персонажів (05.09.2026, доповнено 06.09.2026):
+## RPG Character Pack (6 класів) + Ultimate Animated Character Pack
+## (50 людей/тварин) + решта Ultimate Monster Pack (43 істоти — Orc уже
+## показаний окремо в `monster_moves.gd`, тут пропущений, щоб не дублювати)
+## + скелети KayKit (4 класи) — жоден із них ще НЕ скопійований у
+## репозиторій (разом за сотню МБ, зашироко для «лише потрібні файли»,
+## П-15). Читає напряму з `~/assets/` через `GLTFDocument` — офіційний
+## спосіб завантажити glTF/glb поза `res://` без імпорту в проєкт.
+##
+## Скелети KayKit — окремий випадок: сам файл персонажа БЕЗ жодної
+## анімації (перевірено напряму — 23 кістки, `AnimationPlayer` немає),
+## рухи лежать у двох окремих файлах бібліотеки (`Rig_Medium_General`,
+## `Rig_Medium_MovementBasic`). Обидва мають той самий кістяк на тій
+## самій глибині (`корінь/Rig_Medium/Skeleton3D`), тож пересадка working
+## так само, як `SkinnedModel._borrow_player()` — переставити вузол
+## `AnimationPlayer` в те саме місце нового дерева, і шляхи доріжок (він
+## же `root_node=".."`) лишаються правильними без ручної підміни. Тут
+## рухи ще й зливаються з ДВОХ бібліотечних файлів в один програвач.
 ##
 ## Одна постать = один файл (різні персонажі, не один спільний набір
 ## рухів, як у людини-гравця) — кожна сама по колу програє ВЕСЬ свій
@@ -17,6 +29,14 @@ extends SceneTree
 
 const RPG_DIR := "/home/alex/assets/rpg-characters"
 const ULTIMATE_DIR := "/home/alex/assets/ultimate-characters"
+const ULTIMATE_MONSTERS_DIR := "/home/alex/assets/ultimate-monsters"
+## Уже показаний окремо (щойно доданий у гру орк, `monster_moves.gd`).
+const SKIP_FILES := ["Orc.glb"]
+const KAYKIT_DIR := "/home/alex/assets/skeletons/KayKit_Skeletons_1.1_FREE"
+const KAYKIT_CHAR_DIR := KAYKIT_DIR + "/characters/gltf"
+const KAYKIT_ANIM_DIR := KAYKIT_DIR + "/Animations/gltf/Rig_Medium"
+const KAYKIT_ANIM_FILES := \
+		["Rig_Medium_General.glb", "Rig_Medium_MovementBasic.glb"]
 const COLUMNS := 8
 const STEP_X := 2.4
 const STEP_Z := 3.2
@@ -42,7 +62,7 @@ func _init() -> void:
 	call_deferred("_go")
 
 
-## Завантажити .gltf поза res:// — GLTFDocument, не load().
+## Завантажити .gltf/.glb поза res:// — GLTFDocument, не load().
 func _load_external(path: String) -> Node3D:
 	var doc := GLTFDocument.new()
 	var state := GLTFState.new()
@@ -50,6 +70,38 @@ func _load_external(path: String) -> Node3D:
 	if err != OK:
 		return null
 	return doc.generate_scene(state)
+
+
+## Скелет KayKit + пересадка рухів із двох бібліотечних файлів в один
+## програвач (див. коментар угорі файла).
+func _load_kaykit(char_path: String) -> Node3D:
+	var body := _load_external(char_path)
+	if body == null:
+		return null
+	var player: AnimationPlayer = null
+	for anim_file in KAYKIT_ANIM_FILES:
+		var donor := _load_external(KAYKIT_ANIM_DIR + "/" + anim_file)
+		if donor == null:
+			continue
+		var found: AnimationPlayer = \
+				donor.find_child("AnimationPlayer", true, false)
+		if found == null:
+			donor.queue_free()
+			continue
+		if player == null:
+			donor.remove_child(found)
+			found.owner = null
+			body.add_child(found)
+			player = found
+		else:
+			var lib: AnimationLibrary = found.get_animation_library("")
+			var main: AnimationLibrary = player.get_animation_library("")
+			if lib != null and main != null:
+				for move: StringName in lib.get_animation_list():
+					if not main.has_animation(move):
+						main.add_animation(move, lib.get_animation(move))
+		donor.queue_free()
+	return body
 
 
 func _go() -> void:
@@ -73,8 +125,8 @@ func _go() -> void:
 	holder.environment = air
 	world.add_child(holder)
 
-	var files: Array = []
-	for dir_path in [RPG_DIR, ULTIMATE_DIR]:
+	var files: Array = []   # {"path": ..., "kaykit": bool}
+	for dir_path in [RPG_DIR, ULTIMATE_DIR, ULTIMATE_MONSTERS_DIR]:
 		var dir := DirAccess.open(dir_path)
 		if dir == null:
 			print("‼ немає теки: ", dir_path)
@@ -82,8 +134,22 @@ func _go() -> void:
 		var names := dir.get_files()
 		names.sort()
 		for f: String in names:
-			if f.get_extension() == "gltf":
-				files.append(dir_path + "/" + f)
+			if f.get_extension() != "gltf" and f.get_extension() != "glb":
+				continue
+			if f in SKIP_FILES:
+				continue
+			files.append({"path": dir_path + "/" + f, "kaykit": false})
+
+	var kaykit_dir := DirAccess.open(KAYKIT_CHAR_DIR)
+	if kaykit_dir == null:
+		print("‼ немає теки: ", KAYKIT_CHAR_DIR)
+	else:
+		var kaykit_names := kaykit_dir.get_files()
+		kaykit_names.sort()
+		for f: String in kaykit_names:
+			if f.get_extension() == "glb":
+				var p := KAYKIT_CHAR_DIR + "/" + f
+				files.append({"path": p, "kaykit": true})
 
 	print("файлів знайдено: %d" % files.size())
 
@@ -103,9 +169,11 @@ func _go() -> void:
 	var lineup: Array = []   # {body, player, moves, tag, at, phase}
 
 	for i in files.size():
-		var path: String = files[i]
+		var entry: Dictionary = files[i]
+		var path: String = entry["path"]
 		var title: String = path.get_file().get_basename()
-		var body := _load_external(path)
+		var body: Node3D = _load_kaykit(path) if entry["kaykit"] \
+				else _load_external(path)
 		if body == null:
 			print("  ‼ не завантажилось: ", path)
 			continue

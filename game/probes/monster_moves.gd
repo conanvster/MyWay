@@ -16,9 +16,19 @@ const MOB := preload("res://scenes/mob.tscn")
 ## Моделі, які вже лежать у репозиторії, але ще не заведені видом у
 ## data/mobs.json — без "kind" `Mob.setup()` їх не підняти, тож ідуть
 ## окремим шляхом: гола модель, без Creature/AI навколо (05.09.2026,
-## замовник попросив показати щойно доданого орка).
+## замовник попросив показати щойно доданого орка; 06.09.2026 —
+## тварини з Farm Animals Pack були вже скопійовані в репозиторій
+## раніше цієї сесії, але ніде не показувались, замовник це помітив).
+const CREATURES := "res://models/creatures/"
+const MONSTERS := "res://models/monsters/"
 const EXTRA_PREVIEWS := [
-	{"title": "орк (ще не в грі)", "path": "res://models/monsters/Orc.glb"},
+	{"title": "орк (ще не в грі)", "path": MONSTERS + "Orc.glb"},
+	{"title": "корова (ще не в грі)", "path": CREATURES + "Cow.fbx"},
+	{"title": "кінь (ще не в грі)", "path": CREATURES + "Horse.fbx"},
+	{"title": "лама (ще не в грі)", "path": CREATURES + "Llama.fbx"},
+	{"title": "мопс (ще не в грі)", "path": CREATURES + "Pug.fbx"},
+	{"title": "вівця (ще не в грі)", "path": CREATURES + "Sheep.fbx"},
+	{"title": "зебра (ще не в грі)", "path": CREATURES + "Zebra.fbx"},
 ]
 const COLUMNS := 6
 const STEP_X := 2.6

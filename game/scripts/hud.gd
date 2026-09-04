@@ -113,6 +113,7 @@ func setup(world: Node) -> void:
 	_build_shop()
 	_build_warehouse()
 	_build_guild()
+	_build_map()
 	# Останнім: підтвердження має лежати ПОВЕРХ вікна, з якого його
 	# викликали, інакше «Так» довелось би шукати під прилавком.
 	_build_confirm()
@@ -229,7 +230,11 @@ func _build_menu() -> void:
 	_root.add_child(_menu_box)
 
 	var buttons := [["Стати", _toggle_stats], ["Скіли", _toggle_skills],
-			["Речі", _toggle_things], ["Вийти", _quit]]
+			["Речі", _toggle_things], ["Карта", _toggle_map],
+			["Вийти", _quit]]
+	# Кнопок стало п'ять — рядок їде лівіше рівно на одну ширину, щоб
+	# «Вийти» лишалась у тому самому куті, де до неї звикли.
+	_menu_box.position = Vector2(-460 - 112, -46)
 	for i in buttons.size():
 		var press := Button.new()
 		press.text = str(buttons[i][0])
@@ -778,6 +783,10 @@ func show_windows() -> void:
 		_things_box.visible = true
 	if _stats_box != null:
 		_stats_box.visible = true
+	# Карту теж: інакше її, як колись вікно речей, ніхто не побачить на
+	# знімку — рук у показу немає, а руками її ніхто не відкриє.
+	if _map_box != null and not _map_box.visible:
+		_toggle_map()
 
 
 ## Що в торбі — приходить від сервера.
@@ -1003,6 +1012,44 @@ func _build_talk() -> void:
 			if _talk_with >= 0:
 				wants_guild.emit(_talk_with))
 	page.add_child(_talk_guild)
+
+
+## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
+const MAP_SIDE := 480.0
+
+var _map_box: WindowBox
+var _map_view: WorldMap
+
+
+## Карта світу (пряме слово замовника 05.09.2026). Малює `world_map.gd`
+## із тих самих даних, з яких збудовано землю, — розійтися зі світом їй
+## нема з чого.
+func _build_map() -> void:
+	_map_box = WindowBox.new()
+	_map_box.name = "ВікноКарти"
+	_map_box.setup("Карта", Vector2(MAP_SIDE, MAP_SIDE))
+	_map_box.set_anchors_preset(Control.PRESET_CENTER)
+	_map_box.position = -_map_box.size * 0.5
+	_root.add_child(_map_box)
+
+	_map_view = WorldMap.new()
+	_map_view.name = "Карта"
+	_map_view.size = Vector2(MAP_SIDE, MAP_SIDE)
+	_map_view.custom_minimum_size = _map_view.size
+	_map_box.body.add_child(_map_view)
+
+
+func _toggle_map() -> void:
+	if _map_box == null:
+		return
+	_map_box.visible = not _map_box.visible
+	if _map_box.visible:
+		# Дані беремо в мить відкриття, а не на старті: числа правляться
+		# на ходу (крок 1.2), і карта має показувати теперішні.
+		if _world != null and _world.data != null:
+			_map_view.map = _world.data.map
+		_map_view.queue_redraw()
+		_map_box._keep_on_screen()
 
 
 ## Вікно підтвердження (П-159). Будується раз, показується щоразу з
@@ -2038,6 +2085,11 @@ func _process(delta: float) -> void:
 			_coords_text.text = "x %.1f  y %.1f  z %.1f" \
 					% [me.global_position.x, me.global_position.y,
 					   me.global_position.z]
+			# Червона крапка на карті — з тієї самої позиції, що й
+			# координати в куті. Тільки коли карта відкрита: закрита
+			# вона перемальовувалась би даремно.
+			if _map_box != null and _map_box.visible:
+				_map_view.show_me(me.global_position)
 	if _target != 0 and _max_hp.has(_target):
 		var share := float(_hp.get(_target, 0)) / maxf(1.0, _max_hp[_target])
 		_target_fill.size.x = WIDE * clampf(share, 0.0, 1.0)

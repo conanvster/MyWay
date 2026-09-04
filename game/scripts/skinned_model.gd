@@ -22,6 +22,24 @@ const SWING_TIME := 0.4
 ## немає жодної анімації, лишається тільки цей шлях гойдання кістками).
 const IDLE_PHASE_SPEED := 0.6
 
+## Моделі, змонтовані обличчям у +Z замість -Z, яким рушій усюди (face_to,
+## camera_rig) рахує вперед (П-150/П-162, заміряно прямою камерою на
+## кожен файл окремо — 05.09.2026: конвенція не спільна для всього
+## проєкту, а йде по НАБОРУ. Bestiary (Skeleton/Bat/Dragon/Slime/Imp/
+## Puglin) розвернутий, набір тварин (Cow/Pig/Sheep/Pug) — ні, і
+## Superhero (гравець) розвернутий так само, як Bestiary. Без цього
+## списку йшла б лише людина — а розвернутими виявились і монстри.
+const REVERSED_MOUNTS := {
+	"res://models/player/Superhero_Male_FullBody.gltf": true,
+	"res://models/player/Superhero_Female_FullBody.gltf": true,
+	"res://models/creatures/Skeleton.fbx": true,
+	"res://models/creatures/Bat.fbx": true,
+	"res://models/creatures/Dragon.fbx": true,
+	"res://models/creatures/Slime.fbx": true,
+	"res://models/monsters/Imp.glb": true,
+	"res://models/monsters/Puglin.glb": true,
+}
+
 var path := ""
 var height := 1.0
 var tint := Color(1, 1, 1)
@@ -55,6 +73,8 @@ func build() -> void:
 	var body: Node3D = scene.instantiate()
 	body.name = "Тіло"
 	add_child(body)
+	if REVERSED_MOUNTS.get(path, false):
+		body.rotation.y = PI
 	# Моделі з наборів приходять кожна у своєму масштабі: свиня виходила
 	# завбільшки з будинок, а імп — із долоню. Тому «зріст» означає
 	# МЕТРИ, а модель підганяється під нього за власною висотою.

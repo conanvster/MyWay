@@ -66,6 +66,23 @@ var facing := 0.0
 var server_facing := 0.0
 ## Намір, надісланий клієнтом. Заповнює сервер із мережі.
 var wanted := Vector2.ZERO
+
+## Крихітний «інтелект» на випадок застрягання об кут будинку/паркану/
+## дерева (замовник побачив: наказ «іди до крамаря» буксує на розі
+## будинку — намір щокадру рахується прямою лінією на ціль, без жодної
+## обізнаності про перешкоди; `move_and_slide()` ковзає вздовж стіни,
+## але на випуклому куті пряма на ціль знову «тисне» крізь неї). Ліки —
+## не шлях-пошук, а рефлекс: не посунулись за STUCK_CHECK — крок назад,
+## тоді трохи по діагоналі (слова замовника), і знову пряма на ціль.
+const STUCK_CHECK := 0.4
+const STUCK_MIN := 0.25
+const ESCAPE_BACK := 0.35
+const ESCAPE_TURN := 0.55
+var _stuck_since := Vector3.ZERO
+var _stuck_clock := 0.0
+var _escape_left := 0.0
+var _escape_dir := Vector3.ZERO
+var _escape_diag := Vector3.ZERO
 ## Куди сервер сказав стати. Клієнт плавно підтягується сюди.
 var server_position := Vector3.ZERO
 
@@ -420,7 +437,31 @@ func server_step(delta: float) -> void:
 		velocity.y = 0.0
 
 	# Обрізаємо довжину: інакше підроблений намір дав би надшвидкість.
-	var dir := Vector3(wanted.x, 0.0, wanted.y).limit_length(1.0)
+	var raw_dir := Vector3(wanted.x, 0.0, wanted.y).limit_length(1.0)
+	var dir := raw_dir
+
+	if _escape_left > 0.0:
+		# У фазі втечі: спершу назад, тоді по діагоналі — своя пряма на
+		# ціль тут ні до чого, вона й завела в кут.
+		dir = _escape_dir if _escape_left > ESCAPE_TURN else _escape_diag
+		_escape_left -= delta
+	elif raw_dir.length() > 0.1:
+		_stuck_clock += delta
+		if _stuck_clock >= STUCK_CHECK:
+			var moved := global_position.distance_to(_stuck_since)
+			_stuck_clock = 0.0
+			_stuck_since = global_position
+			if moved < STUCK_MIN:
+				var side := 1.0 if randf() < 0.5 else -1.0
+				_escape_dir = -raw_dir
+				_escape_diag = raw_dir.rotated(Vector3.UP,
+						deg_to_rad(70.0) * side)
+				_escape_left = ESCAPE_BACK + ESCAPE_TURN
+				dir = _escape_dir
+	else:
+		_stuck_clock = 0.0
+		_stuck_since = global_position
+
 	move_direction = dir
 	# Біжить — дивиться туди, куди біжить: бігти боком не можна. Стоїть —
 	# тримає бік; розвертає його тільки ціль (`face_point` у бою та в

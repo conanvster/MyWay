@@ -179,7 +179,11 @@ func dress(color: Color, height: float) -> void:
 
 
 ## Іде чи стоїть. Швидкість підганяє темп кроку: біжить — швидше.
-func animate(speed: float) -> void:
+## `backward` тут не потрібен: гойдання ніг симетричне (не «Fwd»-кліп із
+## набору), назад воно й так виглядає так само — параметр лише для
+## спільної сигнатури з `SkinnedModel.animate` (client_view кличе
+## обидва однаково, не знаючи, яка саме модель під фігурою).
+func animate(speed: float, _backward: bool = false) -> void:
 	if _player == null or _swinging:
 		return
 	if speed > 0.35:

@@ -136,11 +136,18 @@ func _fit(body: Node) -> void:
 	body.position.y = -box.position.y * times
 
 
-func animate(speed: float) -> void:
+## `backward` (П-150): набір рухів має лише ходу ВПЕРЕД (`Walk`, `Jog_Fwd`,
+## `Sprint`... — усі явно «Fwd», назад немає жодної). Істота відступає,
+## лишаючись обличчям до цілі (розворот до цілі під час бою вже
+## вирішений) — тіло їде назад, ноги йшли б уперед. Той самий кліп,
+## пущений у зворотний бік, — стандартний прийом за відсутності
+## окремого рухи назад, дешевший за нову анімацію чи зміну правила
+## розвороту.
+func animate(speed: float, backward: bool = false) -> void:
 	_speed = speed
 	if _player != null:
 		if speed > 0.35:
-			_play_if_has(["Walk", "Running", "Run", "Flying"])
+			_play_if_has(["Walk", "Running", "Run", "Flying"], true, backward)
 		else:
 			_play_if_has(["Idle"])
 		return
@@ -199,7 +206,8 @@ func _bend(name: String, by: float) -> void:
 ## після «|», як у «Armature|Idle»), і лише як його немає — стару
 ## нечітку відповідність за кінцівкою, для наборів на кшталт скелета
 ## («SkeletonArmature|Skeleton_Idle»), де точного варіанта нема взагалі.
-func _play_if_has(names: Array, loop: bool = true) -> void:
+func _play_if_has(names: Array, loop: bool = true,
+		reverse: bool = false) -> void:
 	if _player == null:
 		return
 	var have := _player.get_animation_list()
@@ -209,9 +217,14 @@ func _play_if_has(names: Array, loop: bool = true) -> void:
 				else _find_animation(have, want, false)
 		if found == "":
 			continue
-		if _player.current_animation == found and loop:
+		var already_reverse: bool = _player.get_playing_speed() < 0.0
+		if _player.current_animation == found and loop \
+				and already_reverse == reverse:
 			return
-		_player.play(found)
+		if reverse:
+			_player.play_backwards(found)
+		else:
+			_player.play(found)
 		_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR \
 				if loop else Animation.LOOP_NONE
 		return

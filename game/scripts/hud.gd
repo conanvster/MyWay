@@ -76,7 +76,8 @@ var _target_name: Label
 var _target_fill: ColorRect
 var _queue_text: Label
 ## Дві комірки черги дій поруч зі здоров'ям/маною (П-149).
-var _queue_cells: Array[Label] = []
+## Кожен елемент — `{"label": Label, "icon": TextureRect}`.
+var _queue_cells: Array[Dictionary] = []
 var _cast_box: Control
 var _cast_fill: ColorRect
 var _cast_text: Label
@@ -1635,7 +1636,19 @@ func _build_vitals() -> void:
 		label.position = at + Vector2(2, 9)
 		label.size = Vector2(QUEUE_SIDE - 4, QUEUE_SIDE)
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_queue_cells.append(label)
+		# Значок дії (коли є) на всю комірку, як і в панелі 1-7 — той
+		# самий `_bar_icon`. Нема малюнка (голе вміння без художки) —
+		# лишається текст, як і раніше; це чинило враження, що черга
+		# взагалі не малює, чим є дія.
+		var icon := TextureRect.new()
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_SCALE
+		icon.position = at
+		icon.size = Vector2(QUEUE_SIDE, QUEUE_SIDE)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.visible = false
+		box.add_child(icon)
+		_queue_cells.append({"label": label, "icon": icon})
 
 
 ## Координати гравця — праворуч угорі. Клієнт нічого не рахує: позицію
@@ -1843,7 +1856,15 @@ func update_self(hp: int, max_hp: int, mp: int, max_mp: int,
 	# найпершим, права — наступне. Коли ліва йде з черги, права сама
 	# посувається на її місце — це просто той самий масив на кадр пізніше.
 	for i in _queue_cells.size():
-		_queue_cells[i].text = _title(queue[i]) if i < queue.size() else ""
+		var action: String = queue[i] if i < queue.size() else ""
+		var label: Label = _queue_cells[i]["label"]
+		var icon: TextureRect = _queue_cells[i]["icon"]
+		var tex := _bar_icon(action) if action != "" else null
+		icon.visible = tex != null
+		if tex != null:
+			icon.texture = tex
+		label.visible = tex == null
+		label.text = _title(action)
 	_queue_text.text = "замах %.2f" % busy_in if busy_in > 0.0 else ""
 
 

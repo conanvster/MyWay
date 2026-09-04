@@ -147,7 +147,15 @@ func smooth(delta: float) -> void:
 		# і серверові не треба слати ще й це.
 		var body: Node3D = a.model()
 		if body != null and a.is_alive():
-			body.animate(was.distance_to(a.global_position) / maxf(delta, 0.001))
+			var moved := a.global_position - was
+			# Обличчям до цілі, ногами — куди їде: коли рух проти
+			# погляду (відступ у бою), ходу грає навпаки (skinned_model).
+			var backward := false
+			if moved.length() > 0.01:
+				var forward := -a.global_transform.basis.z
+				backward = forward.dot(moved.normalized()) < -0.3
+			body.animate(was.distance_to(a.global_position) / maxf(delta, 0.001),
+					backward)
 
 
 ## Показ: спершу взяти найближчого монстра (комірка 3), далі бити.

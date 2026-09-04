@@ -23,6 +23,23 @@ var _creatures: Dictionary
 var _world: Node3D
 var _link: Messenger
 
+## Стан показу людини (П-162), на кожного — id -> Dictionary. Це суто
+## вигляд, Creature про це не знає: `дно` (чи торкався землі минулого
+## кадру), `бій_до`/`спалах_до`/`каст_до` (Time.get_ticks_msec(), доки
+## тримати відповідний рух), `punch` (яка з двох рук наступна), `hp`
+## (для «отримав удар у спокої»).
+var _anim: Dictionary = {}
+## База бігу — 5,0 (`Stats.move_speed`); з бафом чи прокачаними статами
+## вище (П-161/П-162).
+const JOG_SPEED := 5.6
+## М/с вниз, щоб рахувати «падає», а не «з гірки збігає».
+const FALL_SPEED := -1.2
+const COMBAT_STANCE := 2.0    ## П-162: «2 секунди після бою»
+const HIT_FLASH := 0.6
+## Не дати першому ж кадру забити Enter/Exit одразу на Idle-каст.
+const CAST_ENTER_LOCK := 0.4
+const CAST_EXIT_LOCK := 0.35
+
 
 func _init(creatures: Dictionary = {}, world: Node3D = null,
 		link: Messenger = null) -> void:
@@ -146,16 +163,143 @@ func smooth(delta: float) -> void:
 		# екрані. Так анімація не бреше: стоїть — стоїть, біжить — біжить,
 		# і серверові не треба слати ще й це.
 		var body: Node3D = a.model()
-		if body != null and a.is_alive():
-			var moved := a.global_position - was
-			# Обличчям до цілі, ногами — куди їде: коли рух проти
-			# погляду (відступ у бою), ходу грає навпаки (skinned_model).
+		if body == null:
+			continue
+		var moved := a.global_position - was
+		var speed := was.distance_to(a.global_position) / maxf(delta, 0.001)
+		# Модель людини (Superhero+UAL1) має рухів на порядок більше, ніж
+		# монстри чи фігурки-заглушки — П-162 стосується лише її; решта
+		# й далі йде старим, простим шляхом (walk/idle за модулем
+		# швидкості), щоб нічого монстрам не зламати.
+		if body is SkinnedModel and a.has_method("apply_sex"):
+			_human_state(id, a, body, speed, moved, delta)
+		elif a.is_alive():
+			# Обличчям до цілі, ногами — куди їде: рух проти погляду
+			# (відступ у бою) грає ту саму ходу навпаки (skinned_model).
 			var backward := false
 			if moved.length() > 0.01:
 				var forward := -a.global_transform.basis.z
 				backward = forward.dot(moved.normalized()) < -0.3
-			body.animate(was.distance_to(a.global_position) / maxf(delta, 0.001),
-					backward)
+			body.animate(speed, backward)
+
+
+## Показ моделі людини за станом (П-162). Порядок перевірок і є
+## пріоритетом: смерть перекриває все, влучання в спокої — усе, крім
+## смерті, і так далі до звичайної ходи.
+func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
+		moved: Vector3, delta: float) -> void:
+	var st: Dictionary = _anim.get(id, {})
+	var now := Time.get_ticks_msec() / 1000.0
+
+	if not a.is_alive():
+		# lay_down() (creature.gd) уже поставив Death01 в момент смерті;
+		# тут — лише запобіжник для того, хто побачив труп щойно
+		# з'явившись (client_died тоді ще не приходив).
+		body.show_move("Death01")
+		_anim[id] = st
+		return
+
+	var last_hp: int = st.get("hp", a.hp)
+	if a.hp < last_hp and speed < 0.35 and now >= st.get("бій_до", 0.0) \
+			and not a.is_casting():
+		st["спалах_до"] = now + HIT_FLASH
+	st["hp"] = a.hp
+
+	if now < st.get("спалах_до", 0.0):
+		body.show_move("Hit_Chest")
+		_anim[id] = st
+		return
+
+	if a.is_casting():
+		if now < st.get("каст_вхід_до", 0.0):
+			body.show_move("Spell_Simple_Enter")
+		else:
+			body.show_move("Spell_Simple_Idle")
+		_anim[id] = st
+		return
+
+	if now < st.get("каст_вихід_до", 0.0):
+		body.show_move("Spell_Simple_Exit")
+		_anim[id] = st
+		return
+
+	if now < st.get("бій_до", 0.0):
+		body.show_move("Sword_Idle")
+		_anim[id] = st
+		return
+
+	var vertical: float = moved.y / maxf(delta, 0.001)
+	var was_falling: bool = st.get("падає", false)
+	if vertical < FALL_SPEED:
+		st["падає"] = true
+		body.show_move("Jump_Start")
+		_anim[id] = st
+		return
+	if was_falling:
+		st["падає"] = false
+		body.show_move("Jump_Land")
+		_anim[id] = st
+		return
+
+	# Обличчям до цілі, ногами — куди їде: рух проти погляду (відступ у
+	# бою) грає ту саму ходу навпаки — немає жодного руху «назад» у
+	# наборі (skinned_model.animate мала ту саму причину).
+	var backward := false
+	if moved.length() > 0.01:
+		var forward := -a.global_transform.basis.z
+		backward = forward.dot(moved.normalized()) < -0.3
+
+	if _underwater(a):
+		body.show_move("Swim_Fwd", backward)
+	elif speed > JOG_SPEED:
+		body.show_move("Jog_Fwd", backward)
+	elif speed > 0.35:
+		body.show_move("Walk", backward)
+	else:
+		body.show_move("Idle")
+	_anim[id] = st
+
+
+## Той самий поріг, що й на сервері (`world._tick_water`) — голова нижче
+## моря. Клієнт бачить ту саму геометрію, тож рахує сам, без нової мережі.
+func _underwater(a: Node3D) -> bool:
+	var land: Node = _world.get_node_or_null("Landscape")
+	if land == null or not land.has_method("sea_level"):
+		return false
+	return a.global_position.y + 0.9 < land.sea_level()
+
+
+## Замахнувся: `armed` вирішує, який рух — сервер знає спорядження,
+## клієнт ні. Punch_Jab/Punch_Cross чергуються (слово замовника).
+func swung(id: int, armed: bool) -> void:
+	var a: Node = _creatures.get(id)
+	var body: Node3D = a.model() if a != null else null
+	var rich: bool = body is SkinnedModel and a.has_method("apply_sex")
+	if body == null or not rich:
+		return
+	var st: Dictionary = _anim.get(id, {})
+	if armed:
+		body.show_move("Sword_Attack")
+	else:
+		var punch: bool = st.get("punch", false)
+		body.show_move("Punch_Cross" if punch else "Punch_Jab")
+		st["punch"] = not punch
+	st["бій_до"] = Time.get_ticks_msec() / 1000.0 + COMBAT_STANCE
+	_anim[id] = st
+
+
+## Хтось почав/скінчив читати скіл (П-162) — короткі замки на вхід/вихід,
+## щоб `_human_state` не забив Enter/Exit ще на тому самому кадрі.
+func cast_started(id: int) -> void:
+	var st: Dictionary = _anim.get(id, {})
+	st["каст_вхід_до"] = Time.get_ticks_msec() / 1000.0 + CAST_ENTER_LOCK
+	_anim[id] = st
+
+
+func cast_ended(id: int) -> void:
+	var st: Dictionary = _anim.get(id, {})
+	st["каст_вихід_до"] = Time.get_ticks_msec() / 1000.0 + CAST_EXIT_LOCK
+	_anim[id] = st
 
 
 ## Показ: спершу взяти найближчого монстра (комірка 3), далі бити.

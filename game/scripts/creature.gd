@@ -357,11 +357,19 @@ func body_height() -> float:
 
 
 ## Труп лягає. Викликає клієнт — це суто вигляд.
+##
+## Модель людини має власний рух падіння (П-162, `Death01`) — тоді
+## кладемо анімацією, а не грубим поворотом на 90°: обидва разом
+## виглядали б так, ніби тіло падає ЩЕ РАЗ уже лежачи.
 func lay_down() -> void:
 	var mesh := get_node_or_null("Mesh")
-	if mesh != null:
-		mesh.rotation = Vector3(PI / 2.0, 0.0, 0.0)
-		mesh.position = Vector3(0.0, -0.5, 0.0)
+	if mesh == null:
+		return
+	if mesh is SkinnedModel and mesh.has_move("Death01"):
+		mesh.show_move("Death01")
+		return
+	mesh.rotation = Vector3(PI / 2.0, 0.0, 0.0)
+	mesh.position = Vector3(0.0, -0.5, 0.0)
 
 
 ## Зворотне до `lay_down`. Теж суто вигляд, теж викликає клієнт.
@@ -369,9 +377,13 @@ func lay_down() -> void:
 ## — з повним здоров'ям і на ходу.
 func stand_up() -> void:
 	var mesh := get_node_or_null("Mesh")
-	if mesh != null:
-		mesh.rotation = Vector3.ZERO
-		mesh.position = Vector3.ZERO
+	if mesh == null:
+		return
+	if mesh is SkinnedModel and mesh.has_move("Death01"):
+		mesh.show_move("Idle")
+		return
+	mesh.rotation = Vector3.ZERO
+	mesh.position = Vector3.ZERO
 
 
 ## Розвернутись у бік напрямку. Кут той самий, що й у камери: -Z вузла

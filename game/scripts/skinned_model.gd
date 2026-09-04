@@ -160,6 +160,32 @@ func swing() -> void:
 		_play_if_has(["Attack", "Punch"], false)
 
 
+## Рухи, що тримаються (loop) — решта програються раз і завершуються самі
+## (П-162). Немає в цьому списку — неループимо; клип, якого в наборі
+## взагалі нема — `_play_if_has` мовчки нічого не робить (монстри й
+## Bestiary-моделі просто не мають цих імен, і це не помилка).
+const LOOPING_MOVES := {
+	"Idle": true, "Walk": true, "Jog_Fwd": true, "Swim_Fwd": true,
+	"Sword_Idle": true, "Spell_Simple_Idle": true,
+}
+
+
+## Показати конкретний рух за точною назвою (П-162: падіння, каст, бій
+## за зброєю тощо) — ЩО показати, вирішує той, хто кличе
+## (`client_view._human_state`); тут лише програвання.
+func show_move(name: String, reverse := false) -> void:
+	_play_if_has([name], LOOPING_MOVES.get(name, false), reverse)
+
+
+## Чи є такий рух точно (не за нечіткою відповідністю) в цієї моделі.
+## Потрібно там, де викликач сам вирішує, чи є йому чим замінити старий
+## спосіб показу — наприклад, смерть (`creature.lay_down`, П-162).
+func has_move(name: String) -> bool:
+	if _player == null:
+		return false
+	return _find_animation(_player.get_animation_list(), name, true) != ""
+
+
 func _process(delta: float) -> void:
 	_swing_left = maxf(0.0, _swing_left - delta)
 	if _player == null and _skeleton != null:

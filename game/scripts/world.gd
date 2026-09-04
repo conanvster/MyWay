@@ -1414,6 +1414,14 @@ func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 func client_cast(id: int, name: String, seconds: float) -> void:
 	if hud != null:
 		hud.cast_started(id, name, seconds)
+	# `is_casting()` на клієнтській копії досі ніхто не виставляв — лише
+	# HUD-смугу. Показу рухів (П-162) потрібен той самий прапорець на
+	# істоті, а не окремий канал.
+	var a: Node = creatures.get(id)
+	if a != null:
+		a.start_cast(name, seconds, 0)
+	if view != null:
+		view.cast_started(id)
 
 
 ## Дочитав або збили.
@@ -1421,6 +1429,11 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 func client_cast_end(id: int, done: bool) -> void:
 	if hud != null:
 		hud.cast_ended(id, done)
+	var a: Node = creatures.get(id)
+	if a != null:
+		a.stop_cast()
+	if view != null:
+		view.cast_ended(id)
 
 
 ## Мешканець відповів: вікно розмови (П-132).
@@ -1456,13 +1469,20 @@ func client_guild(at: int, rows: Array) -> void:
 		hud.show_guild(at, rows)
 
 
-## Хтось замахнувся: показуємо рух рукою.
+## Хтось замахнувся: показуємо рух рукою. `armed` — зброя чи голі руки
+## (П-162): бере рішення сервер (`combat.attack`), клієнту чуже
+## спорядження не відомо.
 @rpc("authority", "call_remote", "reliable")
-func client_swing(id: int) -> void:
-	if creatures.has(id):
-		var body: Node3D = creatures[id].model()
+func client_swing(id: int, armed: bool = false) -> void:
+	var a: Node = creatures.get(id)
+	# Людину веде view.swung() (П-162: Punch_Jab/Cross чи Sword_Attack) —
+	# старий generic swing() тут же одразу перебив би той самий вибір.
+	if a != null and not a.has_method("apply_sex"):
+		var body: Node3D = a.model()
 		if body != null:
 			body.swing()
+	if view != null:
+		view.swung(id, armed)
 
 
 ## Число шкоди над головою.

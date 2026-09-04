@@ -12,6 +12,11 @@ extends RefCounted
 ## Ключ у файлі: "енергетичний-промінь".
 var key := ""
 var name := ""
+## Підказка гравцю (П-154): коротко, що робить скіл. Замовник пише сам —
+## порожній рядок, поки не заповнене.
+var description := ""
+## Стихія скіла (П-154), теж слово замовника. Порожня — «не задана».
+var element := ""
 ## Грейд за спільною шкалою E · D · C · B · A · S · SS (П-106).
 var grade := "E"
 ## Кого можна бити: "жива" · "усі-поруч" · "труп" · "себе" · "союзник".
@@ -38,6 +43,8 @@ static func from_data(of_key: String, data: Dictionary) -> Skill:
 	var s := Skill.new()
 	s.key = of_key
 	s.name = data.get("назва", of_key)
+	s.description = data.get("опис", "")
+	s.element = data.get("стихія", "")
 	s.grade = data.get("грейд", "E")
 	s.target = data.get("ціль", "жива")
 	s.from_level = int(data.get("з рівня", 1))

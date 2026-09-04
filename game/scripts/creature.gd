@@ -312,6 +312,34 @@ func show_tag(text: String, tint: Color) -> void:
 	tag.modulate = tint
 
 
+## Стрілка над вибраним (П-156): жовта, вертикально вниз, над підписом.
+## Рамка цілі в HUD каже ЩО вибрано, але не каже, ЯКА фігура у світі це,
+## якщо поруч кілька однакових на вигляд істот.
+const MARK_GAP := 0.35
+
+
+func mark_as_target(on: bool) -> void:
+	var mark: Label3D = get_node_or_null("Мітка")
+	if not on:
+		if mark != null:
+			mark.queue_free()
+		return
+	if mark == null:
+		mark = Label3D.new()
+		mark.name = "Мітка"
+		mark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		mark.no_depth_test = false
+		mark.font_size = 64
+		mark.outline_size = 14
+		mark.outline_modulate = Color(0, 0, 0, 0.85)
+		mark.fixed_size = true
+		mark.pixel_size = 0.0009
+		mark.modulate = Color(1.0, 0.85, 0.0)
+		mark.text = "▼"
+		add_child(mark)
+	mark.position = Vector3(0.0, body_height() + TAG_HEIGHT + MARK_GAP, 0.0)
+
+
 ## Наскільки істота висока. Потрібно, щоб підпис не вліз у голову.
 func body_height() -> float:
 	var body := model()

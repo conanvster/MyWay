@@ -645,11 +645,15 @@ func _skills_row(a: Node) -> Array:
 		out.append({
 			"ключ": key,
 			"назва": skill.name,
+			"опис": skill.description,
+			"стихія": skill.element,
 			"грейд": skill.grade,
 			"рівень": level,
 			"рівнів": skill.max_level(),
 			"мана": skill.mana(level),
 			"дальність": skill.range_at(level),
+			"шкода": skill.power_share(level),
+			"ефект": skill.state_at(level),
 		})
 	return out
 
@@ -675,6 +679,10 @@ func _bag_row(a: Node) -> Array:
 		out.append({
 			"номер": at,
 			"назва": item.title(),
+			# Значок шукається за БАЗОВОЮ назвою: «назва» несе афікси
+			# («легкий меч з кори дуба»), і файлу з таким ім'ям нема й не
+			# буде — афіксів у малюнках не намалювати наперед.
+			"база": item.base,
 			"вид": item.kind,
 			# За скільки крамар це викупить. Рахує СЕРВЕР: у клієнта ні
 			# цін, ні частки викупу немає й бути не повинно (П-08), а
@@ -1300,6 +1308,11 @@ func client_vision(radius: float) -> void:
 		land.fog_to_vision(radius)
 
 
+## Чию стрілку над головою показано зараз (П-156) — щоб забрати зі старої
+## цілі, коли обрано нову.
+var _marked_target := 0
+
+
 @rpc("authority", "call_remote", "reliable")
 func client_target(id: int) -> void:
 	var me: Node = creatures.get(multiplayer.get_unique_id())
@@ -1313,6 +1326,13 @@ func client_target(id: int) -> void:
 		view.forget_resident()
 	if hud != null:
 		hud.set_target(id)
+	var old: Node = creatures.get(_marked_target)
+	if old != null:
+		old.mark_as_target(false)
+	_marked_target = id
+	var now: Node = creatures.get(id)
+	if now != null:
+		now.mark_as_target(true)
 
 
 @rpc("authority", "call_remote", "reliable")

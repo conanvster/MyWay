@@ -395,10 +395,36 @@ const SKILLS_COLUMNS := 1
 ## Скільки місця під заголовком: підказка про перетягування.
 const SKILLS_TOP := 22.0
 const SKILLS_WIDE := 250.0
+## Рядок закладок «Скіли»/«Дії» (П-155) над підказкою.
+const SKILLS_TABS_H := 22.0
+const SKILLS_TAB_NAMES := ["Скіли", "Дії"]
+## Голі уміння (П-155): тих самих 8, що в `actions.gd`, немає де взяти
+## перекладу назви/примітки — це не дані з файлу, це самі правила гри,
+## тож короткий перелік лежить тут, а не в JSON.
+const BARE_ACTIONS := [
+	{"код": "attack", "назва": "удар",
+			"нота": "звичайна атака зброєю"},
+	{"код": "next_mob", "назва": "наступний монстр",
+			"нота": "перебір видимих монстрів"},
+	{"код": "next_player", "назва": "наступний гравець",
+			"нота": "перебір видимих гравців"},
+	{"код": "next_mob_corpse", "назва": "наступний труп монстра",
+			"нота": "Shift + наступний монстр"},
+	{"код": "next_player_corpse", "назва": "наступний труп гравця",
+			"нота": "Shift + наступний гравець"},
+	{"код": "taunt", "назва": "агресія",
+			"нота": "перемикає монстра на себе"},
+	{"код": "corpse_skill", "назва": "дія по трупу",
+			"нота": "оживити чи підняти, залежно від класу"},
+	{"код": "sit", "назва": "сісти",
+			"нота": "утричі швидше відновлення, встаєш від удару"},
+]
 
 var _skills_box: WindowBox
 var _skills_grid: GridContainer
 var _skills: Array = []
+var _skills_tab := 0
+var _skills_tabs_ui: Array = []
 
 
 func _build_skills() -> void:
@@ -414,15 +440,27 @@ func _build_skills() -> void:
 	_root.add_child(_skills_box)
 	var page: Control = _skills_box.body
 
+	var tab_w := (SKILLS_WIDE - 4.0) / SKILLS_TAB_NAMES.size()
+	for i in SKILLS_TAB_NAMES.size():
+		var tab := Button.new()
+		tab.text = SKILLS_TAB_NAMES[i]
+		tab.add_theme_font_size_override("font_size", 11)
+		tab.size = Vector2(tab_w, SKILLS_TABS_H)
+		tab.position = Vector2(i * (tab_w + 4.0), 0)
+		tab.pressed.connect(func() -> void: _pick_skills_tab(i))
+		page.add_child(tab)
+		_skills_tabs_ui.append(tab)
+
 	var hint := _text(11, page)
 	hint.name = "Підказка"
-	hint.text = "тягни скіл на комірку 1–7"
+	hint.text = "тягни на комірку 1–7"
+	hint.position = Vector2(0, SKILLS_TABS_H)
 	hint.modulate = Color(0.72, 0.76, 0.68)
 
 	_skills_grid = GridContainer.new()
 	_skills_grid.name = "Сітка"
 	_skills_grid.columns = SKILLS_COLUMNS
-	_skills_grid.position = Vector2(0, SKILLS_TOP)
+	_skills_grid.position = Vector2(0, SKILLS_TABS_H + SKILLS_TOP)
 	_skills_grid.add_theme_constant_override("h_separation", 6)
 	_skills_grid.add_theme_constant_override("v_separation", 6)
 	page.add_child(_skills_grid)
@@ -433,30 +471,84 @@ func _toggle_skills() -> void:
 		_skills_box.toggle()
 
 
+func _pick_skills_tab(i: int) -> void:
+	_skills_tab = i
+	_render_skills_tab()
+
+
+## Лаконічна підказка про скіл (П-154): тип, вартість, сила, стихія,
+## опис — усе, крім тіла клітинки, що й так показує назву й грейд.
+func _skill_tooltip_extra(row: Dictionary) -> String:
+	var lines: PackedStringArray = []
+	var element: String = str(row.get("стихія", ""))
+	lines.append("тип: магічний · стихія: %s"
+			% (element if element != "" else "не задана"))
+	var power: float = float(row.get("шкода", 0.0))
+	var effect: Dictionary = row.get("ефект", {})
+	if power > 0.0:
+		lines.append("сила: %.0f%% магічної атаки" % (power * 100.0))
+	elif not effect.is_empty():
+		var stat_key: String = str(effect.get("стат", ""))
+		var stat_ua: Variant = Stats.STAT_FIELDS.find_key(stat_key)
+		lines.append("ефект: %s ×%.2f, %.0f с" % [
+				stat_ua if stat_ua != null else stat_key,
+				float(effect.get("множник", 1.0)),
+				float(effect.get("строк", 0.0))])
+	var opis: String = str(row.get("опис", ""))
+	if opis != "":
+		lines.append("опис: %s" % opis)
+	return "\n".join(lines)
+
+
 ## Що вміє гравець — приходить від сервера.
 func set_skills(list: Array) -> void:
 	_skills = list
+	_render_skills_tab()
+
+
+## Перемальовує сітку під поточну закладку: скіли з `_skills`, або
+## незмінний перелік голих умінь (П-155) — той самий рядок, СВОЯ дія
+## без префікса `скіл:`, без підказки типу/сили/стихії (тим уміння й
+## відрізняються від скілів — вони не мають цих даних).
+func _render_skills_tab() -> void:
 	if _skills_grid == null:
 		return
+	for i in _skills_tabs_ui.size():
+		var tab: Button = _skills_tabs_ui[i]
+		tab.disabled = i == _skills_tab
+
 	for old_cell in _skills_grid.get_children():
 		_skills_grid.remove_child(old_cell)
 		old_cell.queue_free()
-	for row: Dictionary in list:
-		var cell := SkillCell.new()
-		cell.setup(str(row.get("ключ", "")), str(row.get("назва", "?")),
-				"%s · рівень %d з %d · %d мани · %.0f м"
-						% [str(row.get("грейд", "E")),
-						   int(row.get("рівень", 1)),
-						   int(row.get("рівнів", 1)),
-						   int(row.get("мана", 0)),
-						   float(row.get("дальність", 0.0))])
-		_skills_grid.add_child(cell)
-	# Вікно росте під кількість скілів: порожній чорний прямокутник на пів
+
+	var count := 0
+	if _skills_tab == 0:
+		for row: Dictionary in _skills:
+			var cell := SkillCell.new()
+			cell.setup(str(row.get("ключ", "")), str(row.get("назва", "?")),
+					"%s · рівень %d з %d · %d мани · %.0f м"
+							% [str(row.get("грейд", "E")),
+							   int(row.get("рівень", 1)),
+							   int(row.get("рівнів", 1)),
+							   int(row.get("мана", 0)),
+							   float(row.get("дальність", 0.0))],
+					"", null, _skill_tooltip_extra(row))
+			_skills_grid.add_child(cell)
+		count = _skills.size()
+	else:
+		for row: Dictionary in BARE_ACTIONS:
+			var cell := SkillCell.new()
+			cell.setup(str(row["код"]), str(row["назва"]), str(row["нота"]),
+					str(row["код"]), ActionIcons.of(str(row["код"])))
+			_skills_grid.add_child(cell)
+		count = BARE_ACTIONS.size()
+
+	# Вікно росте під кількість рядків: порожній чорний прямокутник на пів
 	# екрана виглядав так, ніби воно не догрузилось. Перебудова оболонки
-	# дешевша за окреме «змінити розмір»: вікон три, а скіли міняються
-	# рідко — на руну чи на рівень.
+	# дешевша за окреме «змінити розмір»: вікон три, а вміст міняється
+	# рідко — на руну, на рівень, чи перемиканням закладки.
 	_skills_box.resize(Vector2(SKILLS_WIDE,
-			SKILLS_TOP + list.size() * (SkillCell.HIGH + 6.0)))
+			SKILLS_TABS_H + SKILLS_TOP + count * (SkillCell.HIGH + 6.0)))
 
 
 ## Кинули щось на комірку панелі.
@@ -698,6 +790,14 @@ func set_things(things: Array, stacks: Array) -> void:
 		_fill_mine()
 
 
+## Ім'я для пошуку значка. Поодинока річ несе «база» окремо від
+## «назва» — «назва» може мати афікс («легкий меч з кори дуба»), а
+## малюнок намальовано на базову річ; складана афіксів не має, і в неї
+## «база» просто немає — тоді береться «назва».
+func _art_name(row: Dictionary) -> String:
+	return str(row.get("база", row.get("назва", "")))
+
+
 func _fill_body(things: Array) -> void:
 	var worn := {}
 	for row: Dictionary in things:
@@ -722,7 +822,7 @@ func _fill_body(things: Array) -> void:
 		else:
 			icon.modulate = Color(1, 1, 1, 1)
 			icon.show_item(str(row.get("вид", "")), slot,
-					str(row.get("грейд", "E")))
+					str(row.get("грейд", "E")), _art_name(row))
 			press.tooltip_text = "%s\n%s\n%s\nнатисни, щоб зняти" % [
 					str(row["назва"]), slot, str(row.get("стати", ""))]
 			press.disabled = false
@@ -763,7 +863,7 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 		press.disabled = false
 		_cell_look(press, true)
 		icon.show_item(str(row.get("вид", "")), str(row.get("слот", "")),
-				str(row.get("грейд", "")))
+				str(row.get("грейд", "")), _art_name(row))
 		if row.has("номер"):
 			var at: int = int(row["номер"])
 			var places: Array = row.get("комірки", [])
@@ -997,7 +1097,8 @@ func _fill_stock(goods: Array) -> void:
 		var price: int = int(row["ціна"])
 		cell["icon"].modulate = Color(1, 1, 1, 1)
 		cell["icon"].show_item(str(row.get("вид", "")),
-				str(row.get("слот", "")), str(row.get("грейд", "")))
+				str(row.get("слот", "")), str(row.get("грейд", "")),
+				_art_name(row))
 		cell["count"].text = ""
 		press.disabled = false
 		press.tooltip_text = "%s\nкупити за %d" % [name, price]
@@ -1030,7 +1131,8 @@ func _fill_mine() -> void:
 		var name: String = str(row.get("назва", "?"))
 		cell["icon"].modulate = Color(1, 1, 1, 1)
 		cell["icon"].show_item(str(row.get("вид", "")),
-				str(row.get("слот", "")), str(row.get("грейд", "")))
+				str(row.get("слот", "")), str(row.get("грейд", "")),
+				_art_name(row))
 		press.disabled = false
 		_cell_look(press, true)
 		# Ціну викупу рахує сервер і шле разом із річчю: клієнт її не
@@ -1258,6 +1360,7 @@ var _guild_tab := 0
 var _guild_selected := ""
 var _guild_tabs_ui: Array = []
 var _guild_nodes: Dictionary = {}    # Vector2i(колонка,ряд) -> Button
+var _guild_icons: Dictionary = {}    # Vector2i(колонка,ряд) -> TextureRect
 var _guild_lines: TreeLines
 var _guild_detail_name: Label
 var _guild_detail_info: Label
@@ -1300,6 +1403,18 @@ func _build_guild() -> void:
 			press.visible = false
 			page.add_child(press)
 			_guild_nodes[Vector2i(col, row)] = press
+
+			# Значок скіла (`assets/icons/skills/`) поверх плитки; немає
+			# малюнка — лишаються ініціали в самій кнопці (нижче).
+			var icon := TextureRect.new()
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_SCALE
+			icon.size = Vector2(NODE, NODE) * 0.72
+			icon.position = (Vector2(NODE, NODE) - icon.size) * 0.5
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon.visible = false
+			press.add_child(icon)
+			_guild_icons[Vector2i(col, row)] = icon
 
 	var detail_x := TREE_W + 24.0
 	_guild_detail_name = _gothic_text(14, page, WindowBox.GOTHIC_GOLD)
@@ -1374,11 +1489,20 @@ func _render_guild_tree() -> void:
 		var known: bool = bool(row["вивчено"])
 		var open: bool = bool(row.get("передумова відома", true))
 		var name: String = str(row["назва"])
-		var initials := ""
-		for word in name.split(" "):
-			if word.length() > 0:
-				initials += word.substr(0, 1).to_upper()
-		press.text = initials.substr(0, 2)
+		var icon: TextureRect = _guild_icons[place]
+		var tex := SkillIcons.of(key)
+		icon.visible = tex != null
+		if tex != null:
+			icon.texture = tex
+			icon.modulate = Color(1, 1, 1, 1) if known else \
+					(Color(1, 1, 1, 0.85) if open else Color(1, 1, 1, 0.35))
+			press.text = ""
+		else:
+			var initials := ""
+			for word in name.split(" "):
+				if word.length() > 0:
+					initials += word.substr(0, 1).to_upper()
+			press.text = initials.substr(0, 2)
 		press.add_theme_stylebox_override(
 				"normal", _node_style(known, open))
 		press.add_theme_stylebox_override(
@@ -1568,6 +1692,16 @@ func _build_panel() -> void:
 		cell.pressed.connect(func(where: int) -> void: wants_slot_used.emit(where))
 		box.add_child(cell)
 		_plate(Vector2(CELL, CELL), BACK, cell)
+		# Значок скіла чи речі (коли є): фото на всю комірку, під ним ще
+		# й текст ховається — 56 точок замало для обох. Немає малюнка
+		# (голе вміння штибу «удар») — лишається текст, як і раніше.
+		var icon := TextureRect.new()
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_SCALE
+		icon.size = Vector2(CELL, CELL)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.visible = false
+		cell.add_child(icon)
 		var name_text := _text(11, cell)
 		name_text.position = Vector2(4, CELL - 20)
 		name_text.size = Vector2(CELL - 8, 16)
@@ -1579,8 +1713,8 @@ func _build_panel() -> void:
 		shade.visible = false
 		var left := _text(16, cell)
 		left.position = Vector2(CELL * 0.5 - 10, CELL * 0.5 - 12)
-		_cells.append({"cell": cell, "name": name_text, "shade": shade,
-				"left": left})
+		_cells.append({"cell": cell, "icon": icon, "name": name_text,
+				"shade": shade, "left": left})
 
 	_queue_text = _text(13, box)
 	_queue_text.position = Vector2(0, -24)
@@ -1616,9 +1750,29 @@ func set_bar(bar: Array) -> void:
 	_bar.assign(bar)
 	for i in _cells.size():
 		var action: String = _bar[i] if i < _bar.size() else ""
-		_cells[i]["name"].text = _title(action)
+		var title := _title(action)
+		var tex := _bar_icon(action)
+		var icon: TextureRect = _cells[i]["icon"]
+		icon.visible = tex != null
+		if tex != null:
+			icon.texture = tex
+		# Малюнок замінює текст — 56 точок замало для обох; тримається
+		# в підказці, щоб дію не вгадувати з самого значка.
+		_cells[i]["name"].text = "" if tex != null else title
+		_cells[i]["cell"].tooltip_text = title
 		# Комірка мусить знати свою дію: інакше її не перетягнути.
 		_cells[i]["cell"].action = action
+
+
+## Значок дії: скіл, витратна річ і голе вміння (удар, наступна ціль...)
+## шукають кожне у своїй теці. Немає малюнка ще ніде (новий скіл без
+## художки) — комірка лишається на тексті, як і раніше.
+func _bar_icon(action: String) -> Texture2D:
+	if action.begins_with(Actions.SKILL_PREFIX):
+		return SkillIcons.of(action.substr(Actions.SKILL_PREFIX.length()))
+	if action.begins_with(Actions.ITEM_PREFIX):
+		return ItemIcon.of(action.substr(Actions.ITEM_PREFIX.length()))
+	return ActionIcons.of(action)
 
 
 ## Назви дій українською. Уміння з кроку 2 принесуть свої.
@@ -1630,8 +1784,11 @@ func _title(action: String) -> String:
 		"attack": return "удар"
 		"next_player": return "гравець"
 		"next_mob": return "монстр"
+		"next_player_corpse": return "труп гравця"
+		"next_mob_corpse": return "труп монстра"
 		"corpse_skill": return "труп"
 		"taunt": return "агресія"
+		"sit": return "сісти"
 		"": return ""
 	return action
 

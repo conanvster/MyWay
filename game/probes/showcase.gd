@@ -1,7 +1,7 @@
-extends SceneTree
+extends Node
 ## Вітрина вікон: «Речі», «Стати» й «Скіли», набиті речами всіх видів.
 ##
-## Ганяти так:
+## Ганяти так (через сцену, не `--script`):
 ##     ./run.sh --вітрина
 ##
 ## Навіщо окремий режим. Вигляд вікна речей прожив непобаченим цілий
@@ -13,19 +13,29 @@ extends SceneTree
 ## Це НЕ лазівка в гру: сцени світу тут немає взагалі, сервера теж, і
 ## жодне повідомлення нікуди не йде. Те саме, чим `--парад` є для істот.
 ##
+## Чому сценою, а не `--script` (полагоджено 06.09.2026). У режимі
+## `--script` автозавантажень немає, а `hud.gd` двічі чіпає `Net`
+## (`Net.joined` у «Вийти», `Net.connected()` у смузі читання) — проба
+## тихо вмирала на `HUD.new()`, не друкуючи ні рядка, і зависала до
+## вбивства ззовні. Помилка скрипта дерево не спиняє, тож виглядало це
+## як «нічого не відбувається». Той самий прийом, яким уже живе лінтер
+## (`scenes/lint.tscn`): сцена автозавантаження підіймає.
+##
 ## Esc — вийти, пробіл — ще один знімок. Перший знімок робиться сам.
 
 var _hud: Node
 var _shop: Shop
 var _seller: Dictionary = {}
+## Щоб решта коду проби лишалась така сама, як була за `SceneTree`.
+@onready var root: Window = get_tree().root
 
 
-func _init() -> void:
-	call_deferred("_go")
+func _ready() -> void:
+	_go()
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var data := GameData.new()
 	data.load_all()
 
@@ -40,7 +50,7 @@ func _go() -> void:
 	_hud = HUD.new()
 	root.add_child(_hud)
 	_hud.setup(root)
-	await process_frame
+	await get_tree().process_frame
 
 	_hud.set_things(_worn(data), _stacks())
 	_hud.set_stats(_stats())
@@ -49,7 +59,7 @@ func _go() -> void:
 	if _hud.has_method("_toggle_skills"):
 		_hud._toggle_skills()
 	_hud.show_guild(0, _guild_rows(data))
-	await process_frame
+	await get_tree().process_frame
 
 	# Друга сторінка вітрини — крамар. Вікна торгівлі в грі не побачити
 	# інакше як дійти до Ліди, а знімок потрібен тут і зараз.
@@ -65,9 +75,9 @@ func _go() -> void:
 	# Далі — просто дивитись. Перший знімок робимо самі, щоб вітрина
 	# годилась і для перевірки без рук.
 	print("\n  Esc — вийти · пробіл — ще знімок · Т — прилавок")
-	root.close_requested.connect(quit)
-	await process_frame
-	await process_frame
+	root.close_requested.connect(get_tree().quit)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	Shot.take(root)
 	# Другий знімок — прилавок. Знімати обидва самому, бо саме «нема на
 	# чому побачити» й лишило вигляд вікна речей неперевіреним на вечір.
@@ -75,16 +85,16 @@ func _go() -> void:
 	# Секунда паузи не для краси: ім'я знімка складається з часу З
 	# ТОЧНІСТЮ ДО СЕКУНДИ, і два знімки поспіль просто затирали один
 	# одного — на диску лишався тільки другий.
-	await create_timer(1.2).timeout
+	await get_tree().create_timer(1.2).timeout
 	_open_shop()
-	await process_frame
-	await process_frame
+	await get_tree().process_frame
+	await get_tree().process_frame
 	Shot.take(root)
-	await create_timer(0.3).timeout
+	await get_tree().create_timer(0.3).timeout
 	var space_held := false
 	var trade_held := false
 	while true:
-		await process_frame
+		await get_tree().process_frame
 		if Input.is_key_pressed(KEY_ESCAPE):
 			break
 		if Input.is_key_pressed(KEY_SPACE):
@@ -99,7 +109,7 @@ func _go() -> void:
 			trade_held = true
 		else:
 			trade_held = false
-	quit()
+	get_tree().quit()
 
 
 ## Прилавок Ліди з мапи, з цінами, порахованими сервером.
@@ -138,7 +148,86 @@ func _report_shop() -> void:
 					or window.size.y > screen.y else "так"])
 	var hint: Label = window.get_node("Вміст").get_node("Ціна")
 	print("  рядок ціни: «%s»" % hint.text)
+	_report_confirm(window, stock)
 	window.visible = false
+
+
+## Підтвердження купівлі (П-159) — чи справді стоїть між натиском і
+## покупкою. Перевіряємо натиском, а не читанням коду: рахуємо, скільки
+## разів пролунало `wants_buy` до «Так» і після нього.
+func _report_confirm(_window: Control, stock: Array) -> void:
+	var box: Control = _hud.find_child("ВікноПідтвердження", true, false)
+	print("\n— підтвердження купівлі (П-159) —")
+	if box == null:
+		print("  ‼ вікна підтвердження немає")
+		return
+	var bought: Array[String] = []
+	_hud.wants_buy.connect(func(_at: int, what: String) -> void:
+			bought.append(what))
+
+	# Перша комірка прилавка — та сама, чию ціну щойно надрукували.
+	var cells: Array = _hud._stock_cells
+	if cells.is_empty():
+		print("  ‼ жодної комірки прилавка не знайшлось")
+		return
+	var first: Button = cells[0]["press"]
+	print("  до натиску: вікно видиме %s, куплено %d"
+			% [box.visible, bought.size()])
+	first.pressed.emit()
+	print("  після натиску: вікно видиме %s, куплено %d — %s"
+			% [box.visible, bought.size(),
+			   "питає, не купує" if box.visible and bought.is_empty()
+					else "‼ купило без питання"])
+	var text: Label = box.get_node("Вміст").get_child(0)
+	print("  питання: «%s» (сума %s)"
+			% [text.text, "є" if text.text.contains(
+					str(stock[0]["ціна"])) else "‼ немає"])
+
+	# «Скасувати» має нічого не купити.
+	_hud.hide_confirm()
+	print("  після «Скасувати»: вікно видиме %s, куплено %d — %s"
+			% [box.visible, bought.size(),
+			   "скасовується" if not box.visible and bought.is_empty()
+					else "‼ не скасувалось"])
+
+	# І тепер по-справжньому: натиск, тоді «Так».
+	first.pressed.emit()
+	_hud._confirm_done()
+	print("  після «Так»: куплено %d (%s) — %s"
+			% [bought.size(), ", ".join(bought),
+			   "купує" if bought.size() == 1 else "‼ не купило"])
+
+	_report_confirm_store(box)
+
+
+## Друга половина П-159: перенесення в склад теж питає.
+func _report_confirm_store(box: Control) -> void:
+	print("\n— підтвердження перенесення в склад (П-159) —")
+	var stored: Array[String] = []
+	_hud.wants_store_thing.connect(func(_at: int, _n: int) -> void:
+			stored.append("річ"))
+	_hud.wants_store_stack.connect(func(_at: int, what: String) -> void:
+			stored.append(what))
+	_hud.show_warehouse(0)
+	var rows: Array = _hud._bag_rows
+	if rows.is_empty():
+		print("  ‼ рядків торби у складі немає")
+		return
+	var press: Button = rows[0]
+	if press.disabled:
+		print("  ‼ перший рядок торби порожній")
+		return
+	press.pressed.emit()
+	var text: Label = box.get_node("Вміст").get_child(0)
+	print("  після натиску: питає «%s», перенесено %d — %s"
+			% [text.text, stored.size(),
+			   "питає, не переносить" if box.visible and stored.is_empty()
+					else "‼ перенесло без питання"])
+	_hud._confirm_done()
+	print("  після «Так»: перенесено %d — %s"
+			% [stored.size(),
+			   "переносить" if stored.size() == 1 else "‼ не перенесло"])
+	_hud._warehouse_box.visible = false
 
 
 ## По речі в кожен слот тіла плюс те, що лежить у торбі.

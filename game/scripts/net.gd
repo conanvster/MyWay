@@ -58,9 +58,19 @@ func _ready() -> void:
 
 
 ## Чи є живе з'єднання. Питати номер без нього — помилка щокадру.
+##
+## `OfflineMultiplayerPeer` доводиться відсіювати окремо (заміряно
+## 06.09.2026): Godot ставить його сам у кожному процесі, де мережі не
+## піднімали, і він чесно відповідає `CONNECTION_CONNECTED` — тобто без
+## цієї перевірки функція казала «з'єднані» там, де жодного пакета не
+## було й бути не могло. Охорона з неї виходила уявна: `hud.gd` за нею
+## щокадру ліз у `_world.creatures` і в пробі вітрини валився помилкою
+## на кожному кадрі.
 func connected() -> bool:
 	var peer := multiplayer.multiplayer_peer
-	return peer != null and peer.get_connection_status() \
+	if peer == null or peer is OfflineMultiplayerPeer:
+		return false
+	return peer.get_connection_status() \
 			== MultiplayerPeer.CONNECTION_CONNECTED
 
 

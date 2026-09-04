@@ -113,6 +113,9 @@ func setup(world: Node) -> void:
 	_build_shop()
 	_build_warehouse()
 	_build_guild()
+	# Останнім: підтвердження має лежати ПОВЕРХ вікна, з якого його
+	# викликали, інакше «Так» довелось би шукати під прилавком.
+	_build_confirm()
 
 
 # ── збирання ──────────────────────────────────────────────────────────
@@ -933,6 +936,19 @@ var _talk_warehouse: Button
 var _talk_guild: Button
 var _talk_with := -1
 
+## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
+## складає той, хто його показує, а «Так» несе вже готовий виклик.
+## Модальним робити не довелось — воно й так поверх усього, а закрити
+## його можна і хрестиком, і «Скасувати».
+const CONFIRM_INNER := Vector2(300, 96)
+
+var _confirm_box: WindowBox
+var _confirm_text: Label
+var _confirm_yes: Button
+var _confirm_no: Button
+## Що зробити на «Так». Порожній — вікно ні до чого не прив'язане.
+var _confirm_does := Callable()
+
 var _shop_box: WindowBox
 var _shop_title: Label
 var _shop_hint: Label
@@ -987,6 +1003,69 @@ func _build_talk() -> void:
 			if _talk_with >= 0:
 				wants_guild.emit(_talk_with))
 	page.add_child(_talk_guild)
+
+
+## Вікно підтвердження (П-159). Будується раз, показується щоразу з
+## новим питанням і новою дією на «Так».
+func _build_confirm() -> void:
+	_confirm_box = WindowBox.new()
+	_confirm_box.name = "ВікноПідтвердження"
+	_confirm_box.setup("Підтвердь", CONFIRM_INNER)
+	_confirm_box.set_anchors_preset(Control.PRESET_CENTER)
+	_confirm_box.position = -_confirm_box.size * 0.5
+	_root.add_child(_confirm_box)
+	var page: Control = _confirm_box.body
+
+	_confirm_text = _text(14, page)
+	_confirm_text.text = "—"
+	_confirm_text.size = Vector2(CONFIRM_INNER.x, 48)
+	_confirm_text.custom_minimum_size = _confirm_text.size
+	_confirm_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+	var half := (CONFIRM_INNER.x - 8.0) * 0.5
+	_confirm_yes = Button.new()
+	_confirm_yes.text = "Так"
+	_confirm_yes.position = Vector2(0, CONFIRM_INNER.y - 32.0)
+	_confirm_yes.size = Vector2(half, 32)
+	_confirm_yes.custom_minimum_size = _confirm_yes.size
+	_confirm_yes.pressed.connect(_confirm_done)
+	page.add_child(_confirm_yes)
+
+	_confirm_no = Button.new()
+	_confirm_no.text = "Скасувати"
+	_confirm_no.position = Vector2(half + 8.0, CONFIRM_INNER.y - 32.0)
+	_confirm_no.size = Vector2(half, 32)
+	_confirm_no.custom_minimum_size = _confirm_no.size
+	_confirm_no.pressed.connect(hide_confirm)
+	page.add_child(_confirm_no)
+
+
+## Спитати перед дією. `does` виконається лише на «Так» (П-159).
+func ask_confirm(question: String, does: Callable) -> void:
+	if _confirm_box == null:
+		# Вікна немає — питати нема чим, але дію ковтати мовчки не можна
+		# (P3): краще виконати, ніж загубити натиск гравця.
+		does.call()
+		return
+	_confirm_text.text = question
+	_confirm_does = does
+	_confirm_box.visible = true
+	_confirm_box._keep_on_screen()
+
+
+func hide_confirm() -> void:
+	if _confirm_box != null:
+		_confirm_box.visible = false
+	_confirm_does = Callable()
+
+
+func _confirm_done() -> void:
+	var does := _confirm_does
+	# Ховаємо ПЕРЕД викликом: дія може відкрити своє вікно, і воно не
+	# має закритись услід за цим.
+	hide_confirm()
+	if does.is_valid():
+		does.call()
 
 
 ## Мешканця вибрано ціллю: показуємо ім'я там-таки, де ім'я монстра.
@@ -1105,8 +1184,10 @@ func _fill_stock(goods: Array) -> void:
 		press.tooltip_text = "%s\nкупити за %d" % [name, price]
 		_cell_look(press, true)
 		_hover(press, "%s — купити за %d" % [name, price])
+		# Купівля питає підтвердження, і воно підкріплене сумою (П-159).
 		press.pressed.connect(func() -> void:
-				wants_buy.emit(_shop_with, name))
+				ask_confirm("Купити «%s» за %d?" % [name, price],
+						func() -> void: wants_buy.emit(_shop_with, name)))
 
 
 ## Ліворуч — те саме, що у вікні «Речі», тільки вдягнене не показуємо:
@@ -1276,16 +1357,25 @@ func _fill_bag_side() -> void:
 		var row: Dictionary = rows[i]
 		var name: String = str(row.get("назва", "?"))
 		press.disabled = false
+		# Перенесення в склад питає підтвердження (П-159). Забирання зі
+		# складу — ні: там нічого не втрачається, а рішення назвало саме
+		# «перенесення в склад».
 		if row.has("номер"):
 			var thing_at: int = int(row["номер"])
 			press.text = name
 			press.pressed.connect(func() -> void:
-					wants_store_thing.emit(_warehouse_with, thing_at))
+					ask_confirm("Перенести «%s» у склад?" % name,
+							func() -> void:
+								wants_store_thing.emit(
+										_warehouse_with, thing_at)))
 		else:
 			var count: int = int(row.get("скільки", 0))
 			press.text = "%s ×%d" % [name, count]
 			press.pressed.connect(func() -> void:
-					wants_store_stack.emit(_warehouse_with, name))
+					ask_confirm("Перенести «%s» ×%d у склад?" % [name, count],
+							func() -> void:
+								wants_store_stack.emit(
+										_warehouse_with, name)))
 
 
 func _fill_kept_side() -> void:

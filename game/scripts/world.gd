@@ -1501,6 +1501,13 @@ func client_died(id: int) -> void:
 		hud.set_hp(id, 0)
 		if id == multiplayer.get_unique_id():
 			hud.died()
+	# Помер із вибраним мешканцем — вибір знімається (П-135). Інакше
+	# після підйому в місті ім'я крамарки й далі стоїть на екрані, а
+	# «удар» означає «заговорити» й жене персонажа через усю мапу до
+	# місця, де його щойно вбили. `_wait_talk` (підхід у процесі)
+	# знімався й раніше, сам вибір — ні.
+	if id == multiplayer.get_unique_id() and view != null:
+		view.forget_resident()
 
 
 @rpc("authority", "call_remote", "reliable")

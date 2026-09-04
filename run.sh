@@ -38,6 +38,21 @@ set -euo pipefail
 proj="$(cd "$(dirname "$0")" && pwd)/game"
 amd_icd=/usr/share/vulkan/icd.d/radeon_icd.json
 
+# NOVSYNC=1 — не чекати вертикальної синхронізації.
+#
+# Навіщо (заміряно 06.09.2026). Композитор не показує кадри вікну, якого
+# не видно — інше вікно зверху, інший стіл, замкнений екран. Godot при
+# цьому впирається у показ кадру й іде 1 кадр за секунду: GPU 0%, ЦП 19%,
+# тобто не завантажений, а саме заблокований. Той самий клієнт із
+# `--disable-vsync` дає 300–450 кадрів за секунду.
+#
+# Для гри це не потрібно (людина дивиться на вікно), а для перевірок —
+# так: інакше `check.sh` міряє стан робочого столу, а не гру.
+vsync=()
+if [ "${NOVSYNC:-0}" = "1" ]; then
+    vsync=(--disable-vsync)
+fi
+
 if [ "${AMD:-0}" = "1" ]; then
     export VK_ICD_FILENAMES="$amd_icd"
     echo "→ вбудована AMD (силувано)"
@@ -53,16 +68,18 @@ else
 fi
 
 case "${1:-}" in
-    --run)  exec godot --path "$proj" ;;
-    --демо) exec godot --path "$proj" -- --демо ;;
-    --демо-вікна) exec godot --path "$proj" -- --демо --вікна ;;
-    --демо-крамар) exec godot --path "$proj" -- --демо --крамар ;;
+    --run)  exec godot --path "$proj" "${vsync[@]}" ;;
+    --демо) exec godot --path "$proj" "${vsync[@]}" -- --демо ;;
+    --демо-вікна) exec godot --path "$proj" "${vsync[@]}" -- --демо --вікна ;;
+    --демо-крамар) exec godot --path "$proj" "${vsync[@]}" -- --демо --крамар ;;
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
     --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;
-    --вітрина) exec godot --path "$proj" --script res://probes/showcase.gd ;;
+    # Сценою, а не --script: інакше немає автозавантажень, і проба тихо
+    # вмирає на Net усередині hud.gd (полагоджено 06.09.2026).
+    --вітрина) exec godot --path "$proj" res://scenes/showcase.tscn ;;
     --демо-акаунт)   exec godot --path "$proj" -- --демо --акаунт конан --пароль таємниця --персонаж Вовкодав-2 ;;
     *)      exec godot --path "$proj" -e ;;
 esac

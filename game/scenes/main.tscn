@@ -2,10 +2,10 @@
 
 [ext_resource type="Script" path="res://scripts/world.gd" id="1_world"]
 [ext_resource type="Script" path="res://scripts/mob_zone.gd" id="2_zone"]
-[ext_resource type="Script" path="res://scripts/sanctuary.gd" id="3_sanctuary"]
+[ext_resource type="Script" path="res://scripts/grace_place.gd" id="3_grace_place"]
 [ext_resource type="Script" path="res://scripts/landscape.gd" id="4_land"]
 
-[sub_resource type="CylinderShape3D" id="CylinderShape3D_sanctuary"]
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_grace_place"]
 height = 4.0
 radius = 7.0
 
@@ -55,12 +55,12 @@ script = ExtResource("4_land")
 transform = Transform3D(0.866, -0.353, 0.353, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 30, 0)
 shadow_enabled = true
 
-[node name="Sanctuary" type="Area3D" parent="."]
+[node name="GracePlace" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 7, 6)
-script = ExtResource("3_sanctuary")
+script = ExtResource("3_grace_place")
 
-[node name="Shape" type="CollisionShape3D" parent="Sanctuary"]
-shape = SubResource("CylinderShape3D_sanctuary")
+[node name="Shape" type="CollisionShape3D" parent="GracePlace"]
+shape = SubResource("CylinderShape3D_grace_place")
 
 [node name="MobZones" type="Node3D" parent="."]
 

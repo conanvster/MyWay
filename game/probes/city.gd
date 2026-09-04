@@ -58,9 +58,9 @@ func _go() -> void:
 				% [kind, data.for_kind(kind).get("назва", "?"),
 				   look.get("колір", "—"), look.get("зріст", "—")])
 
-	print("\n— чи не стоїть святиня в будинку —")
-	var holy: Node3D = world.get_node("Sanctuary")
-	print("  святиня в %s" % holy.global_position)
+	print("\n— чи не стоїть благодатне місце в будинку —")
+	var holy: Node3D = world.get_node("GracePlace")
+	print("  благодатне місце в %s" % holy.global_position)
 	var inside := false
 	for child in land.get_children():
 		if child.name.begins_with("Будино"):

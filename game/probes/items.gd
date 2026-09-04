@@ -38,7 +38,7 @@ func _go() -> void:
 	await _crystals(data)
 	await _drop(data)
 	await _death_loss(data)
-	await _sanctuary()
+	await _grace_place()
 	quit()
 
 
@@ -189,14 +189,15 @@ func _death_loss(data: GameData) -> void:
 	print("  гроші не губляться жодного разу")
 
 
-## Святиня (П-113): місце, де відновлюють швидко.
-func _sanctuary() -> void:
-	print("\n— святиня (П-113) —")
+## Благодатне місце (П-113): зона, де відновлюють швидко. Не плутати зі
+## «святинею» (П-153) — точками-порталами в підземелля (П-158).
+func _grace_place() -> void:
+	print("\n— благодатне місце (П-113) —")
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
-	var places := main.find_children("*", "Sanctuary", true, false)
-	print("  святинь у сцені: %d" % places.size())
+	var places := main.find_children("*", "GracePlace", true, false)
+	print("  благодатних місць у сцені: %d" % places.size())
 	if places.is_empty():
 		main.queue_free()
 		return
@@ -213,11 +214,11 @@ func _sanctuary() -> void:
 	await process_frame
 	hero.hp = 20
 	hero.mp = 5
-	hero.in_sanctuary = place.restore
+	hero.in_grace = place.restore
 	for i in 60 * 3:
 		hero.global_position = Vector3(0, 1.5, 0)
 		hero.server_step(1.0 / 60.0)
-	print("  три секунди в святині: здоров'я 20 -> %d, мана 5 -> %d"
+	print("  три секунди в благодатному місці: здоров'я 20 -> %d, мана 5 -> %d"
 			% [hero.hp, hero.mp])
 	hero.queue_free()
 	main.queue_free()

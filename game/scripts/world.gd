@@ -216,7 +216,7 @@ func _physics_process(delta: float) -> void:
 		for id in combat.clear_corpses():
 			remove(id)
 		spawner.tick(delta)
-		_tick_sanctuaries()
+		_tick_grace_places()
 		_tick_water(delta)
 		if store != null and store.due(delta):
 			_save_everyone()
@@ -529,10 +529,14 @@ func _link_death(id: int, who: Node) -> void:
 		link.notice(id, "втрачено %d поваги" % lost)
 
 
-## Святині: місця, де відновлюють швидко (П-113). Перевіряємо щокадру —
-## їх одиниці, а гравців десяток.
-func _tick_sanctuaries() -> void:
-	var places := find_children("*", "Sanctuary", true, false)
+## Благодатні місця: зони, де відновлюють швидко (П-113). Перевіряємо
+## щокадру — їх одиниці, а гравців десяток.
+##
+## Не плутати зі «святинею» (П-153) — точками-порталами в підземелля:
+## одне українське слово раніше позначало обидва об'єкти, розведено
+## 05.09.2026 (П-158).
+func _tick_grace_places() -> void:
+	var places := find_children("*", "GracePlace", true, false)
 	if places.is_empty():
 		return
 	for id in creatures:
@@ -540,15 +544,15 @@ func _tick_sanctuaries() -> void:
 			continue
 		var who: Node3D = creatures[id]
 		var rate := 0.0
-		for place: Sanctuary in places:
+		for place: GracePlace in places:
 			if not place.has_point(who.global_position):
 				continue
 			if who.in_fight > 0.0 and not place.in_fight:
 				continue
 			rate = maxf(rate, place.restore)
-		if rate > 0.0 and who.in_sanctuary <= 0.0:
-			link.notice(id, "святиня: тут відновлюєшся швидко")
-		who.in_sanctuary = rate
+		if rate > 0.0 and who.in_grace <= 0.0:
+			link.notice(id, "благодатне місце: тут відновлюєшся швидко")
+		who.in_grace = rate
 
 
 ## Зони появи — вузли `MobZone` у сцені. Їх малюють у редакторі, тому

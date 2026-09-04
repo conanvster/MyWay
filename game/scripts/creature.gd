@@ -115,8 +115,9 @@ var in_fight := 0.0
 ## Скільки ще можна не дихати. Під водою спадає, на повітрі вертається
 ## (П-61). Нижче нуля — тоне.
 var breath := 0.0
-## Наскільки швидко відновлює святиня, у якій стоїш. 0 — не в святині.
-var in_sanctuary := 0.0
+## Наскільки швидко відновлює благодатне місце, у якому стоїш (П-113).
+## 0 — не в ньому.
+var in_grace := 0.0
 ## Сидить: відновлює швидше, але встає від першого ж удару (П-101).
 var sitting := false
 ## Залишки, що не дотягли до цілої одиниці. Без них при 1% на секунду й
@@ -510,9 +511,9 @@ func _regen(delta: float) -> void:
 	var rate := REGEN_FIGHT
 	if in_fight <= 0.0:
 		rate = REGEN_SIT if sitting else REGEN_REST
-	# У святині відновлення швидше за будь-яке сидіння (П-113).
-	if in_sanctuary > 0.0:
-		rate = maxf(rate, in_sanctuary)
+	# У благодатному місці відновлення швидше за будь-яке сидіння (П-113).
+	if in_grace > 0.0:
+		rate = maxf(rate, in_grace)
 	_hp_left += stats.max_hp() * rate * delta
 	_mp_left += stats.max_mp() * rate * delta
 	if _hp_left >= 1.0:

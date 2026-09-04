@@ -13,7 +13,7 @@ extends Node
 ## Це НЕ лазівка в гру: сцени світу тут немає взагалі, сервера теж, і
 ## жодне повідомлення нікуди не йде. Те саме, чим `--парад` є для істот.
 ##
-## Чому сценою, а не `--script` (полагоджено 06.09.2026). У режимі
+## Чому сценою, а не `--script` (полагоджено 05.09.2026). У режимі
 ## `--script` автозавантажень немає, а `hud.gd` двічі чіпає `Net`
 ## (`Net.joined` у «Вийти», `Net.connected()` у смузі читання) — проба
 ## тихо вмирала на `HUD.new()`, не друкуючи ні рядка, і зависала до
@@ -122,10 +122,19 @@ func _open_shop() -> void:
 			_shop.buyback_percent())
 
 
+## Перший крамар із будь-якого міста. Після розширення світу
+## (05.09.2026) міст стало чотири, і старий ключ `місто` зник — вітрина
+## тоді мовчки казала «крамаря в мапі немає» на мапі з чотирма
+## крамарками. Одиничний ключ читаємо й досі: дані, збережені раніше,
+## лишаються чинними.
 func _find_seller(data: GameData) -> Dictionary:
-	for who: Dictionary in data.map.get("місто", {}).get("мешканці", []):
-		if not Array(who.get("товар", [])).is_empty():
-			return who
+	var towns: Array = data.map.get("міста", [])
+	if towns.is_empty() and data.map.has("місто"):
+		towns = [data.map["місто"]]
+	for town: Dictionary in towns:
+		for who: Dictionary in town.get("мешканці", []):
+			if not Array(who.get("товар", [])).is_empty():
+				return who
 	return {}
 
 

@@ -45,7 +45,7 @@ amd_icd=/usr/share/vulkan/icd.d/radeon_icd.json
 
 # NOVSYNC=1 — не чекати вертикальної синхронізації.
 #
-# Навіщо (заміряно 06.09.2026). Композитор не показує кадри вікну, якого
+# Навіщо (заміряно 05.09.2026). Композитор не показує кадри вікну, якого
 # не видно — інше вікно зверху, інший стіл, замкнений екран. Godot при
 # цьому впирається у показ кадру й іде 1 кадр за секунду: GPU 0%, ЦП 19%,
 # тобто не завантажений, а саме заблокований. Той самий клієнт із
@@ -83,7 +83,7 @@ case "${1:-}" in
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;
     # Сценою, а не --script: інакше немає автозавантажень, і проба тихо
-    # вмирає на Net усередині hud.gd (полагоджено 06.09.2026).
+    # вмирає на Net усередині hud.gd (полагоджено 05.09.2026).
     --святині) exec godot --path "$proj" res://scenes/shrines.tscn ;;
     --печери) exec godot --path "$proj" res://scenes/caves.tscn ;;
     --вітрина) exec godot --path "$proj" res://scenes/showcase.tscn ;;

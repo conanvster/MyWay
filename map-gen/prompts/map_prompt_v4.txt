@@ -1,0 +1,19 @@
+A satellite-style topographic world map of a fantasy MMORPG continent, seen straight from above, in the style of a printed game atlas: realistic terrain relief, muted natural earth colours, shaded hillshading, a single large continent surrounded by calm grey-blue ocean.
+
+The continent is divided into clearly readable regions:
+
+Along the whole TOP: frozen winter canyons - white snowfields, deep ice-blue gorges, glaciers and frozen rivers.
+
+The WESTERN (left) side: dark green mountain forests on ridged slopes, rising into a huge grey mountain range with white snow-capped summits.
+
+The CENTRE: green woodland, open meadows and cultivated farm fields in olive and yellow-green, with blue rivers winding through them, crossed by small bridges.
+
+To the EAST of the centre: a volcanic and swamp belt - black basalt lava fields with glowing orange fissures, smoking craters, bare dead dry trees, and dark stagnant marshes.
+
+The FAR EASTERN (right) edge: a lifeless cursed grey stone wasteland, cracked bare rock and rubble with no vegetation whatsoever, dim and oppressive, dotted with black necropolis burial grounds, crypts, mausoleums and tombstones.
+
+Along the whole BOTTOM: a chain of tall sheer rock cliffs and deep stone ravines.
+
+Placed on the land: five walled cities with castles, keeps and towers in different regions; four small villages of cottages, one of them a tiny quiet starting village in the green centre; three colossal ancient world-trees far larger than any forest around them; three tall lone stone obelisks standing on bare hills; and a network of thin winding roads and footpaths joining every city and village, crossing rivers by bridges and mountains by passes.
+
+Style: high-detail top-down satellite terrain map, natural desaturated palette, crisp fine detail, game world atlas. No text, no letters, no labels, no compass rose, no grid, no frame.

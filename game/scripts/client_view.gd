@@ -35,6 +35,8 @@ const JOG_SPEED := 5.6
 ## М/с вниз, щоб рахувати «падає», а не «з гірки збігає».
 const FALL_SPEED := -1.2
 const COMBAT_STANCE := 2.0    ## П-162: «2 секунди після бою»
+const STRIKE_HOLD := 0.7      ## П-162: сам удар — «не менше 0,7 с»
+const LOCOMOTION_HOLD := 1.0  ## П-162: хода/біг/плавання — «не менше 1 с»
 const HIT_FLASH := 0.6
 ## Не дати першому ж кадру забити Enter/Exit одразу на Idle-каст.
 const CAST_ENTER_LOCK := 0.4
@@ -235,6 +237,13 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 		_anim[id] = st
 		return
 
+	# Сам удар (П-162: «не менше 0,7 с») тримається НЕ чіпаючи показ —
+	# swung() уже поставив Punch_Jab/Cross/Sword_Attack, тут його просто
+	# не перебиваємо. Стійка після бою йде вже ПІСЛЯ цього вікна, не
+	# одразу з моменту замаху.
+	if now < st.get("удар_до", 0.0):
+		_anim[id] = st
+		return
 	if now < st.get("бій_до", 0.0):
 		body.show_move("Sword_Idle")
 		_anim[id] = st
@@ -254,15 +263,24 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 		return
 
 	var backward := _backward(id, a, moved)
-
+	var desired := "Idle"
 	if _underwater(a):
-		body.show_move("Swim_Fwd", backward)
+		desired = "Swim_Fwd"
 	elif speed > JOG_SPEED:
-		body.show_move("Jog_Fwd", backward)
+		desired = "Jog_Fwd"
 	elif speed > 0.35:
-		body.show_move("Walk", backward)
+		desired = "Walk"
+
+	# Мінімальне тримання (П-162: «не менше 1 с») — інакше швидкість, що
+	# коливається біля порогу, чи то й ту саму хитку `backward`, шарпає
+	# Walk/Jog/Idle туди-сюди частіше, ніж за секунду виходить помітити.
+	var locked: String = st.get("лок_рух", "")
+	if locked != "" and locked != desired and now < st.get("лок_до", 0.0):
+		body.show_move(locked, backward)
 	else:
-		body.show_move("Idle")
+		body.show_move(desired, backward)
+		st["лок_рух"] = desired
+		st["лок_до"] = now + LOCOMOTION_HOLD
 	_anim[id] = st
 
 
@@ -290,7 +308,12 @@ func swung(id: int, armed: bool) -> void:
 		var punch: bool = st.get("punch", false)
 		body.show_move("Punch_Cross" if punch else "Punch_Jab")
 		st["punch"] = not punch
-	st["бій_до"] = Time.get_ticks_msec() / 1000.0 + COMBAT_STANCE
+	# Спершу сам удар не менше STRIKE_HOLD (П-162), і лише ПІСЛЯ нього —
+	# COMBAT_STANCE стійки; інакше стійка перебивала б удар одразу на
+	# наступному кадрі, і його не встигали побачити.
+	var now := Time.get_ticks_msec() / 1000.0
+	st["удар_до"] = now + STRIKE_HOLD
+	st["бій_до"] = now + STRIKE_HOLD + COMBAT_STANCE
 	_anim[id] = st
 
 

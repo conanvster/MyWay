@@ -1,18 +1,26 @@
 class_name ItemIcon
 extends Control
-## Значок речі: форма каже, ЩО це, колір — якого воно грейду.
+## Значок речі. Є справжній малюнок (`assets/icons/items/`) — показуємо
+## його; немає (гроші, сирий ресурс, ще не намальована річ) — форма
+## каже, ЩО це, колір — якого воно грейду, як і раніше (П-131).
 ##
-## Картинок речей у грі немає взагалі й найближчим часом не буде, а
-## комірка з самою назвою читається повільно: щоб знайти шолом, доводиться
-## перечитувати всю торбу. Тому значок малюється кодом — жодного файлу,
-## жодного імпорту, і нова річ дістає значок сама, щойно в неї є вид.
+## Малюнок шукається за ІМ'ЯМ речі, точно як у `data/items.json`:
+## підклав `assets/icons/items/<назва>.png` — річ дістала значок сама,
+## код міняти не треба. Рамка кольором грейду лишається й на малюнку:
+## так грейд читається з одного погляду, як і на кодовій фігурі.
 ##
-## Форма береться зі СЛОТА, коли він є (меч і шолом обидва «обладунок» або
-## «зброя», але вдягаються в різні комірки), інакше — з виду: руна,
-## кристал, ресурс, гроші.
+## Форма (коли малюнка немає) береться зі СЛОТА, коли він є (меч і шолом
+## обидва «обладунок» або «зброя», але вдягаються в різні комірки),
+## інакше — з виду: руна, кристал, ресурс, гроші.
 ##
 ## Кольори грейдів — пропозиція П-131, не рішення. Якщо замовник назве
 ## свої, міняється рівно `GRADE_COLORS`.
+
+## Тека з малюнками. Ключ файлу — точна назва речі з `data/items.json`.
+const ART_DIR := "res://assets/icons/items/"
+
+static var _art: Dictionary = {}
+static var _art_loaded := false
 
 const GRADE_COLORS := {
 	"E": Color(0.60, 0.62, 0.60),    ## сірий — початковий
@@ -34,27 +42,58 @@ const LINE := 2.0
 
 var _shape := ""
 var _tint := NO_GRADE
+var _tex: Texture2D = null
 
 
 static func grade_color(grade: String) -> Color:
 	return GRADE_COLORS.get(grade, NO_GRADE)
 
 
+## Малюнок речі за точною назвою (`data/items.json`) або `null`, коли
+## його ще не намальовано. Для місць, яким сам `ItemIcon`-вузол
+## завеликий — панель 1-7 показує лише текстуру, без форми й рамки.
+static func of(name: String) -> Texture2D:
+	_load_art()
+	return _art.get(name)
+
+
+## Читає теку раз за життя гри — не за кожен показ речі.
+static func _load_art() -> void:
+	if _art_loaded:
+		return
+	_art_loaded = true
+	var dir := DirAccess.open(ART_DIR)
+	if dir == null:
+		return
+	for file in dir.get_files():
+		if file.get_extension() != "png":
+			continue
+		var tex := load(ART_DIR + file) as Texture2D
+		if tex != null:
+			_art[file.get_basename()] = tex
+
+
 ## Що малювати. `slot` порожній у складаних речей — тоді вирішує `kind`.
-static func shape_of(kind: String, slot: String) -> String:
+func shape_of(kind: String, slot: String) -> String:
 	if slot != "":
 		return "перстень" if slot.begins_with("перстень") else slot
 	return kind
 
 
-func show_item(kind: String, slot: String, grade: String) -> void:
+## `name` — точна назва речі (`data/items.json`); порожня там, де
+## малюнок не потрібен (порожній силует тіла).
+func show_item(kind: String, slot: String, grade: String,
+		name: String = "") -> void:
+	_load_art()
 	_shape = shape_of(kind, slot)
 	_tint = MONEY_COLOR if kind == "гроші" else grade_color(grade)
+	_tex = _art.get(name)
 	queue_redraw()
 
 
 func clear_item() -> void:
 	_shape = ""
+	_tex = null
 	queue_redraw()
 
 
@@ -65,6 +104,10 @@ func _draw() -> void:
 	# годяться і для комірки тіла, і для торби, і для майбутніх розмірів.
 	var side: float = minf(size.x, size.y)
 	var off := Vector2((size.x - side) * 0.5, (size.y - side) * 0.5)
+	if _tex != null:
+		draw_texture_rect(_tex, Rect2(off, Vector2(side, side)), false)
+		draw_rect(Rect2(off, Vector2(side, side)), _tint, false, LINE)
+		return
 	var fill := Color(_tint.r * FILL_DIM, _tint.g * FILL_DIM,
 			_tint.b * FILL_DIM, 0.95)
 	match _shape:

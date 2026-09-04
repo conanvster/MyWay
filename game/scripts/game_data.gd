@@ -76,11 +76,30 @@ func load_all() -> bool:
 	var read_map: Variant = _read(MAP_PATH)
 	if read_map is Dictionary:
 		map = read_map
-		print("[дані] мапа: будинків %d, мешканців %d, дерев %d, гір %d"
-				% [map.get("місто", {}).get("будинки", []).size(),
-				   map.get("місто", {}).get("мешканці", []).size(),
-				   map.get("ліс", {}).get("дерев", 0),
-				   map.get("гори", []).size()])
+		# Рахуємо по списках (`міста`/`ліси`), але й старі одиничні
+		# ключі (`місто`/`ліс`) досі читаються: світ виріс 05.09.2026, а
+		# дані, збережені до того, лишились чинними. Без цього рядок
+		# журналу тихо друкував нулі на живій мапі — а мовчазна неправда
+		# в журналі гірша за помилку.
+		var towns: Array = map.get("міста", [])
+		if towns.is_empty() and map.has("місто"):
+			towns = [map["місто"]]
+		var woods: Array = map.get("ліси", [])
+		if woods.is_empty() and map.has("ліс"):
+			woods = [map["ліс"]]
+		var houses := 0
+		var folk := 0
+		for town: Dictionary in towns:
+			houses += Array(town.get("будинки", [])).size()
+			folk += Array(town.get("мешканці", [])).size()
+		var trees := 0
+		for wood: Dictionary in woods:
+			trees += int(wood.get("дерев", 0))
+		print("[дані] мапа: міст %d, будинків %d, мешканців %d, "
+				% [towns.size(), houses, folk]
+				+ "лісів %d (дерев %d), гір %d, святинь %d"
+				% [woods.size(), trees, map.get("гори", []).size(),
+				   Array(map.get("святині", [])).size()])
 	else:
 		ok = false
 

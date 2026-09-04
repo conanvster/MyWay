@@ -270,8 +270,22 @@ func _solid(where: Vector3, mesh: Mesh, shape: Shape3D, color: String,
 ## Небо й туман: тримаємо, щоб міняти дальність тумана під зону бачення.
 var _air: Environment
 var _noise: FastNoiseLite
+## Міста, довкола яких земля вирівнюється. Список, а не одне: світ виріс
+## 05.09.2026, і міст у ньому кілька. Старий ключ `місто` (одне) досі
+## читається — щоб дані, збережені раніше, не ставали недійсними.
+var _flat_spots: Array[Dictionary] = []
+## Лишається для сумісності: перше місто зі списку.
 var _city_at := Vector3.ZERO
 var _city_flat := 0.0
+
+
+## Усі міста мапи, хай їх одне (`місто`) чи кілька (`міста`).
+func towns() -> Array:
+	var many: Array = data.get("міста", [])
+	if not many.is_empty():
+		return many
+	var one: Dictionary = data.get("місто", {})
+	return [] if one.is_empty() else [one]
 
 
 func height_at(x: float, z: float) -> float:
@@ -281,13 +295,24 @@ func height_at(x: float, z: float) -> float:
 	var high := _noise.get_noise_2d(x, z) * float(earth.get("розмах", 7.0))
 	# Дрібні нерівності, щоб схили не були гладкі, як стіл.
 	high += _noise.get_noise_2d(x * 3.1, z * 3.1) * 0.8
-	var far: float = Vector2(x - _city_at.x, z - _city_at.z).length()
-	if far < _city_flat:
-		return LAND_LIFT
-	# М'який перехід від міста до пагорбів: інакше на межі стіна.
+	# Кожне місто вирівнює землю під собою. Береться найближче: міста
+	# стоять далеко одне від одного, і накладатись їхні майданчики не
+	# мають — а якщо колись стануть, найближче однаково вирішує.
 	var edge: float = float(data.get("земля", {}).get("поле", 14))
-	if far < _city_flat + edge:
-		high *= (far - _city_flat) / edge
+	var near := 1e9
+	var flat := 0.0
+	for spot: Dictionary in _flat_spots:
+		var where: Vector3 = spot["де"]
+		var far: float = Vector2(x - where.x, z - where.z).length()
+		if far - float(spot["радіус"]) < near - flat:
+			near = far
+			flat = float(spot["радіус"])
+	if not _flat_spots.is_empty():
+		if near < flat:
+			return LAND_LIFT
+		# М'який перехід від міста до пагорбів: інакше на межі стіна.
+		if near < flat + edge:
+			high *= (near - flat) / edge
 
 	# Підлога НАД морем, не РІВНО на морі (П-116, П-138): суша острова
 	# ніколи не пірнає нижче моря сама собою — шум на розмаху 7,0 проти
@@ -362,9 +387,13 @@ func _ground() -> void:
 	var earth: Dictionary = data.get("земля", {})
 	var side: float = float(earth.get("сторона", 240))
 	var step: float = float(earth.get("крок", 4))
-	var city: Dictionary = data.get("місто", {})
-	_city_at = _point(city.get("центр", [0, 0, 0]))
-	_city_flat = float(city.get("радіус", 26))
+	_flat_spots.clear()
+	for town: Dictionary in towns():
+		_flat_spots.append({"де": _point(town.get("центр", [0, 0, 0])),
+				"радіус": float(town.get("радіус", 26))})
+	if not _flat_spots.is_empty():
+		_city_at = _flat_spots[0]["де"]
+		_city_flat = float(_flat_spots[0]["радіус"])
 
 	_noise = FastNoiseLite.new()
 	_noise.seed = SEED
@@ -469,10 +498,18 @@ func sea_level() -> float:
 
 
 ## Місто: брук, будинки з дахами й мешканці.
+## Усі міста мапи. Мешканці нумеруються наскрізно через усі міста:
+## `resident_at(номер)` мусить лишатись однозначним, інакше клік по
+## крамарці в одному місті відкривав би прилавок крамарки в іншому.
 func _city() -> void:
-	var city: Dictionary = data.get("місто", {})
+	var at := 0
+	for town: Dictionary in towns():
+		at = _one_city(town, at)
+
+
+func _one_city(city: Dictionary, first_dweller: int) -> int:
 	if city.is_empty():
-		return
+		return first_dweller
 	var center := _point(city.get("центр", [0, 0, 0]))
 
 	# Брук — тонкий круг, щоб місто було видно згори.
@@ -500,9 +537,10 @@ func _city() -> void:
 
 	var dwellers: Array = city.get("мешканці", [])
 	for i in dwellers.size():
-		_dweller(dwellers[i], i)
+		_dweller(dwellers[i], first_dweller + i)
 
 	_fence(_on_ground(center), float(city.get("радіус", 20)))
+	return first_dweller + dwellers.size()
 
 
 ## Дерев'яний паркан по колу міста (Quaternius Medieval Village MegaKit,
@@ -893,8 +931,23 @@ func shrine_spots() -> Array[Vector3]:
 ## розкид лишається однаковим і на сервері, і в кожного клієнта (П-63
 ## не сміє це порушити), незалежно від того, коли саме дерево з'явиться
 ## на екрані.
+## Усі ліси мапи. Список (`ліси`), але старий ключ `ліс` (один) досі
+## читається — світ виріс 05.09.2026, а дані лишились чинні.
+##
+## Порядок обходу — той, що в даних, і випадковість витрачається строго
+## по ньому: інакше дерева виростали б на різних місцях у сервера й
+## клієнта (та сама пастка, що вже ловила П-63).
 func _forest() -> void:
-	var wood: Dictionary = data.get("ліс", {})
+	var many: Array = data.get("ліси", [])
+	if many.is_empty():
+		var one: Dictionary = data.get("ліс", {})
+		if not one.is_empty():
+			many = [one]
+	for wood: Dictionary in many:
+		_one_forest(wood)
+
+
+func _one_forest(wood: Dictionary) -> void:
 	if wood.is_empty():
 		return
 	var center := _point(wood.get("центр", [0, 0, 0]))

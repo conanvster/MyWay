@@ -12,6 +12,9 @@
 #   ./run.sh --рухи-монстрів  те саме для монстрів: по фігурі на пару
 #                     «вид+рух»; хто ще на фігурці з примітивів —
 #                     стій→іди→бий по колу, як у --парад
+#   ./run.sh --нові-моделі  56 щойно завантажених персонажів (ще не в
+#                     репозиторії, читає напряму з ~/assets/): кожен сам
+#                     по колу програє ввесь свій список рухів
 #   ./run.sh --вітрина  вікна «Речі», «Стати», «Скіли» з речами в кожному слоті
 #
 # Сервер піднімається окремо: ./run-server.sh
@@ -55,6 +58,7 @@ case "${1:-}" in
     --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
+    --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;
     --вітрина) exec godot --path "$proj" --script res://probes/showcase.gd ;;
     --демо-акаунт)   exec godot --path "$proj" -- --демо --акаунт конан --пароль таємниця --персонаж Вовкодав-2 ;;
     *)      exec godot --path "$proj" -e ;;

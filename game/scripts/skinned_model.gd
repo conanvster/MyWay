@@ -38,6 +38,12 @@ var _rest: Dictionary = {}
 var _phase := 0.0
 var _speed := 0.0
 var _swing_left := 0.0
+## Що зараз реально грає — своє, не через `AnimationPlayer.get_playing_speed()`
+## (П-162, спіймано наживо: хода «рвалась», кліп перезапускався по кілька
+## разів на секунду — прапорець «назад» тремтить кадр-до-кадру на межі
+## порогу, а без свого запису кожне тремтіння сприймалось як нову зміну).
+var _current_name := ""
+var _current_reverse := false
 
 
 func build() -> void:
@@ -243,9 +249,13 @@ func _play_if_has(names: Array, loop: bool = true,
 				else _find_animation(have, want, false)
 		if found == "":
 			continue
-		var already_reverse: bool = _player.get_playing_speed() < 0.0
-		if _player.current_animation == found and loop \
-				and already_reverse == reverse:
+		# Свій запис, не `AnimationPlayer.get_playing_speed()` — той не
+		# годиться як прапорець «уже граю задом», тому щокадровий виклик
+		# із тим самим `reverse` рестартував кліп заново. `loop` тут
+		# важливий: неперервний рух (Walk, Idle) не рестартуємо, поки не
+		# зміниться; одноразовий (удар, Hit_Chest) МАЄ рестартувати на
+		# кожен новий виклик — інакше другий удар поспіль не покажеться.
+		if loop and _current_name == found and _current_reverse == reverse:
 			return
 		if reverse:
 			_player.play_backwards(found)
@@ -253,6 +263,8 @@ func _play_if_has(names: Array, loop: bool = true,
 			_player.play(found)
 		_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR \
 				if loop else Animation.LOOP_NONE
+		_current_name = found
+		_current_reverse = reverse
 		return
 
 

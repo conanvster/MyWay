@@ -174,13 +174,25 @@ func smooth(delta: float) -> void:
 		if body is SkinnedModel and a.has_method("apply_sex"):
 			_human_state(id, a, body, speed, moved, delta)
 		elif a.is_alive():
-			# Обличчям до цілі, ногами — куди їде: рух проти погляду
-			# (відступ у бою) грає ту саму ходу навпаки (skinned_model).
-			var backward := false
-			if moved.length() > 0.01:
-				var forward := -a.global_transform.basis.z
-				backward = forward.dot(moved.normalized()) < -0.3
-			body.animate(speed, backward)
+			body.animate(speed, _backward(id, a, moved))
+
+
+## Обличчям до цілі, ногами — куди їде: рух проти погляду (відступ у
+## бою) грає ту саму ходу навпаки — немає жодного руху «назад» у
+## наборі (П-150). Гістерезис (увійти строгіше, ніж вийти) навмисно:
+## сирий кут `moved` тремтить кадр-до-кадру біля порогу, і без запасу
+## прапорець мигтів по кілька разів на секунду — щоразу новий рестарт
+## кліпа (П-162, побачено наживо: «рвана» хода).
+func _backward(id: int, a: Node3D, moved: Vector3) -> bool:
+	var st: Dictionary = _anim.get(id, {})
+	var now_back: bool = st.get("назад", false)
+	if moved.length() > 0.01:
+		var forward := -a.global_transform.basis.z
+		var facing: float = forward.dot(moved.normalized())
+		now_back = facing < -0.15 if now_back else facing < -0.55
+	st["назад"] = now_back
+	_anim[id] = st
+	return now_back
 
 
 ## Показ моделі людини за станом (П-162). Порядок перевірок і є
@@ -241,13 +253,7 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 		_anim[id] = st
 		return
 
-	# Обличчям до цілі, ногами — куди їде: рух проти погляду (відступ у
-	# бою) грає ту саму ходу навпаки — немає жодного руху «назад» у
-	# наборі (skinned_model.animate мала ту саму причину).
-	var backward := false
-	if moved.length() > 0.01:
-		var forward := -a.global_transform.basis.z
-		backward = forward.dot(moved.normalized()) < -0.3
+	var backward := _backward(id, a, moved)
 
 	if _underwater(a):
 		body.show_move("Swim_Fwd", backward)

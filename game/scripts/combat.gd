@@ -14,6 +14,9 @@ var _link: Messenger
 ## `Vector3(0, 1.5, 0)`, і коли сушу підняли на 5 м (П-140), оживлений
 ## опинявся на 3,5 м під новою землею.
 var ground_height: Callable = func(_x: float, _z: float) -> float: return 0.0
+## Де стоїть місто, куди вертають. Світ підставляє центр столиці з
+## мапи; за замовчуванням — (0,0), як було жорстко зашито раніше.
+var home_spot := Vector2.ZERO
 
 
 func _init(creatures: Dictionary = {}, link: Messenger = null) -> void:
@@ -128,14 +131,28 @@ func revive(id: int) -> bool:
 		return false
 	c.hp = maxi(1, roundi(c.stats.max_hp() * c.REVIVE_SHARE))
 	c.corpse_left = 0.0
-	# 6 м запасу, як і при вході (world.gd) та спавні монстрів
-	# (spawner.gd): падає сам, сідає на видиму поверхню, а не в ґрунт.
-	c.place_at(Vector3(0, ground_height.call(0.0, 0.0) + 6.0, 0), 0.0)
+	send_home(id)
 	_link.to_watchers(id, &"client_revive", [id, c.hp])
+	return true
+
+
+## Поставити в місто. Спільне для оживлення з вікна смерті й для скіла
+## «повернутися в місто» — щоб місце посадки було одне на обидва шляхи,
+## а не два числа, які розійдуться першою ж правкою.
+##
+## 6 м запасу над землею, як і при вході (`world.gd`) та спавні монстрів
+## (`spawner.gd`): падає сам і сідає на видиму поверхню, а не в ґрунт.
+func send_home(id: int) -> void:
+	var c: Node = _creatures.get(id)
+	if c == null:
+		return
+	var high: float = ground_height.call(home_spot.x, home_spot.y)
+	c.place_at(Vector3(home_spot.x, high + 6.0, home_spot.y), 0.0)
+	print("[дім] %d поставлено в місто (%.0f, %.0f) на висоті %.2f"
+			% [id, home_spot.x, home_spot.y, c.global_position.y])
 	# Окремим повідомленням, бо переставляння має бути стрибком:
 	# інакше труп проїде через усю мапу (вада 3 з PLAN.md).
 	_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])
-	return true
 
 
 # ── скіли (крок 2.2) ──────────────────────────────────────────────────
@@ -208,6 +225,11 @@ func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 		# інше (крок 2.1). Окремого коду для монстрів немає.
 		if not state.is_empty() and victim.is_alive():
 			victim.add_state(State.from_data(state))
+	# Переніс у місто — не шкода й не стан, тож окремо. Діє на того,
+	# хто читав: ціль скіла — «себе».
+	if skill.sends_home(level):
+		send_home(me)
+		_link.notice(me, "ти в місті")
 	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
 			% [me, skill.name, level, victims.size(), a.mp])
 

@@ -433,9 +433,20 @@ func demo(delta: float) -> void:
 	_fps_left -= delta
 	if _fps_left <= 0.0:
 		_fps_left = 5.0
-		print("[кадри] %d за секунду · об'єктів %d · вузлів %d · пам'ять %d МіБ"
+		# Малювань і трикутників ЗА КАДР — це і є навантаження на
+		# відеокарту. Без них «60 кадрів» нічого не кажуть: із
+		# вертикальною синхронізацією шістдесят буде і тоді, коли карта
+		# ледве встигає (слово замовника 06.09.2026: «відеокарта не
+		# справляється»). Ці два числа показують, скільки саме
+		# відсікається туманом і клаптями, а скільки таки малюється.
+		print("[кадри] %d за секунду · малювань %d · трикутників %d · "
 				% [Engine.get_frames_per_second(),
-				   Performance.get_monitor(Performance.OBJECT_COUNT),
+				   Performance.get_monitor(
+						Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				   Performance.get_monitor(
+						Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)]
+				+ "об'єктів %d · вузлів %d · пам'ять %d МіБ"
+				% [Performance.get_monitor(Performance.OBJECT_COUNT),
 				   Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
 				   Performance.get_monitor(Performance.MEMORY_STATIC)
 						/ 1024 / 1024])

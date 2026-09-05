@@ -1048,6 +1048,10 @@ func _toggle_map() -> void:
 		# на ходу (крок 1.2), і карта має показувати теперішні.
 		if _world != null and _world.data != null:
 			_map_view.map = _world.data.map
+		# На світі версії 2 аркуш більший за вікно в дванадцять разів:
+		# відкрити його на середині світу означало б щоразу шукати себе
+		# вручну. Тому відкривається на гравцеві.
+		_map_view.center_on_me()
 		_map_view.queue_redraw()
 		_map_box._keep_on_screen()
 

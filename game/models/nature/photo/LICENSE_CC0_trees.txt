@@ -1,0 +1,8 @@
+Фотографічні хвойні дерева з альфою.
+
+Джерело: "high-res tree textures" (trees_1K.zip, trees_dead_1K.zip),
+OpenGameArt.org — https://opengameart.org/content/high-res-tree-textures
+Ліцензія: CC0 (суспільне надбання). Автор зробив їх зі своїх фотографій.
+
+Атлас 3157x1024 розрізано на окремі дерева скриптом; більше нічого не
+змінювалось. Сім живих (Conifer1..7) і вісім сухих (ConiferDead*).

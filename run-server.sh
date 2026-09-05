@@ -16,4 +16,5 @@ if pgrep -f "godot --headless --path .*game -- --server" > /dev/null; then
     exit 1
 fi
 
+# Прапорці після -- йдуть у гру як є: --полігон, --світ2 тощо.
 exec godot --headless --path "$(pwd)/game" -- --server "$@"

@@ -85,6 +85,13 @@ func _ready() -> void:
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
 	combat.ground_height = ground_at
+	# Куди вертає оживлення й скіл «повернутися в місто»: центр першого
+	# міста мапи. У версії 1 і 2 це (0,0) — столиця там навмисно, — але
+	# число тепер із даних, а не зашите в коді.
+	var towns: Array = data.map.get("міста", [])
+	if not towns.is_empty():
+		var at: Array = towns[0].get("центр", [0, 0, 0])
+		combat.home_spot = Vector2(float(at[0]), float(at[2]))
 	combat.skills = data.skills
 	combat.progress = Progress.new(data.levels)
 	combat.goods = data.items
@@ -328,6 +335,24 @@ func _slot_cooldowns(me: Node) -> PackedFloat32Array:
 
 # ── сервер: що надходить від клієнтів ─────────────────────────────────
 
+## Сервер називає свій світ. Клієнт звіряє зі своїм і, якщо не збіглось,
+## кричить — і в консоль, і рядком у грі.
+@rpc("authority", "call_remote", "reliable")
+func client_which_world(server_map: String) -> void:
+	var mine := GameData.map_path().get_file()
+	if server_map == mine:
+		print("[світ] сервер і клієнт в одному світі: %s" % mine)
+		return
+	var shout := "‼ РІЗНІ СВІТИ: сервер будує %s, клієнт %s. " \
+			% [server_map, mine] \
+			+ "Прапорець --світ2 треба давати ОБОМ. Гравець провалиться " \
+			+ "крізь землю, бо позицію рахують по іншому рельєфу."
+	print("[світ] " + shout)
+	push_error(shout)
+	if hud != null and hud.has_method("notice"):
+		hud.notice("‼ різні світи: сервер %s, клієнт %s" % [server_map, mine])
+
+
 ## Увійти в гру без бази: як було до кроку 5. Якщо база є, цей шлях
 ## закритий — інакше можна було б зайти чужим персонажем, назвавши ім'я.
 @rpc("any_peer", "call_remote", "reliable")
@@ -335,6 +360,12 @@ func announce_ready(character: String = "") -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
+	# Перше, що чує клієнт: у ЯКОМУ світі сервер. Прапорець `--світ2`
+	# треба давати обом, і коли його забули на одному боці, клієнт малює
+	# один світ, а сервер рахує інший — гравець провалюється крізь землю,
+	# монстри тонуть, а в журналі все зелене. Спіймано 05.09.2026 живою
+	# грою; мовчки такі речі не лишаємо (P3).
+	rpc_id(id, "client_which_world", GameData.map_path().get_file())
 	if store != null and store.works():
 		rpc_id(id, "client_sign_needed")
 		return
@@ -685,12 +716,50 @@ func _tick_grace_places() -> void:
 
 ## Зони появи — вузли `MobZone` у сцені. Їх малюють у редакторі, тому
 ## сервер їх не вигадує, а знаходить.
+## Звідки беруться зони появи.
+##
+## Версія 1 — вузли `MobZone` зі сцени: їхні межі зручніше тягнути
+## мишею, і саме про це просив замовник. Версія 2 — з даних: сцена
+## намальована під світ 600 м, і на 5632 м частина її зон опинялась у
+## воді, а монстри тонули (журнал замовника 05.09.2026). Зони версії 2
+## пораховані на справжньому рельєфі й перевірені на сухість по всьому
+## колу — `tools/svit2.py`.
 func _zones() -> Array:
+	var from_data: Array = data.map.get("зони появи", [])
+	if not from_data.is_empty():
+		return _zones_from_data(from_data)
 	var found := find_children("*", "MobZone", true, false)
 	if found.is_empty():
 		push_warning("[світ] у сцені немає жодної зони появи — монстрів не буде")
 		print("[світ] ‼ у сцені немає жодної зони появи")
 	return found
+
+
+## Зона з даних: те саме `MobZone`, тільки форма не намальована мишею,
+## а зроблена тут — циліндр свого радіуса. Спавнер однаково ставить
+## монстра на висоту землі, тож висота циліндра ні на що не впливає.
+func _zones_from_data(list: Array) -> Array:
+	var made: Array = []
+	for one: Dictionary in list:
+		var zone := MobZone.new()
+		var at: Array = one.get("де", [0, 0, 0])
+		zone.name = "ЗонаПояви%d" % (made.size() + 1)
+		zone.position = Vector3(float(at[0]), 0.0, float(at[2]))
+		zone.kind = int(one.get("вид", 1))
+		zone.count = int(one.get("скільки", 1))
+		zone.aggressive = bool(one.get("агресивний", false))
+		zone.respawn_after = float(one.get("респавн", 12.0))
+		zone.respawn_spread = float(one.get("розкид респавну", 4.0))
+		var body := CollisionShape3D.new()
+		var round_shape := CylinderShape3D.new()
+		round_shape.radius = float(one.get("радіус", 20.0))
+		round_shape.height = 4.0
+		body.shape = round_shape
+		zone.add_child(body)
+		add_child(zone)
+		made.append(zone)
+	print("[світ] зони появи з даних: %d" % made.size())
+	return made
 
 
 func _on_joined(id: int) -> void:

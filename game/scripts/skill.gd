@@ -92,6 +92,12 @@ func state_at(level: int) -> Dictionary:
 	return at(level).get("стан", {})
 
 
+## Чи переносить скіл того, хто читав, у місто. Не шкода й не стан,
+## тож і поле своє: «переніс»: «місто» в рівні скіла.
+func sends_home(level: int) -> bool:
+	return str(at(level).get("переніс", "")) == "місто"
+
+
 func hits_many() -> bool:
 	return target == "усі-поруч" or target == "свої-поруч"
 

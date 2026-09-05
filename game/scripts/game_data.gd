@@ -15,8 +15,20 @@ const SKILLS_PATH := "res://data/skills.json"
 const LEVELS_PATH := "res://data/levels.json"
 const ITEMS_PATH := "res://data/items.json"
 const MAP_PATH := "res://data/map.json"
+## Світ версії 2 — згенерована карта (`tools/svit2.py`). Береться замість
+## `map.json`, коли серверові дано `-- --світ2`. Версія 1 лишається за
+## замовчуванням і не міняється від самої наявності цього файлу.
+const MAP2_PATH := "res://data/map2.json"
 ## Як часто перевіряти, чи файли змінились.
 const WATCH_EVERY := 2.0
+
+## Який світ будувати. Прапорець читається один раз при кожному читанні
+## даних, тож і сервер, і клієнт беруть той самий файл: обидва бачать ті
+## самі аргументи після `--`.
+static func map_path() -> String:
+	return MAP2_PATH if OS.get_cmdline_user_args().has("--світ2") \
+			else MAP_PATH
+
 
 ## Числа за видами: "1" -> { помічає, повідець, ... }.
 var mobs: Dictionary = {}
@@ -73,7 +85,7 @@ func load_all() -> bool:
 	else:
 		ok = false
 
-	var read_map: Variant = _read(MAP_PATH)
+	var read_map: Variant = _read(map_path())
 	if read_map is Dictionary:
 		map = read_map
 		# Рахуємо по списках (`міста`/`ліси`), але й старі одиничні
@@ -95,11 +107,20 @@ func load_all() -> bool:
 		var trees := 0
 		for wood: Dictionary in woods:
 			trees += int(wood.get("дерев", 0))
-		print("[дані] мапа: міст %d, будинків %d, мешканців %d, "
-				% [towns.size(), houses, folk]
+		print("[дані] мапа: %s — міст %d, будинків %d, мешканців %d, "
+				% [map_path().get_file(), towns.size(), houses, folk]
 				+ "лісів %d (дерев %d), гір %d, святинь %d"
 				% [woods.size(), trees, map.get("гори", []).size(),
 				   Array(map.get("святині", [])).size()])
+		if int(map.get("версія", 1)) >= 2:
+			var earth: Dictionary = map.get("земля", {})
+			print("[дані] світ версії 2: сторона %s м, сітка %s, "
+					% [earth.get("сторона"), earth.get("точок")]
+					+ "сіл %d, орієнтирів %d, доріг %d, мостів %d"
+					% [Array(map.get("села", [])).size(),
+					   Array(map.get("орієнтири", [])).size(),
+					   Array(map.get("дороги", [])).size(),
+					   Array(map.get("мости", [])).size()])
 	else:
 		ok = false
 
@@ -126,7 +147,7 @@ func poll(delta: float) -> bool:
 	_since_check = 0.0
 	var changed := false
 	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH, LEVELS_PATH, ITEMS_PATH,
-			MAP_PATH]:
+			map_path()]:
 		var stamp := _stamp(path)
 		if stamp != 0 and _stamps.get(path, 0) != stamp:
 			changed = true

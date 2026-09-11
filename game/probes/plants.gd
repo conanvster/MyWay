@@ -25,6 +25,17 @@ const PHOTO := [
 			"Conifer6", "Conifer7"], 20.0],
 	["хвойні фото — у снігу (лише крижана північ)",
 			["Conifer2", "Conifer3"], 18.0],
+	# Фотоскани Poly Haven, зняті збоку в картки (11.09.2026, слово
+	# замовника «знайди більше дерев, і більших, і таких самих за
+	# розміром, але більш різноманітних»).
+	["скани: великі ялиці й сосни", ["Scan_fir_tree_01_a_0",
+			"Scan_fir_tree_01_b_60", "Scan_fir_tree_01_c_120",
+			"Scan_pine_tree_01_a_0", "Scan_pine_tree_01_b_60",
+			"Scan_pine_tree_01_c_120"], 18.0],
+	["скани: середні ялиці й сосни, листяне", ["Scan_fir_sapling_medium_a_0",
+			"Scan_fir_sapling_medium_b_60", "Scan_fir_sapling_medium_c_120",
+			"Scan_pine_sapling_medium_a_0", "Scan_pine_sapling_medium_b_60",
+			"Scan_pine_sapling_medium_c_120", "Scan_tree_small_02_0"], 8.0],
 	["сухі хвойні фото", ["ConiferDead1", "ConiferDead2", "ConiferDead3",
 			"ConiferDead5", "ConiferDead6", "ConiferDead7",
 			"ConiferDead8", "ConiferDead9"], 16.0],
@@ -186,12 +197,15 @@ func _go() -> void:
 ## `landscape.gd`, тільки без зіткнення: тут ми лише дивимось.
 func _photo_cross(name_of: String, tall: float) -> Node3D:
 	var path := "res://models/nature/photo/%s.png" % name_of
-	var raw := FileAccess.get_file_as_bytes(path)
-	if raw.is_empty():
-		return null
 	var picture := Image.new()
-	if picture.load_png_from_buffer(raw) != OK:
-		return null
+	var raw := FileAccess.get_file_as_bytes(path)
+	if not raw.is_empty():
+		if picture.load_png_from_buffer(raw) != OK:
+			return null
+	else:
+		raw = FileAccess.get_file_as_bytes(path.get_basename() + ".webp")
+		if raw.is_empty() or picture.load_webp_from_buffer(raw) != OK:
+			return null
 	var wide: float = float(picture.get_width()) / float(picture.get_height())
 	var paint := StandardMaterial3D.new()
 	paint.albedo_texture = ImageTexture.create_from_image(picture)
@@ -204,8 +218,8 @@ func _photo_cross(name_of: String, tall: float) -> Node3D:
 	paint.specular = 0.05
 	# Меш будує сам краєвид — щоб показ і гра не розійшлися формою.
 	var view := MeshInstance3D.new()
-	view.mesh = Landscape._cross_mesh(wide)
-	view.material_override = paint
+	view.mesh = Landscape._crown_mesh(wide)
+	view.set_surface_override_material(0, paint)
 	view.scale = Vector3(tall, tall, tall)
 	return view
 

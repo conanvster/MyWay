@@ -1,0 +1,9 @@
+Фотоскани рослин і каміння для світу версії 2 — Poly Haven
+(https://polyhaven.com), CC0 1.0 (суспільне надбання).
+
+Взято 11.09.2026, glTF 1K:
+  fern_02, nettle_plant, shrub_sorrel_01    — кущі й папороть
+  rock_moss_set_01, rock_moss_set_02        — каміння з мохом
+  rock_07, rock_09, moon_rock_02            — дрібне каміння
+
+Ліцензія: https://polyhaven.com/license

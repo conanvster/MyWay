@@ -2093,7 +2093,9 @@ func _process(delta: float) -> void:
 			# координати в куті. Тільки коли карта відкрита: закрита
 			# вона перемальовувалась би даремно.
 			if _map_box != null and _map_box.visible:
-				_map_view.show_me(me.global_position)
+				# Кут — той, на який персонаж повернутий на екрані
+				# (`rotation.y` плавно доганяє те, що каже сервер).
+				_map_view.show_me(me.global_position, me.rotation.y)
 	if _target != 0 and _max_hp.has(_target):
 		var share := float(_hp.get(_target, 0)) / maxf(1.0, _max_hp[_target])
 		_target_fill.size.x = WIDE * clampf(share, 0.0, 1.0)

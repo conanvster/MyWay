@@ -20,10 +20,14 @@ const EDGE := Color(0.86, 0.84, 0.74, 0.5)
 const TOWN := Color(0.93, 0.86, 0.62)
 const MOUNTAIN := Color(0.42, 0.44, 0.46)
 const WOOD := Color(0.18, 0.37, 0.20)
-## Гравець — саме червона крапка, як і замовлено.
+## Гравець — червоний, як і замовлено 05.09.2026; з 11.09.2026 не крапка,
+## а стрілка, повернута туди, куди дивиться персонаж (слово замовника:
+## «зроби точку на мінікарті у вигляді стрілки з напрямком, куди дивиться
+## аватар»).
 const ME := Color(0.95, 0.16, 0.16)
 const ME_RING := Color(1, 1, 1, 0.85)
-const ME_DOT := 5.0
+## Від середини до вістря, точок екрана.
+const ME_ARROW := 11.0
 
 ## Мапа світу (`GameData.map`). Порожня — карта чесно каже, що даних нема.
 var map: Dictionary = {}
@@ -38,6 +42,8 @@ var _sheets: Dictionary = {}
 var _dragging := false
 ## Де гравець, у СВІТОВИХ координатах. Оновлює HUD щокадру.
 var me := Vector3.ZERO
+## Куди гравець дивиться: поворот навколо вертикалі, як `rotation.y`.
+var me_facing := 0.0
 var has_me := false
 
 var _font: Font
@@ -161,18 +167,40 @@ func _draw() -> void:
 
 	# Гравець — останнім, щоб його не перекрило нічим.
 	if has_me:
-		var dot := _spot(me.x, me.z)
-		draw_circle(dot, ME_DOT + 2.0, ME_RING)
-		draw_circle(dot, ME_DOT, ME)
+		_draw_me(_spot(me.x, me.z))
 
 
-## Оновити позицію. Перемальовуємо лише коли крапка справді зрушила: на
-## карті 480 точок крок у сантиметр не видно, а `queue_redraw()` щокадру
-## — це малювання всієї карти щокадру.
-func show_me(at: Vector3) -> void:
-	if has_me and me.distance_to(at) < 1.0:
+## Гравець на карті: червона стрілка в білому обідку, вістрям туди, куди
+## дивиться персонаж. Вістря з вирізом ззаду, а не трикутник: трикутник
+## на дрібній карті читається як іще одна крапка, а стрілку видно одразу.
+func _draw_me(dot: Vector2) -> void:
+	# На карті x світу — праворуч, z — донизу. Вузол дивиться своїм −Z
+	# (той самий кут, що в `Creature.face_to`), тож уперед — це
+	# (−sin, −cos) кута.
+	var ahead := Vector2(-sin(me_facing), -cos(me_facing))
+	var side := Vector2(-ahead.y, ahead.x)
+	var shape := PackedVector2Array([
+		dot + ahead * ME_ARROW,
+		dot - ahead * ME_ARROW * 0.6 + side * ME_ARROW * 0.62,
+		dot - ahead * ME_ARROW * 0.25,
+		dot - ahead * ME_ARROW * 0.6 - side * ME_ARROW * 0.62,
+	])
+	var ring := PackedVector2Array()
+	for point in shape:
+		ring.append(dot + (point - dot) * 1.4)
+	draw_colored_polygon(ring, ME_RING)
+	draw_colored_polygon(shape, ME)
+
+
+## Оновити позицію й напрямок. Перемальовуємо лише коли стрілка справді
+## зрушила чи повернулась: на карті 480 точок крок у сантиметр не видно,
+## а `queue_redraw()` щокадру — це малювання всієї карти щокадру.
+func show_me(at: Vector3, look: float = 0.0) -> void:
+	if has_me and me.distance_to(at) < 1.0 \
+			and absf(angle_difference(me_facing, look)) < deg_to_rad(4.0):
 		return
 	me = at
+	me_facing = look
 	has_me = true
 	queue_redraw()
 
@@ -267,9 +295,7 @@ func _draw_sheet() -> void:
 						HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TOWN)
 
 	if has_me:
-		var dot := _spot(me.x, me.z)
-		draw_circle(dot, ME_DOT + 2.0, ME_RING)
-		draw_circle(dot, ME_DOT, ME)
+		_draw_me(_spot(me.x, me.z))
 
 	var hint := "×%.1f · колесо — наблизити · тягни — рухати" % (k / _fit())
 	draw_string(_font, Vector2(8, size.y - 8), hint,

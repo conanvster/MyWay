@@ -15,15 +15,58 @@ func _init(creatures: Dictionary = {}, combat: Combat = null) -> void:
 	_combat = combat if combat != null else Combat.new(creatures)
 
 
+## Сон далеких монстрів (12.09.2026). Світ версії 2 заселено по всій
+## суші — сотні монстрів, і думати щокадру за кожного, кого ніхто не
+## бачить, серверові ні до чого: монстр без цілі, удома й далі
+## `SLEEP_RANGE` від усіх гравців стоїть і не рахується зовсім. Вмикає
+## це світ (`world.gd`); проби, що кличуть `think` напряму, — ні.
+var sleep_far := false
+## Далі за це від кожного гравця монстр спить. З запасом за туман і за
+## те, звідки агресивний помічає, — прокидається раніше, ніж його видно.
+const SLEEP_RANGE := 90.0
+## Живі гравці — раз на кадр фізики, а не для кожного монстра окремо:
+## інакше це монстри × істоти обходів щокадру.
+var _players := {}
+var _players_frame := -1
+
+
+func _refresh_players() -> void:
+	var frame := Engine.get_physics_frames()
+	if frame == _players_frame:
+		return
+	_players_frame = frame
+	_players.clear()
+	for other in _creatures:
+		if other > 0 and _creatures[other].is_alive():
+			_players[other] = _creatures[other]
+
+
+func _far_from_all(m: Node3D, players: Dictionary) -> bool:
+	for p: Node3D in players.values():
+		if p.global_position.distance_to(m.global_position) < SLEEP_RANGE:
+			return false
+	return true
+
+
 func think(id: int, delta: float) -> void:
 	var m: Node = _creatures[id]
 	if not m.is_alive():
 		return
 
 	var players := {}
-	for other in _creatures:
-		if other > 0 and _creatures[other].is_alive():
-			players[other] = _creatures[other]
+	if sleep_far:
+		_refresh_players()
+		players = _players
+		if m.target_id == 0 and not m.too_far_from_home() \
+				and _far_from_all(m, players):
+			m.wanted = Vector2.ZERO
+			m.asleep = true
+			return
+		m.asleep = false
+	else:
+		for other in _creatures:
+			if other > 0 and _creatures[other].is_alive():
+				players[other] = _creatures[other]
 
 	# Відбіг задалеко від дому — розвертається й геть забуває кривдника.
 	if m.too_far_from_home():

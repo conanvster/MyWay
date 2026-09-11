@@ -66,6 +66,9 @@ var facing := 0.0
 var server_facing := 0.0
 ## Намір, надісланий клієнтом. Заповнює сервер із мережі.
 var wanted := Vector2.ZERO
+## Спить (монстр далеко від усіх гравців, `mob_ai.gd`): стоїть на землі,
+## фізику для нього не рахуємо.
+var asleep := false
 
 ## Крихітний «інтелект» на випадок застрягання об кут будинку/паркану/
 ## дерева (замовник побачив: наказ «іди до крамаря» буксує на розі
@@ -430,6 +433,8 @@ func place_at(pos: Vector3, look: float) -> void:
 func server_step(delta: float) -> void:
 	if not is_alive():
 		corpse_left = maxf(0.0, corpse_left - delta)
+		return
+	if asleep and is_on_floor():
 		return
 	if not is_on_floor():
 		velocity.y -= ProjectSettings.get_setting("physics/3d/default_gravity") * delta

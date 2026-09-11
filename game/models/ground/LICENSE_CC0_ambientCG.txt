@@ -1,0 +1,17 @@
+Текстури землі світу версії 2 — ambientCG (https://ambientcg.com), CC0 1.0
+(суспільне надбання, без обов'язкового зазначення авторства).
+
+Взято 11.09.2026, роздільність 1K, файли _Color, _NormalGL (тут _Normal)
+і _Displacement (тут _Height), перезбережено в JPG якості 85/80:
+
+  Grass004   лука
+  Ground003  трава з ґрунтом
+  Ground037  мох і гірська лука
+  Ground048  лісова підстилка, згарище
+  Ground022  щебінь
+  Rock030    скеля
+  Snow006    сніг
+  Ground054  пісок
+  Ground027  суха потріскана земля
+
+Ліцензія: https://docs.ambientcg.com/license/

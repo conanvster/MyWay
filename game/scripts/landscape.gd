@@ -61,6 +61,16 @@ var _origin := Vector2.ZERO            ## світові координати т
 var _zone_names: Array[String] = []    ## код зони -> назва
 
 
+## Земля світу версії 2 з вагами фото-шарів (`ground_paint.gd`).
+## `null` у версії 1: там земля лишається секторами, як була.
+var _layers: GroundPaint
+## Різнотрав'я довкола камери (`meadow.gd`) — лише в клієнта світу 2.
+var _meadow_node: Meadow
+## Двори поселень для трави: (x, z, радіус) — рахуються раз, а не на
+## кожну з тисяч купок.
+var _yards: Array[Vector3] = []
+
+
 func build(from_data: Dictionary, stream: bool = false) -> void:
 	data = from_data
 	_streaming = stream
@@ -69,7 +79,10 @@ func build(from_data: Dictionary, stream: bool = false) -> void:
 	_ground_paints.clear()
 	_wind_paints.clear()
 	_photo_ready.clear()
+	_scan_parts.clear()
+	_layers = null
 	_load_field()
+	_paths()
 	_sky()
 	_ground()
 	_city()
@@ -79,6 +92,7 @@ func build(from_data: Dictionary, stream: bool = false) -> void:
 	_mountains()
 	_landmarks()
 	_shrines()
+	_meadow()
 
 
 ## Прочитати рельєф і зони світу версії 2. Обидва файли — сирі числа
@@ -125,6 +139,129 @@ func _load_field() -> void:
 	print("[краєвид] світ версії 2: сітка %d×%d, крок %.1f м, "
 			% [_grid, _grid, _grid_step]
 			+ "початок (%.0f, %.0f)" % [_origin.x, _origin.y])
+
+
+## ── Стежки світу версії 2 ─────────────────────────────────────────
+## Слово замовника 11.09.2026 з трьома знімками туманного лісу: «я очікую
+## побачити такий вигляд — тут серед лісу із стежкою». Стежки — ті самі
+## 26 доріг із даних (`дороги`, П-174), лише покладені в землю ґрунтом.
+##
+## Дорога в даних — ламана по сітці генератора (крок 32 м, повороти під
+## 45°): у лісі така «драбинка» читалась би прокладеною під шнур. Тому
+## вона тричі згладжується (Чайкін) і легко петляє шумом — до 2,2 м убік.
+##
+## Лягає не у вершини (8 м — стежка розпливлась би на шістнадцять), а в
+## окреме поле ВІДСТАНІ до найближчої стежки, кроком 4 м. Поле читають:
+## шейдер землі (край стежки до сантиметрів), `_greenery()` (на стежці
+## не росте ні дерево, ні кущ — і на сервері, і в клієнта однаково) і
+## різнотрав'я (найгустіше на узбіччі, як на знімках замовника).
+const PATH_HALF := 1.4        ## пів ширини стежки, метрів
+const PATH_STEP := 4.0        ## крок поля відстаней
+const PATH_RANGE := 8.0       ## далі за це відстань у полі не розрізняється
+var _path_gap := PackedByteArray()
+var _path_side := 0
+var _path_texture: ImageTexture
+
+
+func _paths() -> void:
+	_path_gap = PackedByteArray()
+	_path_side = 0
+	_path_texture = null
+	var roads: Array = data.get("дороги", [])
+	if _grid == 0 or roads.is_empty():
+		return
+	var started := Time.get_ticks_msec()
+	_path_side = int(ceil(_grid_step * (_grid - 1) / PATH_STEP)) + 1
+	_path_gap.resize(_path_side * _path_side)
+	_path_gap.fill(255)
+	var wander := FastNoiseLite.new()
+	wander.seed = SEED + 777
+	wander.frequency = 0.025
+	var long := 0.0
+	for road: Dictionary in roads:
+		var line := _trail(road.get("точки", []), wander)
+		for k in range(line.size() - 1):
+			_stamp_path(line[k], line[k + 1])
+			long += line[k].distance_to(line[k + 1])
+	_path_texture = ImageTexture.create_from_image(Image.create_from_data(
+			_path_side, _path_side, false, Image.FORMAT_R8, _path_gap))
+	print("[краєвид] стежок %d, %.1f км, поле %d×%d по %.0f м, %d мс"
+			% [roads.size(), long / 1000.0, _path_side, _path_side,
+			PATH_STEP, Time.get_ticks_msec() - started])
+
+
+## Ламана з даних → плавна стежка: три проходи Чайкіна й петляння шумом,
+## яке згасає до кінців (кінці — у містах, їх не зсуваємо).
+static func _trail(raw: Array, wander: FastNoiseLite) -> PackedVector2Array:
+	var line := PackedVector2Array()
+	for p: Array in raw:
+		line.append(Vector2(float(p[0]), float(p[1])))
+	for pass_no in 3:
+		if line.size() < 3:
+			break
+		var soft := PackedVector2Array([line[0]])
+		for k in range(line.size() - 1):
+			soft.append(line[k].lerp(line[k + 1], 0.25))
+			soft.append(line[k].lerp(line[k + 1], 0.75))
+		soft.append(line[line.size() - 1])
+		line = soft
+	var total := 0.0
+	var along := PackedFloat32Array([0.0])
+	for k in range(1, line.size()):
+		total += line[k].distance_to(line[k - 1])
+		along.append(total)
+	var out := PackedVector2Array()
+	for k in line.size():
+		var ahead := line[mini(k + 1, line.size() - 1)] \
+				- line[maxi(k - 1, 0)]
+		var side := Vector2(-ahead.y, ahead.x).normalized()
+		var fade := clampf(minf(along[k], total - along[k]) / 30.0, 0.0, 1.0)
+		out.append(line[k] + side * wander.get_noise_2d(line[k].x, line[k].y)
+				* 2.2 * fade)
+	return out
+
+
+func _stamp_path(a: Vector2, b: Vector2) -> void:
+	var pad := Vector2.ONE * PATH_RANGE
+	var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - pad
+	var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + pad
+	var x0 := clampi(floori((lo.x - _origin.x) / PATH_STEP), 0, _path_side - 1)
+	var x1 := clampi(ceili((hi.x - _origin.x) / PATH_STEP), 0, _path_side - 1)
+	var z0 := clampi(floori((lo.y - _origin.y) / PATH_STEP), 0, _path_side - 1)
+	var z1 := clampi(ceili((hi.y - _origin.y) / PATH_STEP), 0, _path_side - 1)
+	for iz in range(z0, z1 + 1):
+		for ix in range(x0, x1 + 1):
+			var p := _origin + Vector2(ix, iz) * PATH_STEP
+			var far := Geometry2D.get_closest_point_to_segment(p, a, b) \
+					.distance_to(p)
+			var i := iz * _path_side + ix
+			_path_gap[i] = mini(_path_gap[i],
+					clampi(int(far / PATH_RANGE * 255.0), 0, 255))
+
+
+## Відстань від точки до найближчої стежки, метрів (далі `PATH_RANGE` —
+## просто «далеко»). Без стежок — нескінченність.
+func path_gap(x: float, z: float) -> float:
+	if _path_side == 0:
+		return INF
+	var fx := (x - _origin.x) / PATH_STEP
+	var fz := (z - _origin.y) / PATH_STEP
+	var ix := clampi(floori(fx), 0, _path_side - 2)
+	var iz := clampi(floori(fz), 0, _path_side - 2)
+	var tx := clampf(fx - ix, 0.0, 1.0)
+	var tz := clampf(fz - iz, 0.0, 1.0)
+	var i := iz * _path_side + ix
+	return lerpf(lerpf(_path_gap[i], _path_gap[i + 1], tx),
+			lerpf(_path_gap[i + _path_side], _path_gap[i + _path_side + 1], tx),
+			tz) / 255.0 * PATH_RANGE
+
+
+## Скільки лісу в точці — вага лісової підстилки. Для проб: знайти
+## стежку, що йде крізь гай.
+func forest_at(x: float, z: float) -> float:
+	if _layers == null or _layers.weights.is_empty():
+		return 0.0
+	return _layers.layer_at(x, z, GroundPaint.LITTER)
 
 
 ## Скільки метрів до межі сектора тримати сусідній сектор завантаженим —
@@ -192,13 +329,22 @@ const PLANT_SEEN := 110.0
 var _wind_paints: Dictionary = {}
 
 
-func _wind_up(view: Node, tall: float) -> void:
+func _wind_up(view: Node, tall: float, measure: bool = false) -> void:
 	var sway: float = clampf(0.10 - tall * 0.012, 0.020, 0.10)
 	var speed: float = clampf(1.9 - tall * 0.10, 0.8, 1.9)
 	for child in view.find_children("*", "MeshInstance3D", true, false):
 		var mesh: MeshInstance3D = child
 		if mesh.mesh == null:
 			continue
+		# Скан має свою висоту в метрах, а не одиницю: зсув рахуємо від
+		# його справжнього низу й верху, інакше папороть на 0,4 м ледь
+		# ворушилась би.
+		var low := 0.0
+		var span := 1.0
+		if measure:
+			var box := mesh.mesh.get_aabb()
+			low = box.position.y
+			span = maxf(box.size.y, 0.01)
 		for i in mesh.mesh.get_surface_count():
 			var was: Material = mesh.mesh.surface_get_material(i)
 			if was is not StandardMaterial3D:
@@ -206,16 +352,25 @@ func _wind_up(view: Node, tall: float) -> void:
 			var flat: StandardMaterial3D = was
 			if flat.albedo_texture == null:
 				continue
-			var key := "%s|%.3f" % [flat.albedo_texture.resource_path, sway]
+			var key := "%s|%.3f|%.3f|%.3f" % [
+					flat.albedo_texture.resource_path, sway, low, span]
 			if not _wind_paints.has(key):
 				var moved := ShaderMaterial.new()
 				moved.shader = WIND
 				moved.set_shader_parameter("albedo_tex", flat.albedo_texture)
 				moved.set_shader_parameter("sway", sway)
 				moved.set_shader_parameter("speed", speed)
+				moved.set_shader_parameter("model_floor", low)
+				moved.set_shader_parameter("model_tall", span)
 				# Модель уже має свою прозорість, поріг лишаємо низьким:
 				# інакше в трави зникали б кінчики.
 				moved.set_shader_parameter("scissor", 0.25)
+				# Скан Poly Haven має карту нормалей — без неї листя
+				# папороті пласке, як вирізане з паперу.
+				if flat.normal_enabled and flat.normal_texture != null:
+					moved.set_shader_parameter("normal_tex",
+							flat.normal_texture)
+					moved.set_shader_parameter("use_normal", true)
 				_wind_paints[key] = moved
 			mesh.set_surface_override_material(i, _wind_paints[key])
 
@@ -337,6 +492,42 @@ func _sky() -> void:
 	air.fog_light_color = Color(str(data.get("туман", {})
 			.get("колір", "#a8b6c2")))
 	air.fog_density = 0.0025
+	# Світ 2 — «реалістично й атмосферно» (смак замовника, 06.09.2026) і
+	# «більш реалістично» (11.09.2026). Три речі, без яких фото-земля
+	# виглядала пересвіченою плиткою:
+	# - кіношне тонування (Filmic): світле не вигорає в біле, а трава
+	#   лишається травою, а не кислотно-зеленою;
+	# - затінення в западинах (SSAO): камінь сидить у землі, стовбур
+	#   має тінь біля кореня — без цього все стоїть на столі;
+	# - розсіяне світло слабше: з ним 0,9 тіньовий бік був майже як
+	#   освітлений, і рельєф читався пласким; і 0,7 ще вицвітало (знімок
+	#   гір із камери гравця), тож 0,5.
+	# Світ версії 1 не чіпаємо — він як був.
+	if _grid > 0:
+		# Туманний хвойний ліс зі знімків замовника (11.09.2026): небо
+		# затягнуте, сонце м'яке, а між стовбурами стоїть туман, у якому
+		# дальні дерева сіріють шарами. Звичайний туман по відстані тут не
+		# годиться — він лише фарбує далеке; об'ємний стоїть у повітрі й
+		# світиться від неба, як справжній.
+		painted.sky_top_color = Color("#8d99a4")
+		painted.sky_horizon_color = Color("#c3c8c7")
+		air.volumetric_fog_enabled = true
+		air.volumetric_fog_density = 0.016
+		air.volumetric_fog_albedo = Color("#c6cbc4")
+		air.volumetric_fog_anisotropy = 0.3
+		air.volumetric_fog_length = 80.0
+		air.volumetric_fog_ambient_inject = 0.6
+		air.volumetric_fog_sky_affect = 0.0
+		var sun := get_parent().get_node_or_null("Light") as DirectionalLight3D
+		if sun != null:
+			sun.light_energy = 0.8
+			sun.light_color = Color("#eef0ee")
+		air.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		air.tonemap_exposure = 1.05
+		air.ssao_enabled = true
+		air.ssao_radius = 1.4
+		air.ssao_intensity = 1.6
+		air.ambient_light_energy = 0.5
 	_air = air
 
 	var holder := WorldEnvironment.new()
@@ -873,31 +1064,121 @@ func _ground() -> void:
 			var z := start.y + iz * step
 			heights[iz * points + ix] = height_at(x, z)
 
-	# Поверхні заводяться на ходу: крім самих зон бувають ще перехідні
-	# смуги «межа: A|B», і скільки їх насправді трапиться — знає лише
-	# сама земля.
-	var surfaces := {}
-	for key: String in _surface_keys():
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		surfaces[key] = st
-
 	var body := StaticBody3D.new()
 	body.name = "Земля"
 	add_child(body)
 
-	# Земля ріжеться на КЛАПТІ, а не робиться суцільним мешем.
-	#
-	# Доти на світі 5632 м було 46 мешів на весь світ — по одному на
-	# зону й на кожну перехідну смугу. У кожного такого меша коробка
-	# охоплювала весь світ, тож рушій не міг відкинути жодного: мільйон
-	# трикутників малювався щокадру, хоч туман закінчувався на 54 м.
-	# Слово замовника 06.09.2026: «відеокарта не справляється».
-	#
-	# Клапоть — квадрат `CHUNK` клітинок. Тепер коробка меша маленька,
-	# і поза полем зору він просто не малюється. Зіткнення лишається
-	# ОДНЕ на весь світ (`HeightMapShape3D` нижче): фізика нічого не
-	# малює, і різати її нема сенсу.
+	if _grid > 0:
+		_painted_ground(body, heights, points, start, step)
+	else:
+		_sector_ground(body, heights, points, start, step, earth)
+
+	var shape := HeightMapShape3D.new()
+	shape.map_width = points
+	shape.map_depth = points
+	shape.map_data = heights
+	var wall := CollisionShape3D.new()
+	wall.name = "Рельєф"
+	wall.shape = shape
+	# Форма міряє в клітинках по одиниці, а наша клітинка — `крок`.
+	wall.scale = Vector3(step, 1.0, step)
+	# Форма завжди центрована на своєму вузлі, а сітка версії 2 зсунута
+	# (столиця в (0,0), не центр світу) — без цього зсуву земля, по якій
+	# ходять, лежала б за кілометри від тієї, яку видно.
+	wall.position = Vector3(start.x + side * 0.5, 0.0, start.y + side * 0.5)
+	body.add_child(wall)
+
+	_sea()
+
+
+## Земля світу версії 2: клапті з вагами фото-шарів і ОДИН матеріал.
+##
+## Клапоть — квадрат `CHUNK` клітинок: коробка меша маленька, і поза
+## полем зору він не малюється (06.09.2026, «відеокарта не
+## справляється»). Поверхня на клапоть тепер одна: зона, схил, гай і
+## берег — це ваги шарів у вершинах, а не окремі меші на кожну зону.
+## Зіткнення лишається ОДНЕ на весь світ: фізика нічого не малює.
+func _painted_ground(body: StaticBody3D, heights: PackedFloat32Array,
+		points: int, start: Vector2, step: float) -> void:
+	var started := Time.get_ticks_msec()
+	_layers = GroundPaint.new()
+	var look: Material = null
+	if DisplayServer.get_name() == "headless":
+		# Серверові земля — лише число під ногами: ваги й текстури йому
+		# ні до чого, а коштували б секунди побудови.
+		_layers.shape_only(heights, points, start, step)
+	else:
+		_layers.paint(self, heights, points, start, step)
+		look = GroundPaint.material(_path_texture,
+				_origin - Vector2.ONE * PATH_STEP * 0.5, _path_side * PATH_STEP,
+				PATH_RANGE, PATH_HALF)
+	var weighed := Time.get_ticks_msec() - started
+	var built := 0
+	for cz in range(0, points - 1, CHUNK):
+		for cx in range(0, points - 1, CHUNK):
+			var patch := Node3D.new()
+			patch.name = "Клапоть%d-%d" % [cx / CHUNK, cz / CHUNK]
+			var view := MeshInstance3D.new()
+			view.name = "Меш-земля"
+			view.mesh = _layers.chunk_mesh(cx, cz, CHUNK)
+			if look != null:
+				view.material_override = look
+			patch.add_child(view)
+			body.add_child(patch)
+			built += 1
+	print("[краєвид] земля: клаптів %d, шарів %d, ваги %d мс, усього %d мс"
+			% [built, GroundPaint.LAYERS.size(), weighed,
+			Time.get_ticks_msec() - started])
+
+
+## Висота ВИДИМОЇ землі в точці — рівно по трикутнику клаптя.
+##
+## `height_at()` дає поле з дрібними нерівностями в будь-якій точці, а
+## меш землі — площини між вершинами кожні 8 м. Травинка, поставлена
+## по `height_at()`, висіла б або тонула на пів метра; по цьому — стоїть.
+func surface_y(x: float, z: float) -> float:
+	if _layers == null:
+		return height_at(x, z)
+	return _layers.surface_y(x, z)
+
+
+## Що росте в точці: r — скільки трави, g — наскільки суха, b — квіти.
+func cover_at(x: float, z: float) -> Color:
+	if _layers == null:
+		return Color(0, 0, 0, 0)
+	return _layers.cover_at(x, z)
+
+
+## Чи точка у дворі поселення (не в полі довкола — там трава росте).
+func in_yard(x: float, z: float) -> bool:
+	for yard: Vector3 in _yards:
+		if Vector2(x - yard.x, z - yard.y).length() < yard.z:
+			return true
+	return false
+
+
+## Різнотрав'я — тільки клієнтові світу 2: серверові трава ні до чого,
+## об неї не спотикаються.
+func _meadow() -> void:
+	if _meadow_node != null:
+		_meadow_node.queue_free()
+		_meadow_node = null
+	_yards.clear()
+	for town: Dictionary in towns():
+		var at: Array = town.get("центр", [0, 0, 0])
+		_yards.append(Vector3(float(at[0]), float(at[2]),
+				float(town.get("радіус", 26.0)) + 3.0))
+	if _layers == null or _layers.cover.is_empty():
+		return
+	_meadow_node = Meadow.new()
+	_meadow_node.name = "Різнотрав'я"
+	add_child(_meadow_node)
+	_meadow_node.setup(self)
+
+
+## Земля світу версії 1: поверхні по секторах (П-143), як і була.
+func _sector_ground(body: StaticBody3D, heights: PackedFloat32Array,
+		points: int, start: Vector2, step: float, earth: Dictionary) -> void:
 	var chunk: int = CHUNK if _grid > 0 else points
 	var built := 0
 	var meshes := 0
@@ -950,23 +1231,6 @@ func _ground() -> void:
 	if _grid > 0:
 		print("[краєвид] земля: клаптів %d, мешів %d (по %d клітинок)"
 				% [built, meshes, chunk])
-
-	var shape := HeightMapShape3D.new()
-	shape.map_width = points
-	shape.map_depth = points
-	shape.map_data = heights
-	var wall := CollisionShape3D.new()
-	wall.name = "Рельєф"
-	wall.shape = shape
-	# Форма міряє в клітинках по одиниці, а наша клітинка — `крок`.
-	wall.scale = Vector3(step, 1.0, step)
-	# Форма завжди центрована на своєму вузлі, а сітка версії 2 зсунута
-	# (столиця в (0,0), не центр світу) — без цього зсуву земля, по якій
-	# ходять, лежала б за кілометри від тієї, яку видно.
-	wall.position = Vector3(start.x + side * 0.5, 0.0, start.y + side * 0.5)
-	body.add_child(wall)
-
-	_sea()
 
 
 ## Море: рівна вода на своєму рівні. Усе, що нижче, — під водою (П-61).
@@ -1079,7 +1343,12 @@ func _fence(center: Vector3, radius: float) -> void:
 	var count := int(TAU * radius / FENCE_PANEL)
 	var gate_half: float = (FENCE_GATE_WIDTH / radius) * 0.5
 	for i in count:
-		var angle := TAU * i / count
+		# Секція — ХОРДА між двома сусідніми точками кола, а не дотична в
+		# точці: так кінці сусідніх секцій сходяться. Було інакше, і між
+		# секціями світились проміжки (знімок замовника 12.09.2026).
+		var a0 := TAU * i / count
+		var a1 := TAU * (i + 1) / count
+		var angle := (a0 + a1) * 0.5
 		var at_gate := false
 		for side in 4:
 			if absf(wrapf(angle - side * PI * 0.5, -PI, PI)) < gate_half:
@@ -1087,9 +1356,22 @@ func _fence(center: Vector3, radius: float) -> void:
 				break
 		if at_gate:
 			continue
-		var at := center + Vector3(cos(angle), 0, sin(angle)) * radius
+		var p0 := center + Vector3(cos(a0), 0, sin(a0)) * radius
+		var p1 := center + Vector3(cos(a1), 0, sin(a1)) * radius
+		var at := (p0 + p1) * 0.5
+		# Прохід і там, де до міста підходить стежка: паркан поперек
+		# стежки — це стіна посеред дороги.
+		if path_gap(at.x, at.z) < PATH_HALF + 1.2:
+			continue
+		# Висота — земля ПІД САМОЮ секцією, а не центр міста. Було навпаки,
+		# і там, де земля біля краю двору вища, секція на 0,81 м ховалась
+		# у ґрунт, а ящик зіткнення на 1,2 м стирчав низькою сходинкою —
+		# персонаж на неї вилазив («ти весь час намагаєшся залізти на
+		# бридким чином побудований забор», слово замовника 12.09.2026).
+		# Нижчий із двох кінців, щоб на схилі не висіла над землею.
+		at.y = minf(surface_y(p0.x, p0.z), surface_y(p1.x, p1.z)) - 0.04
 		var key := _patch_at(at.x, at.z)
-		var spec := {"at": at, "angle": angle}
+		var spec := {"at": at, "angle": angle, "long": p0.distance_to(p1)}
 		_fence_specs.get_or_add(key, []).append(spec)
 		if not _streaming or _loaded_sectors.get(key, false):
 			_fence_nodes.get_or_add(key, []).append(_fence_panel(spec))
@@ -1100,19 +1382,29 @@ func _fence_panel(spec: Dictionary) -> Node:
 	var body := StaticBody3D.new()
 	body.name = _named("Паркан")
 	body.position = spec["at"]
-	# Панель дивиться вздовж дотичної до кола, тильною стороною назовні.
-	body.rotation.y = float(spec["angle"]) + PI * 0.5
+	# Панель лягає вздовж хорди. Поворот навколо вертикалі в Godot веде
+	# вісь X моделі в (cos φ, 0, −sin φ), а дотична до кола в точці θ —
+	# (−sin θ, 0, cos θ): отже φ = −θ − 90°. Було +θ + 90° — збігалось
+	# лише на чотирьох сторонах світу, а між ними секції ставали поперек
+	# кола (знімки замовника 12.09.2026: «паркан не виправлено»).
+	body.rotation.y = -float(spec["angle"]) - PI * 0.5
 	add_child(body)
+	# Модель розтягнута рівно на довжину хорди (різниця — пів відсотка),
+	# щоб кінці сусідніх секцій зійшлися.
+	var long: float = float(spec.get("long", FENCE_PANEL))
 	var view: Node3D = scene.instantiate()
 	view.name = "Модель"
+	view.scale = Vector3(long / FENCE_PANEL, 1.0, 1.0)
 	body.add_child(view)
 	_no_shadows(view)
+	# Ящик — від трохи нижче землі до 1,2 м: знизу без щілини на схилі,
+	# згори вищий за модель (0,81 м), тож на секцію не вилізти.
 	var wall := CollisionShape3D.new()
 	wall.name = "Стіна"
 	var box := BoxShape3D.new()
-	box.size = Vector3(FENCE_PANEL, 1.2, 0.3)
+	box.size = Vector3(long, 1.4, 0.3)
 	wall.shape = box
-	wall.position = Vector3(0, 0.6, 0)
+	wall.position = Vector3(0, 0.5, 0)
 	body.add_child(wall)
 	return body
 
@@ -1631,6 +1923,10 @@ func shrine_spots() -> Array[Vector3]:
 ## випадок, що й П-72: підбирається в грі, не на папері.
 const GREEN_STEP := 12.0
 const GREEN_JITTER := 5.0       ## на скільки кандидат зсувається вбік
+## Яка частка клітинок у серцевині хвойного гаю дістає брилу, пень чи
+## колоду. Підібрано знімками, не словом замовника.
+const FOREST_BITS := 0.10
+const FOREST_KINDS := ["брила", "пень", "колода"]
 
 
 func _greenery() -> void:
@@ -1697,12 +1993,28 @@ func _greenery() -> void:
 					continue
 				if _in_settlement(px, pz):
 					continue
+				# На стежці нічого не росте — інакше вона не стежка.
+				if path_gap(px, pz) < PATH_HALF + 1.6:
+					continue
 				var kind := str(kinds[randi() % kinds.size()])
 				var size := randf_range(float(span[0]), float(span[1]))
 				_place_plant(Vector3(px, ground, pz), kind, size)
 				placed += 1
 				var tally: int = int(by_zone[zone].get("_скільки", 0))
 				by_zone[zone]["_скільки"] = tally + 1
+			# Серцевина хвойного гаю: брила, пень чи колода. Той самий потік
+			# випадковості, що й у дерев, — на сервері й у клієнта однаково.
+			if kinds.has("хвоя") and strength > 0.35 and randf() < FOREST_BITS:
+				var bit_x := x + randf_range(-grid_of, grid_of) * 0.5
+				var bit_z := z + randf_range(-grid_of, grid_of) * 0.5
+				var bit := str(FOREST_KINDS[randi() % FOREST_KINDS.size()])
+				var bit_size := randf_range(0.8, 1.2)
+				var bit_ground := height_at(bit_x, bit_z)
+				if bit_ground > sea + 0.6 and not _in_settlement(bit_x, bit_z) \
+						and path_gap(bit_x, bit_z) > PATH_HALF + 1.0:
+					_place_plant(Vector3(bit_x, bit_ground, bit_z), bit,
+							bit_size)
+					placed += 1
 	var parts := PackedStringArray()
 	for rule: Dictionary in rules:
 		parts.append("%s %d" % [rule.get("назва", "?"),
@@ -1755,6 +2067,154 @@ const PLANTS := {
 }
 
 
+## Фотоскани Poly Haven (CC0, `models/nature/scan/`): файл · частина
+## моделі · ЗМІРЯНА висота й ширина (метри, з самого glTF) · множник,
+## яким вона ставиться. Мультяшних кущів і каміння Quaternius у світі 2
+## більше немає: замовник хоче реалістично (06.09.2026 — «дерева
+## виглядають неправдоподібно», 11.09.2026 — «більш реалістично»).
+##
+## Скан — справжній розмір у метрах: камінь із мохом 0,5-1,8 м, а от
+## папороть і кропива зняті маленькими (0,2-0,4 м), тож їм множник.
+## Трава й квіти світу 2 сюди не входять — це різнотрав'я `meadow.gd`.
+const SCANS := {
+	"кущ": [
+		["fern_02", "fern_02_a", 0.29, 0.55, 2.2],
+		["fern_02", "fern_02_b", 0.43, 0.89, 2.0],
+		["fern_02", "fern_02_c", 0.35, 0.77, 2.1],
+		["fern_02", "fern_02_d", 0.21, 0.57, 2.4],
+		["nettle_plant", "nettle_plant_tall_a_LOD0", 0.22, 0.09, 5.0],
+		["nettle_plant", "nettle_plant_tall_b_LOD0", 0.19, 0.08, 5.2],
+		["nettle_plant", "nettle_plant_medium_a_LOD0", 0.13, 0.07, 5.5],
+	],
+	"камінь": [
+		["rock_moss_set_01", "rock_moss_set_01_rock01", 1.47, 2.24, 1.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock02", 1.26, 2.66, 1.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock03", 1.10, 2.08, 1.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock04", 1.77, 1.96, 1.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock05", 1.21, 1.82, 1.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock06", 1.26, 2.13, 1.0],
+		["rock_moss_set_02", "rock_moss_set_02_rock07", 0.74, 1.22, 1.3],
+		["rock_moss_set_02", "rock_moss_set_02_rock08", 0.53, 0.98, 1.4],
+		["rock_moss_set_02", "rock_moss_set_02_rock09", 0.61, 1.01, 1.4],
+		["rock_moss_set_02", "rock_moss_set_02_rock10", 0.77, 1.55, 1.3],
+		["rock_moss_set_02", "rock_moss_set_02_rock11", 1.31, 1.53, 1.0],
+		["rock_moss_set_02", "rock_moss_set_02_rock12", 0.74, 1.44, 1.3],
+		["rock_moss_set_02", "rock_moss_set_02_rock13", 1.26, 1.14, 1.0],
+	],
+	# Лісова дрібнота зі знімків замовника (11.09.2026): великі темні
+	# брили з мохом, пні, колоди. Брила — ті самі камені з мохом, тільки
+	# втричі більші: 3-5 м, з зіткненням, як на першому знімку.
+	"брила": [
+		["rock_moss_set_01", "rock_moss_set_01_rock01", 1.47, 2.24, 2.8],
+		["rock_moss_set_01", "rock_moss_set_01_rock02", 1.26, 2.66, 3.0],
+		["rock_moss_set_01", "rock_moss_set_01_rock04", 1.77, 1.96, 2.6],
+		["rock_moss_set_01", "rock_moss_set_01_rock05", 1.21, 1.82, 3.2],
+		["rock_moss_set_02", "rock_moss_set_02_rock11", 1.31, 1.53, 3.0],
+		["rock_moss_set_02", "rock_moss_set_02_rock13", 1.26, 1.14, 3.0],
+	],
+	"пень": [
+		["tree_stump_01", "tree_stump_01", 0.57, 1.43, 1.0],
+	],
+	"колода": [
+		["dead_tree_trunk", "dead_tree_trunk", 0.29, 0.28, 2.0],
+	],
+	"камінець": [
+		["rock_07", "rock_07", 0.14, 0.17, 2.2],
+		["rock_09", "rock_09_LOD0", 0.03, 0.07, 5.0],
+		["moon_rock_02", "moon_rock_02_LOD0", 0.20, 0.25, 1.5],
+	],
+}
+## Готові частини сканів за «файл:частина»: меш і як його поставити,
+## щоб низ стояв на землі, а середина — на осі.
+var _scan_parts: Dictionary = {}
+
+
+## Дістати частину скану з його сцени — один раз на всю гру.
+func _scan_piece(file: String, part: String) -> Array:
+	var key := file + ":" + part
+	if _scan_parts.has(key):
+		return _scan_parts[key]
+	var found: Array = []
+	var path := "res://models/nature/scan/%s/%s_1k.gltf" % [file, file]
+	if ResourceLoader.exists(path):
+		var scene: Node = (load(path) as PackedScene).instantiate()
+		var node := scene.find_child(part, true, false)
+		if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+			var mesh_view: MeshInstance3D = node
+			var place := Transform3D.IDENTITY
+			var up_the: Node = mesh_view
+			while up_the != scene and up_the is Node3D:
+				place = (up_the as Node3D).transform * place
+				up_the = up_the.get_parent()
+			var box := place * mesh_view.mesh.get_aabb()
+			var foot := Vector3(box.get_center().x, box.position.y,
+					box.get_center().z)
+			found = [mesh_view.mesh, Transform3D(place.basis,
+					place.origin - foot)]
+		scene.free()
+	if found.is_empty():
+		print("[краєвид] ‼ немає «%s» у %s" % [part, path])
+	_scan_parts[key] = found
+	return found
+
+
+## Рослина чи камінь зі скану.
+##
+## Камінь трохи втоплений у землю — на п'яту частину висоти: камінь,
+## що стоїть на ґрунті, як на столі, читається бутафорією, а в природі
+## він завжди сидить у землі.
+func _scan_node(spec: Dictionary) -> Node:
+	var names := str(spec["model"]).split(":")
+	var kind := str(spec.get("вид", ""))
+	var height: float = spec["height"]
+	var by: float = float(spec.get("розмір", 1.0))
+	var headless := DisplayServer.get_name() == "headless"
+	var through := _walk_through(spec)
+	if through and headless:
+		return null
+	var holder: Node3D
+	if through:
+		holder = Node3D.new()
+		holder.name = _named("Кущ" if kind == "кущ" else "Камінь")
+	else:
+		var body := StaticBody3D.new()
+		body.name = _named("Камінь")
+		var wall := CollisionShape3D.new()
+		wall.name = "Стіна"
+		var shape := CylinderShape3D.new()
+		var wide: float = float(names[3]) if names.size() > 3 else 1.0
+		shape.radius = clampf(wide * by * 0.38, 0.3, 1.8)
+		shape.height = height
+		wall.shape = shape
+		wall.position = Vector3(0, height * 0.5, 0)
+		body.add_child(wall)
+		holder = body
+	holder.position = spec["at"]
+	add_child(holder)
+	if headless:
+		return holder
+	var piece := _scan_piece(names[1], names[2])
+	if piece.is_empty():
+		return holder
+	var view := MeshInstance3D.new()
+	view.name = "Модель"
+	view.mesh = piece[0]
+	var inner: Transform3D = piece[1]
+	var turn := Transform3D(Basis(Vector3.UP, float(spec["spin"]))
+			.scaled(Vector3(by, by, by)), Vector3.ZERO)
+	view.transform = turn * inner
+	if kind in ["камінь", "камінець", "брила", "колода"]:
+		view.position.y -= height * 0.2
+	holder.add_child(view)
+	_near_only(holder)
+	if kind == "кущ":
+		_no_shadows(holder)
+		_wind_up(holder, height, true)
+	elif kind == "камінець":
+		_no_shadows(holder)
+	return holder
+
+
 ## Фотографічні хвойні: не модель, а два схрещені прямокутники з
 ## фотографією дерева й прозорим тлом.
 ##
@@ -1779,14 +2239,76 @@ const PLANTS := {
 const WIND := preload("res://scripts/wind.gdshader")
 
 const PHOTO_TREES := {
+	# Слово замовника 11.09.2026: «знайди більше дерев, і більших, і
+	# таких самих за розміром, але більш різноманітних». Було п'ять фото
+	# ялин OpenGameArt на весь ліс; тепер до них — картки, зняті збоку з
+	# фотосканів Poly Haven (ялиці, сосни з голим рудим стовбуром,
+	# листяне деревце), кожне дерево з трьох боків. Висота — справжня,
+	# з моделі; велетні — ті самі найбільші сосни й ялиці, збільшені до
+	# 26-31 м (на другому знімку замовника сосни саме такі).
 	"хвоя": [["Conifer1", 22.0], ["Conifer4", 17.0], ["Conifer5", 21.0],
-			["Conifer6", 18.0], ["Conifer7", 20.0]],
+			["Conifer6", 18.0], ["Conifer7", 20.0],
+			["Scan_fir_tree_01_a_0", 18.8],
+			["Scan_fir_tree_01_a_60", 18.8],
+			["Scan_fir_tree_01_a_120", 18.8],
+			["Scan_fir_tree_01_b_0", 14.0],
+			["Scan_fir_tree_01_b_60", 14.0],
+			["Scan_fir_tree_01_b_120", 14.0],
+			["Scan_fir_tree_01_c_0", 14.4],
+			["Scan_fir_tree_01_c_60", 14.4],
+			["Scan_fir_tree_01_c_120", 14.4],
+			["Scan_pine_tree_01_a_0", 20.3],
+			["Scan_pine_tree_01_a_60", 20.3],
+			["Scan_pine_tree_01_a_120", 20.3],
+			["Scan_pine_tree_01_b_0", 14.8],
+			["Scan_pine_tree_01_b_60", 14.8],
+			["Scan_pine_tree_01_b_120", 14.8],
+			["Scan_pine_tree_01_c_0", 17.4],
+			["Scan_pine_tree_01_c_60", 17.4],
+			["Scan_pine_tree_01_c_120", 17.4],
+			# велетні
+			["Scan_pine_tree_01_a_0", 30.0],
+			["Scan_pine_tree_01_a_60", 31.0],
+			["Scan_pine_tree_01_c_120", 26.0],
+			["Scan_fir_tree_01_a_0", 27.0],
+			["Scan_fir_tree_01_a_120", 28.0],
+			# листяне деревце — рідкий гість у хвойному гаю
+			["Scan_tree_small_02_0", 8.5], ["Scan_tree_small_02_60", 8.0],
+			["Scan_tree_small_02_120", 9.0]],
 	"хвоя в снігу": [["Conifer2", 19.0], ["Conifer3", 15.0]],
 	# Підріст — ті самі фотографії, тільки молодими деревцями. На
 	# референсах замовника під великими смереками скрізь стоять малі,
-	# і саме вони роблять ліс лісом, а не колонадою.
+	# і саме вони роблять ліс лісом, а не колонадою. Тепер до них —
+	# середні ялиці й сосни зі сканів (3-6 м) і саджанці (1,6-2,8 м).
 	"підріст": [["Conifer1", 3.4], ["Conifer4", 2.6], ["Conifer5", 3.0],
-			["Conifer6", 2.2], ["Conifer7", 2.8]],
+			["Conifer6", 2.2], ["Conifer7", 2.8],
+			["Scan_fir_sapling_medium_a_0", 4.8],
+			["Scan_fir_sapling_medium_a_60", 4.8],
+			["Scan_fir_sapling_medium_a_120", 4.8],
+			["Scan_fir_sapling_medium_b_0", 4.2],
+			["Scan_fir_sapling_medium_b_60", 4.2],
+			["Scan_fir_sapling_medium_b_120", 4.2],
+			["Scan_fir_sapling_medium_c_0", 3.2],
+			["Scan_fir_sapling_medium_c_60", 3.2],
+			["Scan_fir_sapling_medium_c_120", 3.2],
+			["Scan_pine_sapling_medium_a_0", 5.6],
+			["Scan_pine_sapling_medium_a_60", 5.6],
+			["Scan_pine_sapling_medium_a_120", 5.6],
+			["Scan_pine_sapling_medium_b_0", 4.5],
+			["Scan_pine_sapling_medium_b_60", 4.5],
+			["Scan_pine_sapling_medium_b_120", 4.5],
+			["Scan_pine_sapling_medium_c_0", 3.4],
+			["Scan_pine_sapling_medium_c_60", 3.4],
+			["Scan_pine_sapling_medium_c_120", 3.4],
+			["Scan_fir_sapling_a_0", 2.8], ["Scan_fir_sapling_a_60", 2.8],
+			["Scan_fir_sapling_b_0", 2.1], ["Scan_fir_sapling_b_60", 2.1],
+			["Scan_fir_sapling_c_0", 1.6], ["Scan_fir_sapling_c_60", 1.6],
+			["Scan_pine_sapling_small_a_0", 2.8],
+			["Scan_pine_sapling_small_a_60", 2.8],
+			["Scan_pine_sapling_small_b_0", 2.3],
+			["Scan_pine_sapling_small_b_60", 2.3],
+			["Scan_pine_sapling_small_c_0", 2.1],
+			["Scan_pine_sapling_small_c_60", 2.1]],
 	"суха хвоя": [["ConiferDead1", 17.0], ["ConiferDead2", 16.0],
 			["ConiferDead3", 15.0], ["ConiferDead5", 18.0],
 			["ConiferDead6", 14.0], ["ConiferDead7", 16.0],
@@ -1803,10 +2325,19 @@ var _photo_ready: Dictionary = {}
 func _photo_pair(name_of: String) -> Array:
 	if _photo_ready.has(name_of):
 		return _photo_ready[name_of]
-	var path := "res://models/nature/photo/%s.png" % name_of
 	var picture := Image.new()
+	var path := "res://models/nature/photo/%s.png" % name_of
 	var raw := FileAccess.get_file_as_bytes(path)
-	if raw.is_empty() or picture.load_png_from_buffer(raw) != OK:
+	var read := ERR_FILE_NOT_FOUND
+	if not raw.is_empty():
+		read = picture.load_png_from_buffer(raw)
+	else:
+		# Картки зі сканів — у WebP: 6 МБ замість 25 у PNG.
+		path = path.get_basename() + ".webp"
+		raw = FileAccess.get_file_as_bytes(path)
+		if not raw.is_empty():
+			read = picture.load_webp_from_buffer(raw)
+	if read != OK:
 		print("[краєвид] ‼ немає %s" % path)
 		_photo_ready[name_of] = []
 		return []
@@ -1821,44 +2352,134 @@ func _photo_pair(name_of: String) -> Array:
 			ImageTexture.create_from_image(picture))
 	# Велике дерево гойдається менше за травинку — і за розмахом, і за
 	# темпом: у крони більше інерції.
-	var small: bool = name_of.begins_with("Conifer") == false
-	paint.set_shader_parameter("sway", 0.030 if not small else 0.075)
-	paint.set_shader_parameter("speed", 0.85 if not small else 1.5)
-	var mesh := _cross_mesh(wide)
-	_photo_ready[name_of] = [mesh, paint]
+	# Малі — лише метрові саджанці; решта сканів — великі дерева, і
+	# гойдатись як травинка їм не можна.
+	var small: bool = name_of.contains("sapling") \
+			and not name_of.contains("medium")
+	# 0,030 давало на двадцятиметровій ялині ~0,3 м на кінчику — проба
+	# (11.09.2026) ледь відрізнила це від шуму кадру: 2,0% пікселів за
+	# 1,5 с. Замовник просив, щоб вітерець колихав і дерева, тож 0,045:
+	# ~0,45 м у середньому пориві, до 0,9 м у сильному.
+	paint.set_shader_parameter("sway", 0.045 if not small else 0.075)
+	paint.set_shader_parameter("speed", 1.0 if not small else 1.5)
+	var mesh := _crown_mesh(wide)
+	_photo_ready[name_of] = [mesh, paint, _bark_paint(paint)]
 	return _photo_ready[name_of]
 
 
-## Хрест із двох площин із СФЕРИЧНИМИ нормалями.
+## Кора стовбура — той самий вітер, що й у крони (інакше верх стовбура
+## відставав би від гілок), тільки непрозора й без світла крізь хвою.
+var _barks: Dictionary = {}
+
+
+func _bark_paint(crown: ShaderMaterial) -> ShaderMaterial:
+	var key := "%.3f|%.3f" % [float(crown.get_shader_parameter("sway")),
+			float(crown.get_shader_parameter("speed"))]
+	if _barks.has(key):
+		return _barks[key]
+	var bark := ShaderMaterial.new()
+	bark.shader = WIND
+	# Фото кори яскраве, а стовбур у тіні власної крони — удвічі темніший.
+	bark.set_shader_parameter("albedo_tex", _raw_texture(BARK % "Color", 0.5))
+	var bumps := _raw_texture(BARK % "Normal")
+	if bumps != null:
+		bark.set_shader_parameter("normal_tex", bumps)
+		bark.set_shader_parameter("use_normal", true)
+	bark.set_shader_parameter("sway", crown.get_shader_parameter("sway"))
+	bark.set_shader_parameter("speed", crown.get_shader_parameter("speed"))
+	bark.set_shader_parameter("scissor", 0.0)
+	bark.set_shader_parameter("through", Color(0, 0, 0))
+	_barks[key] = bark
+	return bark
+
+
+## Кора сосни — ambientCG Bark014 (CC0), рудувато-бура, як стовбури на
+## другому знімку замовника.
+const BARK := "res://models/nature/bark/Bark014_%s.jpg"
+
+
+static func _raw_texture(path: String, bright := 1.0) -> ImageTexture:
+	var raw := FileAccess.get_file_as_bytes(path)
+	var picture := Image.new()
+	if raw.is_empty() or picture.load_jpg_from_buffer(raw) != OK:
+		print("[краєвид] ‼ немає %s" % path)
+		return null
+	if bright != 1.0:
+		picture.adjust_bcs(bright, 1.0, 1.0)
+	picture.generate_mipmaps()
+	return ImageTexture.create_from_image(picture)
+
+
+## Крона з ШЕСТИ напівплощин навколо осі й стовбур із корою.
 ##
-## Нормаль строго вгору робила крону пласкою дошкою: світло її майже не
-## брало, і замовник це побачив одразу («освітлення зовсім не
-## опрацьовується»). Тому нормаль у кожній вершині дивиться від осі
-## дерева назовні й трохи вгору — так, ніби крона куля. Це звичайний
-## прийом для листя-карток: картка лишається карткою, а світло лягає
-## на неї, як на об'єм.
-static func _cross_mesh(wide: float) -> ArrayMesh:
+## Було (06.09.2026): хрест із двох площин. Збоку — дерево, але згори,
+## під 50° камери гравця, — плаский хрест, а стовбура майже не видно.
+## Знімки замовника (11.09.2026) — об'ємні смереки й сосни з голими
+## рудими стовбурами. Тож тепер шість напівплощин по 60°, на кожній
+## половина фото від осі назовні (парні — права половина, непарні —
+## ліва): з будь-якого боку видно кілька силуетів одразу, а згори
+## замість хреста — зірка. Під ними — справжній стовбур із корою до 0,8
+## висоти. 26 трикутників на дерево замість чотирьох: на світі з
+## двадцятьма тисячами дерев це все одно менше, ніж одна купка трави.
+##
+## Нормалі СФЕРИЧНІ, як і були: нормаль строго вгору робила крону
+## пласкою дошкою (слово замовника 06.09.2026 про освітлення).
+static func _crown_mesh(wide: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var middle := Vector3(0, 0.55, 0)
-	for turn: float in [0.0, PI * 0.5]:
-		var side := Vector3(cos(turn), 0, sin(turn)) * wide * 0.5
-		var made: Array[Vector3] = [side * -1.0, side,
-				side + Vector3(0, 1, 0), side * -1.0 + Vector3(0, 1, 0)]
-		var uvs := [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0),
-				Vector2(0, 0)]
+	for k in 6:
+		var turn := k * PI / 3.0 + 0.3
+		var out := Vector3(cos(turn), 0, sin(turn)) * wide * 0.5
+		var edge_u: float = 1.0 if k % 2 == 0 else 0.0
+		var made: Array[Vector3] = [Vector3.ZERO, out, out + Vector3.UP,
+				Vector3.UP]
+		var uvs := [Vector2(0.5, 1), Vector2(edge_u, 1), Vector2(edge_u, 0),
+				Vector2(0.5, 0)]
 		for i: int in [0, 1, 2, 0, 2, 3]:
-			var out := (made[i] - middle).normalized()
-			st.set_normal((out * 0.75 + Vector3.UP * 0.45).normalized())
+			var bent := (made[i] - middle + out * 0.3).normalized()
+			st.set_normal((bent * 0.75 + Vector3.UP * 0.45).normalized())
 			st.set_uv(uvs[i])
 			st.add_vertex(made[i])
-	return st.commit()
+	var mesh := st.commit()
+	var bark := SurfaceTool.new()
+	bark.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 7
+	for s in sides:
+		var a0 := TAU * s / sides
+		var a1 := TAU * (s + 1) / sides
+		# До 0,6 висоти, не 0,8: угорі фото смереки рідке, і стовбур
+		# стирчав над кроною світлою жердиною (знімок 11.09.2026).
+		var ring := [[a0, 0.0, 0.012, float(s)], [a1, 0.0, 0.012, s + 1.0],
+				[a1, 0.6, 0.003, s + 1.0], [a0, 0.6, 0.003, float(s)]]
+		for i: int in [0, 1, 2, 0, 2, 3]:
+			var one: Array = ring[i]
+			var a: float = one[0]
+			bark.set_normal(Vector3(cos(a), 0.15, sin(a)).normalized())
+			bark.set_uv(Vector2(float(one[3]) / sides, float(one[1]) * 12.0))
+			bark.add_vertex(Vector3(cos(a) * float(one[2]), one[1],
+					sin(a) * float(one[2])))
+	bark.generate_tangents()
+	bark.commit(mesh)
+	return mesh
 
 
 ## Одна рослина. Розмір — множник до власної висоти моделі, не «підтягти
 ## до N метрів»: у наборі дерево вже сім-девʼять метрів, і природний
 ## розкид дає саме легка різниця в розмірі, а не однакова висота.
 func _place_plant(at: Vector3, kind: String, size: float) -> void:
+	# Трава й квіти світу 2 — це різнотрав'я (`meadow.gd`), а не
+	# поодинокі моделі на сітці 12 м.
+	if _grid > 0 and (kind == "трава" or kind == "квіти"):
+		return
+	if _grid > 0 and SCANS.has(kind):
+		var scans: Array = SCANS[kind]
+		var one: Array = scans[randi() % scans.size()]
+		var by: float = float(one[4]) * size
+		_place_tree(at, float(one[2]) * by, "", "",
+				"скан:%s:%s:%.2f" % [one[0], one[1], float(one[3])],
+				randf() * TAU, kind, by)
+		return
 	if PHOTO_TREES.has(kind):
 		var photo: Array = PHOTO_TREES[kind]
 		var one: Array = photo[randi() % photo.size()]
@@ -2019,7 +2640,8 @@ const TREE_MODEL_HEIGHT := 8.0
 ## у якому спотикаєшся об кожен кущ, не ліс, а смуга перешкод.
 func _walk_through(spec: Dictionary) -> bool:
 	var kind := str(spec.get("вид", ""))
-	if kind in ["кущ", "трава", "квіти", "камінець", "підріст"]:
+	if kind in ["кущ", "трава", "квіти", "камінець", "підріст", "пень",
+			"колода"]:
 		return true
 	return kind == "камінь" and float(spec.get("height", 9.0)) < 1.6
 
@@ -2029,6 +2651,8 @@ func _tree(spec: Dictionary) -> Node:
 	var height: float = spec["height"]
 	var bark: String = spec["bark"]
 	var leaves: String = spec["leaves"]
+	if str(spec["model"]).begins_with("скан:"):
+		return _scan_node(spec)
 	if _walk_through(spec):
 		# Серверові його нема навіщо взагалі: нема зіткнення — нема й вузла.
 		if DisplayServer.get_name() == "headless":
@@ -2073,7 +2697,8 @@ func _tree(spec: Dictionary) -> Node:
 				var flat := MeshInstance3D.new()
 				flat.name = "Крона"
 				flat.mesh = pair[0]
-				flat.material_override = pair[1]
+				flat.set_surface_override_material(0, pair[1])
+				flat.set_surface_override_material(1, pair[2])
 				flat.scale = Vector3(height, height, height)
 				flat.rotation.y = spec["spin"]
 				flat.cast_shadow = \

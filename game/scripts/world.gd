@@ -98,6 +98,7 @@ func _ready() -> void:
 	actions = Actions.new(creatures, vision, combat, link)
 	actions.goods = data.items
 	mobs = MobAI.new(creatures, combat)
+	mobs.sleep_far = true
 	spawner = Spawner.new(creatures, self, data)
 	shop = Shop.new(data)
 	warehouse = Warehouse.new()
@@ -124,6 +125,8 @@ func _ready() -> void:
 		if OS.get_cmdline_user_args().has("--полігон"):
 			_range()
 		else:
+			# Зони з даних (світ 2) сплять, доки поруч немає гравця.
+			spawner.dormant = not data.map.get("зони появи", []).is_empty()
 			spawner.start(_zones())
 		_mark_ready()
 		print("[світ] сервер чекає гравців")
@@ -159,9 +162,13 @@ func _mark_ready() -> void:
 		print("[світ] ‼ не вдалось записати мітку %s: %s"
 				% [READY_MARK, error_string(FileAccess.get_open_error())])
 		return
+	# «світ» — на якій мапі сервер збудований. Стартова сторінка звіряє його
+	# зі своїм і не пускає в гру, якщо не збіглось: інакше персонаж у
+	# чужому рельєфі під землею (слово замовника 11.09.2026).
 	file.store_string(JSON.stringify({
 			"номер": OS.get_process_id(),
 			"порт": Net.PORT,
+			"світ": GameData.map_path().get_file(),
 			"коли": int(Time.get_unix_time_from_system())}))
 
 
@@ -210,8 +217,37 @@ func _exit_tree() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
 
 
+## Скільки коштує кадр сервера — щоб це було число, а не здогадка (P2).
+## Раз на хвилину, перший — за 10 с від старту.
+var _perf_sum := 0
+var _perf_ticks := 0
+var _perf_next := 10.0
+
+
+func _perf_tick(spent_usec: int) -> void:
+	_perf_sum += spent_usec
+	_perf_ticks += 1
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < _perf_next:
+		return
+	var alive := 0
+	var awake := 0
+	for id in creatures:
+		if id < 0 and creatures[id].is_alive():
+			alive += 1
+			if not creatures[id].asleep:
+				awake += 1
+	print("[сервер] кадр фізики %.2f мс у середньому (%d кадрів) · "
+			% [_perf_sum / 1000.0 / maxi(1, _perf_ticks), _perf_ticks]
+			+ "монстрів живих %d, не сплять %d" % [alive, awake])
+	_perf_sum = 0
+	_perf_ticks = 0
+	_perf_next = now + 60.0
+
+
 func _physics_process(delta: float) -> void:
 	if Net.is_server:
+		var tick_from := Time.get_ticks_usec()
 		for a in creatures.values():
 			a.server_step(delta)
 		for id in creatures:
@@ -233,6 +269,7 @@ func _physics_process(delta: float) -> void:
 		if data.poll(delta):
 			print("[дані] нові числа роздано монстрам: %d"
 					% spawner.apply_tuning())
+		_perf_tick(Time.get_ticks_usec() - tick_from)
 		return
 
 	# Без живого з'єднання номера немає, і питати його — помилка в журнал
@@ -351,6 +388,28 @@ func client_which_world(server_map: String) -> void:
 	push_error(shout)
 	if hud != null and hud.has_method("notice"):
 		hud.notice("‼ різні світи: сервер %s, клієнт %s" % [server_map, mine])
+	# Сервер головний (P1): у чужому рельєфі гравець під землею, і навіть
+	# «повернутися в місто» ставить його в місто ЧУЖОГО світу — виходу
+	# немає (слово замовника 11.09.2026). Тож не лишаємо його там, а
+	# перезапускаємо клієнт у світі сервера.
+	var user := Array(OS.get_cmdline_user_args())
+	user.erase("--світ2")
+	if server_map == GameData.MAP2_PATH.get_file():
+		user.append("--світ2")
+	var engine := Array(OS.get_cmdline_args())
+	var cut := engine.find("--")
+	if cut >= 0:
+		engine = engine.slice(0, cut)
+	# Шлях до гри — явно: рушій не повертає `--path` серед своїх
+	# аргументів, і без нього перезапущений клієнт, піднятий з кореня
+	# репозиторію (`run.sh`), відкрив би менеджер проєктів, а не гру.
+	if not engine.has("--path"):
+		engine = ["--path", ProjectSettings.globalize_path("res://")] + engine
+	print("[світ] перезапускаю клієнт у світі сервера (%s). Щоб грати в "
+			% server_map + "іншому — зупини сервер на стартовій сторінці й "
+			+ "підніми знову з потрібним світом")
+	OS.set_restart_on_exit(true, PackedStringArray(engine + ["--"] + user))
+	get_tree().quit()
 
 
 ## Увійти в гру без бази: як було до кроку 5. Якщо база є, цей шлях
@@ -694,8 +753,19 @@ func client_shrine(at: int, stage: int) -> void:
 ## Не плутати зі «святинею» (П-153) — точками-порталами в підземелля:
 ## одне українське слово раніше позначало обидва об'єкти, розведено
 ## 05.09.2026 (П-158).
+## Благодатні місця стоять у сцені й не міняються. Шукати їх обходом
+## УСЬОГО дерева щокадру — на світі 2 це 21 тисяча вузлів краєвиду й
+## монстри — зайво; тепер раз на 5 с (300 кадрів фізики).
+var _grace_places: Array = []
+var _grace_found_at := -1000000
+
+
 func _tick_grace_places() -> void:
-	var places := find_children("*", "GracePlace", true, false)
+	var frame := Engine.get_physics_frames()
+	if frame - _grace_found_at >= 300:
+		_grace_found_at = frame
+		_grace_places = find_children("*", "GracePlace", true, false)
+	var places := _grace_places
 	if places.is_empty():
 		return
 	for id in creatures:

@@ -16,6 +16,27 @@ var _data: GameData
 var _slots: Array = []
 var _last_mob_id := 0
 
+## Сплячі зони (12.09.2026). Світ версії 2 заселено по всій суші — 360
+## зон, понад тисячу гнізд, — бо замовник «зовсім не зустрічав
+## монстрів»: вони стояли лише до 900 м від столиці. Тримати тисячу
+## живих монстрів серверові не під силу: заміряно 2992 МіБ пам'яті й
+## 20 мс на кадр (бюджет 16,7). Тож зона порожня, доки поруч немає
+## гравця, — як у MMO: гравець підходить ближче за `WAKE_RANGE`, і всі
+## гнізда зони заповнюються одразу (бачить він на 18-36 м, появи не
+## помітить); усі пішли далі за `SLEEP_RANGE` на `SLEEP_AFTER` секунд і
+## ніхто в зоні не б'ється — монстрів прибрано.
+## Вмикає світ лише для зон із даних (світ 2); світ версії 1 як був.
+var dormant := false
+const WAKE_RANGE := 150.0
+const SLEEP_RANGE := 220.0
+const SLEEP_AFTER := 20.0
+const LOOK_EVERY := 0.5
+var _zones: Array = []
+var _slots_of := {}          # зона -> [номери гнізд]
+var _awake := {}             # зона -> true, поки прокинута
+var _quiet := {}             # зона -> скільки секунд нікого поруч
+var _look_in := 0.0
+
 
 func _init(creatures: Dictionary = {}, world: Object = null,
 		data: GameData = null) -> void:
@@ -26,19 +47,33 @@ func _init(creatures: Dictionary = {}, world: Object = null,
 
 ## Перше заселення: у кожному гнізді одразу стоїть монстр.
 func start(zones: Array) -> void:
+	_zones = zones
 	for zone in zones:
 		for i in maxi(1, zone.count):
 			_slots.append({"zone": zone, "id": 0, "in": 0.0})
-			respawn(_slots.size() - 1)
-	print("[світ] зон появи %d, монстрів %d" % [zones.size(), _slots.size()])
+			_slots_of.get_or_add(zone, []).append(_slots.size() - 1)
+			if not dormant:
+				respawn(_slots.size() - 1)
+	if dormant:
+		print("[світ] зон появи %d, гнізд %d — зона спить, доки поруч "
+				% [zones.size(), _slots.size()] + "немає гравця")
+	else:
+		print("[світ] зон появи %d, монстрів %d" % [zones.size(), _slots.size()])
 
 
 func tick(delta: float) -> void:
+	if dormant:
+		_look_in -= delta
+		if _look_in <= 0.0:
+			_look_in = LOOK_EVERY
+			_wake_or_sleep()
 	for i in _slots.size():
 		var slot: Dictionary = _slots[i]
 		if slot["id"] != 0 and _creatures.has(slot["id"]):
 			continue
 		var zone: MobZone = slot["zone"]
+		if dormant and not _awake.get(zone, false):
+			continue
 		if slot["in"] <= 0.0:
 			slot["in"] = zone.respawn_after + randf() * zone.respawn_spread
 			slot["id"] = 0
@@ -71,6 +106,50 @@ func respawn(slot: int) -> int:
 	_slots[slot]["id"] = id
 	_slots[slot]["in"] = 0.0
 	return id
+
+
+## Розбудити зони, до яких підійшли, і приспати ті, від яких усі пішли.
+func _wake_or_sleep() -> void:
+	var players: Array[Vector3] = []
+	for id in _creatures:
+		if id > 0 and _creatures[id].is_alive():
+			players.append(_creatures[id].global_position)
+	for zone: MobZone in _zones:
+		var at := zone.global_position
+		var near := INF
+		for p: Vector3 in players:
+			near = minf(near, Vector2(p.x - at.x, p.z - at.z).length())
+		if near < WAKE_RANGE:
+			_quiet[zone] = 0.0
+			if not _awake.get(zone, false):
+				_awake[zone] = true
+				for i: int in _slots_of.get(zone, []):
+					var id: int = _slots[i]["id"]
+					if id == 0 or not _creatures.has(id):
+						respawn(i)
+		elif _awake.get(zone, false) and near > SLEEP_RANGE:
+			_quiet[zone] = float(_quiet.get(zone, 0.0)) + LOOK_EVERY
+			if _quiet[zone] >= SLEEP_AFTER:
+				_put_to_sleep(zone)
+
+
+## Прибрати монстрів зони. Якщо хтось із них б'ється чи лежить трупом —
+## зону не чіпаємо: засне пізніше, коли все вляжеться.
+func _put_to_sleep(zone: MobZone) -> void:
+	for i: int in _slots_of.get(zone, []):
+		var id: int = _slots[i]["id"]
+		if id != 0 and _creatures.has(id):
+			var m: Node = _creatures[id]
+			if not m.is_alive() or m.target_id != 0:
+				return
+	for i: int in _slots_of.get(zone, []):
+		var id: int = _slots[i]["id"]
+		if id != 0 and _creatures.has(id):
+			_world.remove(id)
+		_slots[i]["id"] = 0
+		_slots[i]["in"] = 0.0
+	_awake[zone] = false
+	_quiet[zone] = 0.0
 
 
 ## Скільки живих монстрів лишилось у цій зоні. Потрібне святиням

@@ -6,3 +6,12 @@ OpenGameArt.org — https://opengameart.org/content/high-res-tree-textures
 
 Атлас 3157x1024 розрізано на окремі дерева скриптом; більше нічого не
 змінювалось. Сім живих (Conifer1..7) і вісім сухих (ConiferDead*).
+
+Картки Scan_*.png (з 11.09.2026) — не фото, а знімки збоку фотосканів
+Poly Haven (https://polyhaven.com, CC0): fir_tree_01, pine_tree_01,
+fir_sapling, fir_sapling_medium, pine_sapling_small, pine_sapling_medium,
+tree_small_02. Кожне дерево знято з трьох боків (0°, 60°, 120°)
+ортографічною камерою в Godot, з прозорим тлом, центр кадру — основа
+стовбура, низ кадру — земля. Самі моделі (до 17 млн трикутників) у
+репозиторій не кладуться — лише картки.
+Ліцензія: https://polyhaven.com/license

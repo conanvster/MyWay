@@ -51,7 +51,8 @@ func _go() -> void:
 	_view.custom_minimum_size = _view.size
 	_view.map = JSON.parse_string(text)
 	box.body.add_child(_view)
-	_view.show_me(ME)
+	# Дивиться на північний схід — стрілка має показувати вгору-праворуч.
+	_view.show_me(ME, deg_to_rad(-45.0))
 	_view.center_on_me()
 	await process_frame
 

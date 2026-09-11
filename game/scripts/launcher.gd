@@ -14,6 +14,9 @@ const DB_URL := "http://127.0.0.1:3000"
 const CHECK_EVERY := 0.7
 ## Мітку кладе сам сервер, коли світ уже збудовано (`world.gd`).
 const READY_MARK := "user://сервер.json"
+## Світ сервера, якщо він не той, що в сторінки (з мітки); порожньо — збіг
+## або мітка ще без світу.
+var _clash := ""
 
 ## Порт зайнято: мережа сервера піднята.
 var _port_busy := false
@@ -156,6 +159,11 @@ func _check() -> void:
 	# Зелене — тільки коли світ уже стоїть. Порт займається раніше, ніж
 	# сервер прочитав дані й розставив монстрів.
 	_server_alive = _port_busy and not _ready_mark().is_empty()
+	# У якому світі сервер — з його ж мітки. Не той, що в сторінки, —
+	# у гру не пускаємо: там гравець опиниться під землею.
+	var theirs := str(_ready_mark().get("світ", "")) if _server_alive else ""
+	_clash = theirs if not theirs.is_empty() \
+			and theirs != GameData.map_path().get_file() else ""
 	# У консоль — при першому питанні й далі лише при зміні: сторінка
 	# питає щосемидесятих секунди, і рівний рядок щоразу перетворив би
 	# журнал на стрічку. Перший рядок потрібен, щоб людина, яка дивиться
@@ -194,11 +202,17 @@ func _paint() -> void:
 	elif _port_busy:
 		state = "підіймається…"
 		tint = Color(0.9, 0.75, 0.4)
+	if _server_alive and not _clash.is_empty():
+		state = "працює, але в іншому світі (%s) — зупини й підніми знову" \
+				% _clash
+		tint = Color(0.9, 0.45, 0.4)
 	_server_light.text = "сервер: %s" % state
 	_server_light.add_theme_color_override("font_color", tint)
-	_play.disabled = not _server_alive
+	_play.disabled = not _server_alive or not _clash.is_empty()
 	_play.text = "Зайти в гру" if _server_alive \
 			else "Зайти в гру (спершу сервер)"
+	if not _clash.is_empty():
+		_play.text = "Зайти в гру (сервер в іншому світі)"
 	# Поки порт зайнято, другий сервер підіймати нічим: він однаково не
 	# візьме порт, зате з'їсть під гігабайт пам'яті (пастка з CONTEXT.md).
 	_server_button.disabled = _port_busy
@@ -210,6 +224,13 @@ func _paint() -> void:
 func _start_server() -> void:
 	var args := ["--headless", "--path", ProjectSettings.globalize_path("res://"),
 			"--", "--server"]
+	# Сервер — у тому самому світі, що й ця сторінка. Доти сторінка
+	# піднімала його БЕЗ `--світ2`, навіть коли сама відкрита з ним: сервер
+	# будував світ версії 1, клієнт — версії 2, і персонаж з'являвся під
+	# землею (слово замовника 11.09.2026: «персонаж з'являється під землею,
+	# немає змоги навіть зробити телепорт в місто»).
+	if OS.get_cmdline_user_args().has("--світ2"):
+		args.append("--світ2")
 	if _db_alive:
 		args.append("--база")
 		args.append(DB_URL)

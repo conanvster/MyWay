@@ -204,7 +204,7 @@ func cast(me: int, key: String) -> bool:
 		# Довгий скіл читається, а не спрацьовує миттю (крок 2.3). Відкат
 		# піде тільки після того, як дочитає: збитий каст не садить скіл
 		# на відкат, інакше перервання карало б двічі.
-		a.start_cast(key, seconds, a.target_id)
+		a.start_cast(key, seconds, a.target_id, skill.move_while_casting)
 		a.busy_in = seconds
 		_link.to_watchers(me, &"client_cast", [me, skill.name, seconds])
 		return true

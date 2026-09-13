@@ -23,6 +23,7 @@ Net="*res://scripts/net.gd"
 3d_physics/layer_1="світ"
 3d_physics/layer_2="істоти"
 3d_physics/layer_3="мешканці"
+3d_physics/layer_4="святині"
 
 [physics]
 

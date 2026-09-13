@@ -60,6 +60,20 @@ static func level_color(diff: int) -> Color:
 	return Color(0.24, 0.38, 0.82)
 
 
+## Бафи й дебафи (замовник 13.09.2026: «хочу бачити, на кого я наклав
+## баф; якщо на себе — трохи нижче черги, якщо на монстрах — під іменем
+## монстра з кількістю хп»). Комірка — значок скіла, від якого стан, у
+## зеленій рамці баф, у червоній дебаф, унизу секунди.
+const STATE_SIDE := 28.0
+const STATE_GAP := 4.0
+const BUFF_EDGE := Color(0.36, 0.78, 0.34)
+const DEBUFF_EDGE := Color(0.86, 0.26, 0.2)
+const STAT_TITLES := {"strength": "сила", "agility": "спритність",
+		"stamina": "витривалість", "intellect": "інтелект", "sense": "чуття"}
+
+var _my_states: Control
+var _target_states: Control
+
 var _world: Node
 ## Скільки в кого здоров'я всього: сервер шле це, коли істота з'являється.
 var _max_hp: Dictionary = {}
@@ -1791,6 +1805,13 @@ func _build_vitals() -> void:
 		box.add_child(icon)
 		_queue_cells.append({"label": label, "icon": icon})
 
+	# Свої бафи — рядком трохи нижче черги.
+	_my_states = Control.new()
+	_my_states.name = "Мої стани"
+	_my_states.position = Vector2(QUEUE_GAP, QUEUE_SIDE + 6.0)
+	_my_states.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(_my_states)
+
 
 ## Координати гравця — праворуч угорі. Клієнт нічого не рахує: позицію
 ## бере з власного вузла, той самий `global_position`, за яким ходять і
@@ -1825,6 +1846,12 @@ func _build_target() -> void:
 			.position = Vector2(0, 22)
 	_target_fill = _plate(Vector2(WIDE, 14), TARGET_COLOR, _target_box)
 	_target_fill.position = Vector2(0, 22)
+	# Стани цілі — під її ім'ям і смугою здоров'я.
+	_target_states = Control.new()
+	_target_states.name = "Стани цілі"
+	_target_states.position = Vector2(0, 46)
+	_target_states.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_target_box.add_child(_target_states)
 
 
 ## Панель 1-7 і черга дій — унизу посередині (П-20, П-38, П-58).
@@ -1964,6 +1991,66 @@ func set_target(id: int) -> void:
 		# рівнів. Показ не рахує нічого сам (П-08).
 		_target_name.text = _world.title_of(id)
 		_target_name.modulate = _world.tint_of(id)
+
+
+## Бафи й дебафи від сервера: свої й цілі. Стани цілі показуємо, лише
+## якщо сервер говорить про ту саму ціль, що в рамці: відповідь могла
+## розминутися з новим вибором.
+func set_states(mine: Array, target: int, theirs: Array) -> void:
+	if _my_states != null:
+		_fill_states(_my_states, mine)
+	if _target_states != null:
+		_fill_states(_target_states, theirs if target == _target else [])
+
+
+func _fill_states(holder: Control, row: Array) -> void:
+	for child in holder.get_children():
+		holder.remove_child(child)
+		child.queue_free()
+	for i in row.size():
+		var one: Array = row[i]
+		var title := str(one[0])
+		var factor := float(one[2])
+		var left := int(one[3])
+		var cell := Control.new()
+		cell.position = Vector2(i * (STATE_SIDE + STATE_GAP), 0.0)
+		cell.size = Vector2(STATE_SIDE, STATE_SIDE)
+		# PASS, а не IGNORE: інакше підказка під мишею не з'явиться.
+		cell.mouse_filter = Control.MOUSE_FILTER_PASS
+		cell.tooltip_text = "%s\n%s ×%.2f\n%s" % [title,
+				STAT_TITLES.get(str(one[1]), str(one[1])), factor,
+				"поки живий" if left < 0 else "лишилось %d с" % left]
+		holder.add_child(cell)
+		_plate(Vector2(STATE_SIDE, STATE_SIDE),
+				BUFF_EDGE if factor >= 1.0 else DEBUFF_EDGE, cell)
+		var inner := _plate(Vector2(STATE_SIDE - 4.0, STATE_SIDE - 4.0),
+				Color(0, 0, 0, 0.8), cell)
+		inner.position = Vector2(2, 2)
+		# Значок того скіла, від якого стан: назва стану й ключ скіла
+		# різняться лише пробілом і дефісом.
+		var art := SkillIcons.of(title.replace(" ", "-"))
+		if art == null:
+			art = SkillIcons.of(title)
+		if art != null:
+			var icon := TextureRect.new()
+			icon.texture = art
+			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.stretch_mode = TextureRect.STRETCH_SCALE
+			icon.position = Vector2(2, 2)
+			icon.size = Vector2(STATE_SIDE - 4.0, STATE_SIDE - 4.0)
+			icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			cell.add_child(icon)
+		else:
+			var letters := ""
+			for word in title.split(" ", false):
+				letters += word.substr(0, 1).to_upper()
+			var mark := _text(12, cell)
+			mark.text = letters.substr(0, 2)
+			mark.position = Vector2(4, 4)
+		if left >= 0:
+			var seconds := _text(11, cell)
+			seconds.text = str(left)
+			seconds.position = Vector2(STATE_SIDE - 16.0, STATE_SIDE - 16.0)
 
 
 func forget(id: int) -> void:

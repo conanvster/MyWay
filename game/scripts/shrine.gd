@@ -61,6 +61,10 @@ const RUNE_MARKS := 5
 @export var shard_red := false
 
 var stage: Stage = Stage.ПІД_ОХОРОНОЮ
+## На скільки земля під порталом вища чи нижча за землю під святинею.
+## Ставить краєвид: портал за 5 м убік на схилі ховався в ґрунт, і
+## замовник 13.09.2026 «портала візуально не побачив».
+var portal_lift := 0.0
 
 var _shards: Node3D
 var _runes: Node3D
@@ -68,7 +72,9 @@ var _glow: OmniLight3D
 
 
 func _ready() -> void:
-	collision_layer = 1
+	# Шар 1 «світ» — не пройти крізь; шар 4 «святині» — щоб клік мишею
+	# її вибирав, як мешканця (замовник 13.09.2026: «не вибирається»).
+	collision_layer = 1 | 8
 	build()
 
 
@@ -139,7 +145,18 @@ func _show_stage() -> void:
 		# Рунний напис — знак «можна активувати», тобто вже зачищено.
 		_runes.visible = stage != Stage.ПІД_ОХОРОНОЮ
 	if _glow != null:
-		_glow.light_energy = 2.4 if stage == Stage.ПІД_ОХОРОНОЮ else 4.2
+		# Активована — світить найяскравіше й найдалі: видно, що ключ
+		# прийнято, ще до того, як помітиш портал.
+		match stage:
+			Stage.ПІД_ОХОРОНОЮ:
+				_glow.light_energy = 2.4
+				_glow.omni_range = 12.0
+			Stage.ЗАЧИЩЕНА:
+				_glow.light_energy = 4.2
+				_glow.omni_range = 12.0
+			_:
+				_glow.light_energy = 7.0
+				_glow.omni_range = 20.0
 
 	# Портал запалюється рівно на активації й гасне, якщо стан відкотили.
 	var gate: Node = get_node_or_null("Портал")
@@ -148,7 +165,7 @@ func _show_stage() -> void:
 		made.name = "Портал"
 		made.grade = grade
 		add_child(made)
-		made.position = PORTAL_AT
+		made.position = PORTAL_AT + Vector3(0.0, portal_lift, 0.0)
 	elif stage != Stage.АКТИВОВАНА and gate != null:
 		remove_child(gate)
 		gate.queue_free()

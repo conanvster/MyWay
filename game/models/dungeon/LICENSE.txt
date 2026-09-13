@@ -1,0 +1,4 @@
+Текстури підземель (П-190) — ambientCG.com, ліцензія CC0 1.0 (без обмежень).
+Узято 1K-JPG, у репозиторій покладено лише Color, NormalGL і Roughness.
+Bricks053 Bricks089 Bricks097 Plaster007 PavingStones147
+Ground109 Ground111 Rock058

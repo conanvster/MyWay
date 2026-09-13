@@ -25,6 +25,12 @@ var target := "жива"
 var from_level := 1
 var cast_points := 1.0
 var cooldown_points := 1.0
+## Наскільки швидко рухається той, хто читає цей скіл: 0 — стоїть, 0,5 —
+## удвічі повільніше. Слово замовника 13.09.2026: читання «повинно або
+## сповільнювати кастуючого, або повністю зупиняти», залежно від скіла,
+## і для всіх — монстрів теж (П-200). Повної швидкості не буває, тому
+## стеля 0,9, а без поля в даних — стоїть.
+var move_while_casting := 0.0
 ## Скільки коштує вивчити: руна плюс досвід (П-94).
 var rune := ""
 var learn_cost := 0
@@ -50,6 +56,8 @@ static func from_data(of_key: String, data: Dictionary) -> Skill:
 	s.from_level = int(data.get("з рівня", 1))
 	s.cast_points = float(data.get("каст", 1.0))
 	s.cooldown_points = float(data.get("відкат", 1.0))
+	s.move_while_casting = clampf(float(data.get("рух при читанні", 0.0)),
+			0.0, 0.9)
 	var learn: Dictionary = data.get("вивчення", {})
 	s.rune = learn.get("руна", "")
 	s.learn_cost = int(learn.get("досвід", 0))

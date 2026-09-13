@@ -336,29 +336,13 @@ func show_tag(text: String, tint: Color) -> void:
 ## Стрілка над вибраним (П-156): жовта, вертикально вниз, над підписом.
 ## Рамка цілі в HUD каже ЩО вибрано, але не каже, ЯКА фігура у світі це,
 ## якщо поруч кілька однакових на вигляд істот.
-const MARK_GAP := 0.35
-
-
+## З 13.09.2026 — ще й коло під ногами (`select_mark.gd`): замовник не
+## розумів, кого вибрав, стрілка була задрібна.
 func mark_as_target(on: bool) -> void:
-	var mark: Label3D = get_node_or_null("Мітка")
-	if not on:
-		if mark != null:
-			mark.queue_free()
-		return
-	if mark == null:
-		mark = Label3D.new()
-		mark.name = "Мітка"
-		mark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		mark.no_depth_test = false
-		mark.font_size = 64
-		mark.outline_size = 14
-		mark.outline_modulate = Color(0, 0, 0, 0.85)
-		mark.fixed_size = true
-		mark.pixel_size = 0.0009
-		mark.modulate = Color(1.0, 0.85, 0.0)
-		mark.text = "▼"
-		add_child(mark)
-	mark.position = Vector3(0.0, body_height() + TAG_HEIGHT + MARK_GAP, 0.0)
+	if on:
+		SelectMark.put(self, 0.8, body_height() + TAG_HEIGHT)
+	else:
+		SelectMark.clear(self)
 
 
 ## Наскільки істота висока. Потрібно, щоб підпис не вліз у голову.
@@ -443,6 +427,11 @@ func server_step(delta: float) -> void:
 
 	# Обрізаємо довжину: інакше підроблений намір дав би надшвидкість.
 	var raw_dir := Vector3(wanted.x, 0.0, wanted.y).limit_length(1.0)
+	# Читає скіл, який велить стояти (П-200): наміру йти немає зовсім — і
+	# обхід застрягання нижче не прийме нерухомість за «уперся в кут».
+	if is_casting() and casting_move <= 0.0:
+		raw_dir = Vector3.ZERO
+		_escape_left = 0.0
 	var dir := raw_dir
 
 	if _escape_left > 0.0:
@@ -473,6 +462,9 @@ func server_step(delta: float) -> void:
 	# mob_ai.gd), і саме тому непомічений гравець заходить у спину.
 	face_to(dir)
 	var speed := stats.move_speed()
+	# Читання сповільнює або зупиняє — як велить сам скіл (П-200).
+	if is_casting():
+		speed *= casting_move
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	move_and_slide()
@@ -592,12 +584,18 @@ func is_casting() -> bool:
 	return casting_key != ""
 
 
+## Частка швидкості, поки читає (П-200): ставить скіл при `start_cast`.
+var casting_move := 0.0
+
+
 ## Почати читання.
-func start_cast(key: String, seconds: float, target: int) -> void:
+func start_cast(key: String, seconds: float, target: int,
+		move_share: float = 0.0) -> void:
 	casting_key = key
 	casting_left = seconds
 	casting_full = seconds
 	casting_target = target
+	casting_move = move_share
 
 
 ## Кинути читання — і коли дочитав, і коли збили.
@@ -606,6 +604,7 @@ func stop_cast() -> void:
 	casting_left = 0.0
 	casting_full = 0.0
 	casting_target = 0
+	casting_move = 0.0
 
 
 func is_alive() -> bool:

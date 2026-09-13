@@ -47,6 +47,8 @@ var spawner: Spawner
 var shop: Shop
 var warehouse: Warehouse
 var runes: Runes
+## Відкриті підземелля за порталами святинь (П-190).
+var dungeons: Dungeons
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
@@ -71,6 +73,8 @@ var _stats_mark: Dictionary = {}
 var _skills_mark: Dictionary = {}
 ## І для вмісту торби.
 var _bag_mark: Dictionary = {}
+## І для бафів-дебафів: своїх і цілі.
+var _states_mark: Dictionary = {}
 
 
 func _ready() -> void:
@@ -104,6 +108,9 @@ func _ready() -> void:
 	warehouse = Warehouse.new()
 	runes = Runes.new(data.skills)
 	view = ClientView.new(creatures, self, link)
+	dungeons = Dungeons.new()
+	dungeons.name = "Підземелля"
+	add_child(dungeons)
 
 	# Краєвид будується однаково й на сервері, і в клієнта: серверові
 	# потрібні стіни, щоб крізь будинки не бігали, клієнтові — картинка.
@@ -353,6 +360,35 @@ func _serve_self(peer: int) -> void:
 	if _bag_mark.get(peer, "") != bag_mark:
 		_bag_mark[peer] = bag_mark
 		send_things(peer)
+	# Бафи й дебафи — свої й цілі (замовник 13.09.2026: «хочу бачити, на
+	# кого я наклав баф»). Лише коли змінились; секунди в відбитку цілі,
+	# тож поки стан тикає — раз на секунду, а не двадцять.
+	var target_id: int = me.target_id
+	var target: Node = creatures.get(target_id) if target_id != 0 else null
+	if target == null or not vision.sees(peer, target_id):
+		target = null
+		target_id = 0
+	var mine := states_row(me)
+	var theirs := states_row(target) if target != null else []
+	var states_mark := "%s|%d|%s" % [mine, target_id, theirs]
+	if _states_mark.get(peer, "") != states_mark:
+		_states_mark[peer] = states_mark
+		rpc_id(peer, "client_states", mine, target_id, theirs)
+
+
+## Стани істоти рядками для клієнта: назва, стат, множник, секунд
+## лишилось і всього (-1 — «поки живий», як баф монстра при появі).
+## Статична — щоб проба кликала без світу й мережі.
+static func states_row(who: Node) -> Array:
+	var row: Array = []
+	for state: State in who.states.all():
+		var forever := state.is_forever()
+		row.append([state.name, state.stat, snappedf(state.factor, 0.01),
+				-1 if forever else ceili(state.left),
+				-1 if forever else ceili(state.full)])
+	row.sort_custom(func(a: Array, b: Array) -> bool:
+			return str(a[0]) < str(b[0]))
+	return row
 
 
 ## Скільки лишилось відкату на кожній комірці панелі. Рахує сервер, бо
@@ -747,6 +783,114 @@ func client_shrine(at: int, stage: int) -> void:
 	all[at].set_stage(stage)
 
 
+## Портал святині веде в підземелля (П-190, Ф4′). Коло порталу плюс 4 м:
+## було плюс 1, і замовник 13.09.2026 двічі дістав «портал задалеко» —
+## поки вікно запрошення стояло відкрите, персонаж ішов далі за кліком і
+## виходив із кола. Тепер клієнт ще й зупиняє його на запрошенні.
+const PORTAL_REACH := Portal.RING + 4.0
+
+
+## Увійти в підземелля за порталом святині `at`.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_enter_dungeon(at: int) -> void:
+	if not Net.is_server:
+		return
+	enter_dungeon(multiplayer.get_remote_sender_id(), at)
+
+
+## Те саме без мережі — щоб перевірялось пробою (див. `activate_shrine`).
+##
+## Перше входження ВІДКРИВАЄ підземелля: випадковий шаблон із бібліотеки
+## (рівно випадково — П-191), зерно, заселення за грейдом святині. Далі
+## будь-хто заходить у те саме, доки воно стоїть: «відкрити й зачистити
+## можуть різні гравці» (П-153).
+func enter_dungeon(id: int, at: int) -> void:
+	var a: Node = creatures.get(id)
+	var land: Node = get_node_or_null("Landscape")
+	if a == null or not a.is_alive() or land == null \
+			or not land.has_method("shrines"):
+		return
+	var all: Array = land.shrines()
+	if at < 0 or at >= all.size():
+		return
+	var shrine: Shrine = all[at]
+	var gate: Portal = shrine.portal()
+	if shrine.stage != Shrine.Stage.АКТИВОВАНА or gate == null:
+		link.notice(id, "портал не відкрито")
+		return
+	var flat := Vector2(a.global_position.x - gate.global_position.x,
+			a.global_position.z - gate.global_position.z).length()
+	if flat > PORTAL_REACH:
+		link.notice(id, "портал задалеко")
+		return
+	if not dungeons.open.has(at):
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		var template := dungeons.book.pick(rng)
+		var with_seed := rng.randi() % 1000000000
+		if dungeons.raise(at, template, with_seed, shrine.grade).is_empty():
+			link.notice(id, "‼ підземелля не збудувалось")
+			return
+		spawner.add_zones(dungeons.zones_for(at, data.mobs))
+		link.to_all(&"client_dungeon", [at, template, with_seed, shrine.grade])
+	var entry: Dictionary = dungeons.open[at]
+	a.place_at(dungeons.entry_point(at), 0.0)
+	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
+	link.notice(id, "підземелля «%s» · ворота %s"
+			% [entry["plan"].title, entry["grade"]])
+
+
+## Вийти з підземелля — з кола «Вихід» назад до святині.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_leave_dungeon() -> void:
+	if not Net.is_server:
+		return
+	leave_dungeon(multiplayer.get_remote_sender_id())
+
+
+func leave_dungeon(id: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var at := dungeons.index_at(a.global_position.x, a.global_position.z)
+	if at < 0:
+		return
+	var exit: Portal = dungeons.open[at]["exit"]
+	var flat := Vector2(a.global_position.x - exit.global_position.x,
+			a.global_position.z - exit.global_position.z).length()
+	if flat > PORTAL_REACH:
+		link.notice(id, "вихід задалеко")
+		return
+	var land: Node = get_node_or_null("Landscape")
+	var shrine: Shrine = land.shrines()[at]
+	var gate: Portal = shrine.portal()
+	var from: Vector3 = gate.global_position if gate != null \
+			else shrine.global_position
+	# Поруч із колом, а не в ньому: інакше одразу знову «увійти?».
+	var back := from + Vector3(0.0, 0.0, Portal.RING + 2.0)
+	back.y = ground_at(back.x, back.z) + 1.0
+	a.place_at(back, 0.0)
+	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
+	link.notice(id, "повернувся до святині")
+
+
+## Розповісти новому гравцеві, які підземелля вже відкриті: сервер шле
+## лише зміни, а ці сталися до його приходу (та сама пастка, що зі
+## святинями).
+func _tell_dungeons(peer: int) -> void:
+	for at: int in dungeons.open:
+		var entry: Dictionary = dungeons.open[at]
+		link.to_one(peer, &"client_dungeon", [at, entry["template"],
+				entry["seed"], entry["grade"]])
+
+
+## Сервер відкрив підземелля — клієнт будує те саме з тих самих чисел.
+@rpc("authority", "call_remote", "reliable")
+func client_dungeon(at: int, template: String, with_seed: int,
+		grade: String) -> void:
+	dungeons.raise(at, template, with_seed, grade)
+
+
 ## Благодатні місця: зони, де відновлюють швидко (П-113). Перевіряємо
 ## щокадру — їх одиниці, а гравців десяток.
 ##
@@ -836,6 +980,7 @@ func _on_joined(id: int) -> void:
 	# 6 м запасу, як і в spawner.gd: падає сам, сідає на видиму поверхню.
 	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 6.0, 0))
 	_tell_shrines(id)
+	_tell_dungeons(id)
 	a.account = _signed.get(id, {}).get("логін", "")
 	# Прочитане з бази накладається, щойно прийде відповідь: гра не жде
 	# базу, а база не жде гру.
@@ -1406,6 +1551,7 @@ func _on_left(id: int) -> void:
 	_stats_mark.erase(id)
 	_skills_mark.erase(id)
 	_bag_mark.erase(id)
+	_states_mark.erase(id)
 	vision.drop_watcher(id)
 	remove(id)
 	print("[світ] пішов %d, лишилось %d" % [id, creatures.size()])
@@ -1677,6 +1823,13 @@ func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 		hud.update_level(level, respect, need)
 
 
+## Бафи й дебафи: свої й вибраної цілі (рядки — `_states_row`).
+@rpc("authority", "call_remote", "reliable")
+func client_states(mine: Array, target: int, theirs: Array) -> void:
+	if hud != null:
+		hud.set_states(mine, target, theirs)
+
+
 ## Хтось почав читати скіл: у нього над головою смуга.
 @rpc("authority", "call_remote", "reliable")
 func client_cast(id: int, name: String, seconds: float) -> void:
@@ -1820,6 +1973,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Висота землі в точці — питає спавнер, щоб не садити монстрів у ґрунт.
 func ground_at(x: float, z: float) -> float:
+	# У підземеллі земля — його підлога, а не рельєф світу під ним
+	# (П-190): інакше монстр з'являвся б за 40 м під склепом.
+	if dungeons != null:
+		var below := dungeons.floor_at(x, z)
+		if not is_nan(below):
+			return below
 	var land: Node = get_node_or_null("Landscape")
 	return land.height_at(x, z) if land != null \
 			and land.has_method("height_at") else 0.0

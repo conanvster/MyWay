@@ -170,8 +170,7 @@ var _asked_shrine := -1
 
 
 ## Запрошення активувати святиню ключем (П-153). Друге запрошення — на
-## сам телепорт — окреме, і його ще немає: воно з'явиться разом із
-## підземеллям за порталом.
+## сам телепорт — окреме: `_watch_portals` нижче (П-190).
 func _watch_shrines(delta: float) -> void:
 	_shrine_clock -= delta
 	if _shrine_clock > 0.0:
@@ -199,15 +198,101 @@ func _watch_shrines(delta: float) -> void:
 	if near == _asked_shrine:
 		return
 	_asked_shrine = near
+	# Стати на місці, поки вікно відкрите: інакше персонаж іде далі за
+	# кліком, і на «так» сервер уже відповідає «задалеко».
+	me.walk_to = Vector3.ZERO
 	var shrine: Shrine = all[near]
 	_world.hud.ask_confirm(
 			"Активувати святиню ключем грейду %s?" % shrine.grade,
 			func() -> void: _link.to_server(&"ask_activate", [near]))
 
 
+var _portal_clock := 0.0
+## У якому підземеллі ми зараз (-1 — у світі) і що було до входу.
+var _in_dungeon := -1
+var _world_air: Environment = null
+var _lantern: OmniLight3D = null
+
+
+## Запрошення в підземелля й назад (П-190, Ф4′). Коло порталу саме пам'ятає,
+## хто вже в ньому стоїть (`Portal.entered`), тож «відмовився — вийди й
+## зайди знову» виходить само собою, як і вирішено в П-153.
+func _watch_portals(delta: float) -> void:
+	_portal_clock -= delta
+	if _portal_clock > 0.0:
+		return
+	_portal_clock = SHRINE_LOOK
+	var me: Node = _me()
+	if me == null or _world.hud == null or _world.dungeons == null:
+		return
+	var my_id: int = _world.multiplayer.get_unique_id()
+	var pos: Vector3 = me.global_position
+	var dungeons: Dungeons = _world.dungeons
+	_dress_for(dungeons.index_at(pos.x, pos.z), me)
+
+	var land: Node = _world.get_node_or_null("Landscape")
+	if land != null and land.has_method("shrines"):
+		var all: Array = land.shrines()
+		for i in all.size():
+			var gate: Portal = all[i].portal()
+			if gate == null or not gate.entered(my_id, pos):
+				continue
+			var at := i
+			me.walk_to = Vector3.ZERO
+			var go := func() -> void:
+				_link.to_server(&"ask_enter_dungeon", [at])
+			_world.hud.ask_confirm(
+					"Увійти в підземелля за воротами %s?" % gate.grade, go)
+			return
+	for at: int in dungeons.open:
+		var exit: Portal = dungeons.open[at]["exit"]
+		if not exit.entered(my_id, pos):
+			continue
+		me.walk_to = Vector3.ZERO
+		_world.hud.ask_confirm(
+				"Вийти з підземелля «%s»?" % dungeons.open[at]["plan"].title,
+				func() -> void: _link.to_server(&"ask_leave_dungeon"))
+		return
+
+
+## Усередині підземелля — його повітря, без сонця, і ліхтар довкола
+## гравця: згори, як дивиться камера гри, без нього поза свічками не
+## видно нічого (знімки 13.09.2026). Ліхтар — пропозиція виконавця, П-193.
+func _dress_for(at: int, me: Node) -> void:
+	if at >= 0 and (_lantern == null or not is_instance_valid(_lantern)):
+		_lantern = OmniLight3D.new()
+		_lantern.name = "Ліхтар"
+		_lantern.light_color = Color(1.0, 0.9, 0.75)
+		_lantern.light_energy = 1.2
+		_lantern.omni_range = 10.0
+		_lantern.position = Vector3(0.0, 2.2, 0.0)
+		me.add_child(_lantern)
+	elif at < 0 and _lantern != null and is_instance_valid(_lantern):
+		_lantern.queue_free()
+		_lantern = null
+	if at == _in_dungeon:
+		return
+	_in_dungeon = at
+	var sky := _world.get_node_or_null("Landscape/Небо") as WorldEnvironment
+	var sun := _world.get_node_or_null("Light") as DirectionalLight3D
+	if sun != null:
+		sun.visible = at < 0
+	if sky == null:
+		return
+	if _world_air == null:
+		_world_air = sky.environment
+	if at >= 0:
+		var plan: DungeonPlan = _world.dungeons.open[at]["plan"]
+		sky.environment = DungeonView.environment(
+				_world.dungeons.book.style_of(plan))
+	else:
+		sky.environment = _world_air
+
+
 func smooth(delta: float) -> void:
 	var k := 1.0 - exp(-SMOOTHING * delta)
 	_watch_shrines(delta)
+	_watch_portals(delta)
 	for id in _creatures:
 		var a: Node3D = _creatures[id]
 		var was := a.global_position
@@ -549,9 +634,9 @@ func click_at(where: Vector2) -> void:
 	var from := cam.project_ray_origin(where)
 	var query := PhysicsRayQueryParameters3D.create(
 			from, from + cam.project_ray_normal(where) * 200.0)
-	# Шари 2 «істоти» і 4 «мешканці»: клікати можна і по монстрах, і по
-	# людях у місті.
-	query.collision_mask = 2 | 4
+	# Шари 2 «істоти», 4 «мешканці» і 8 «святині»: клікати можна по
+	# монстрах, людях у місті й святинях.
+	query.collision_mask = 2 | 4 | 8
 	var space := _world.get_world_3d().direct_space_state
 	var hit: Dictionary = space.intersect_ray(query)
 	if hit.is_empty():
@@ -564,6 +649,9 @@ func click_at(where: Vector2) -> void:
 		# шкоди приходить вікно розмови (П-132). Окремої кнопки «говорити»
 		# не треба, і панель не росте від кожного нового мешканця.
 		_aim_resident(body)
+		return
+	if body is Shrine:
+		_aim_shrine(body)
 		return
 
 	var id := id_of(body)
@@ -579,6 +667,58 @@ func click_at(where: Vector2) -> void:
 
 ## Кого з мешканців вибрано. -1 — нікого.
 var _resident := -1
+## На кому зараз помітка вибору — мешканець чи святиня (монстрів мітить
+## `world.gd:client_target`).
+var _marked: Node3D = null
+
+
+func _put_mark(node: Node3D, radius: float, height: float) -> void:
+	_drop_mark()
+	_marked = node
+	SelectMark.put(node, radius, height)
+
+
+func _drop_mark() -> void:
+	if _marked != null and is_instance_valid(_marked):
+		SelectMark.clear(_marked)
+	_marked = null
+
+
+## Клік по святині (замовник 13.09.2026: «не вибирається, як NPC, хоча я
+## цього очікую»). Вибирає, каже в рамці, що з нею, і веде: до святині —
+## щоб з'явилось запрошення активувати, а якщо портал уже відкрито — прямо
+## в коло порталу.
+func _aim_shrine(shrine: Shrine) -> void:
+	var me: Node = _me()
+	if me == null or not me.is_alive():
+		return
+	_forget_resident()
+	if me.target_id != 0:
+		_link.to_server(&"select_target", [0])
+	_put_mark(shrine, 2.2, 4.2)
+	var what := "портал відкрито"
+	if shrine.stage == Shrine.Stage.ПІД_ОХОРОНОЮ:
+		what = "під охороною"
+	elif shrine.stage == Shrine.Stage.ЗАЧИЩЕНА:
+		what = "можна активувати ключем"
+	if _world.hud != null:
+		_world.hud.aim_resident("Святиня · ворота %s · %s"
+				% [shrine.grade, what], false)
+	if shrine.stage == Shrine.Stage.ПІД_ОХОРОНОЮ:
+		_say("спершу зачисти охорону святині")
+		return
+	var gate := shrine.portal()
+	if gate != null:
+		# Клік — новий намір: коло знову спитає, навіть якщо вже
+		# відмовлявся.
+		gate.left(_world.multiplayer.get_unique_id())
+		me.walk_to = gate.global_position
+	else:
+		_asked_shrine = -1
+		var away: Vector3 = me.global_position - shrine.global_position
+		away.y = 0.0
+		me.walk_to = shrine.global_position + away.normalized() * 2.2
+	_mark(me.walk_to)
 
 
 func _aim_resident(body: NPC) -> void:
@@ -586,6 +726,7 @@ func _aim_resident(body: NPC) -> void:
 		return
 	_resident = body.at_index
 	_resident_at = body.global_position
+	_put_mark(body, 0.7, 2.0)
 	# Ціль у бою знімаємо: одна ціль за раз, інакше «удар» бив би когось
 	# іншого, поки на екрані стоїть ім'я мешканця.
 	var me: Node = _me()
@@ -614,7 +755,12 @@ func cancel() -> void:
 
 
 func _forget_resident() -> void:
+	var had_mark := _marked != null
+	_drop_mark()
 	if _resident < 0:
+		# Вибрана була святиня — рамку з її назвою теж прибрати.
+		if had_mark and _world.hud != null:
+			_world.hud.aim_resident("", false)
 		return
 	_resident = -1
 	if _world.hud != null:

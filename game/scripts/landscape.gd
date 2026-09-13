@@ -1839,6 +1839,10 @@ func _shrines() -> void:
 		shrine.shard_red = str(spot.get("уламки", "сині")) == "червоні"
 		add_child(shrine)
 		shrine.position = _on_ground(_point(spot["де"]))
+		# Портал за 5 м убік — на ЗЕМЛІ там, а не на висоті святині.
+		var gate := shrine.position + Shrine.PORTAL_AT
+		shrine.portal_lift = _on_ground(Vector3(gate.x, 0.0, gate.z)).y \
+				- shrine.position.y
 		if not guard.is_empty():
 			_shrine_guard(shrine, guard)
 

@@ -61,6 +61,18 @@ func start(zones: Array) -> void:
 		print("[світ] зон появи %d, монстрів %d" % [zones.size(), _slots.size()])
 
 
+## Зони, що з'являються вже під час гри — підземелля за порталом (П-190).
+## Те саме, що `start`, тільки до наявних гнізд, а не замість них.
+func add_zones(zones: Array) -> void:
+	for zone in zones:
+		_zones.append(zone)
+		for i in maxi(1, zone.count):
+			_slots.append({"zone": zone, "id": 0, "in": 0.0})
+			_slots_of.get_or_add(zone, []).append(_slots.size() - 1)
+			if not dormant:
+				respawn(_slots.size() - 1)
+
+
 func tick(delta: float) -> void:
 	if dormant:
 		_look_in -= delta

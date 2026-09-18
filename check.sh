@@ -22,6 +22,12 @@ logs=".logs/check"
 mkdir -p "$logs"
 port=24565
 mark="$HOME/.local/share/godot/app_userdata/гра-lineage/сервер.json"
+# Перевірки ганяються у СВІТІ 600 м, і це свідомо. Основним світом
+# 19.09.2026 став другий (П-205), але світ 1 лишений саме «для тесту
+# чогось» — він малий, будується за частку секунди, і всі числа нижче
+# зняті на ньому. Прапорець дається і серверові, і клієнтові: інакше
+# вони опиняться в різних світах, і гравець провалиться крізь землю.
+test_world="--світ1"
 
 failed=0
 passed=0
@@ -64,7 +70,7 @@ start_server() {
     # бачить чужу мітку від убитого сервера (той її прибрати не встигає)
     # і вважає, що новий уже збудував світ, хоч він щойно взяв порт.
     rm -f "$mark"
-    setsid nohup godot --headless --path game -- --server "$@" \
+    setsid nohup godot --headless --path game -- --server "$test_world" "$@" \
         > "$log" 2>&1 < /dev/null &
     disown
     for _ in $(seq 1 40); do
@@ -121,7 +127,7 @@ run_server() {
     fi
     say_ok "піднявся: $(grep -o '\[полігон\].*' "$logs/server.log" | head -1)"
 
-    timeout 25 godot --headless --path game -- --демо \
+    timeout 25 godot --headless --path game -- --демо "$test_world" \
         > "$logs/client.log" 2>&1
     if grep -q 'приєднався' "$logs/server.log"; then
         say_ok "сервер завів персонажа: $(grep -o 'приєднався.*' \
@@ -154,6 +160,7 @@ run_page() {
     start_server "$logs/server-page.log" --полігон \
         || { say_bad "сервер не піднявся"; return; }
     godot --headless --path game --script res://probes/launcher.gd \
+        -- "$test_world" \
         > "$logs/page-up.log" 2>&1
     if grep -q 'сервер: працює' "$logs/page-up.log"; then
         say_ok "бачить живий сервер"
@@ -169,6 +176,7 @@ run_page() {
 
     stop_server
     godot --headless --path game --script res://probes/launcher.gd \
+        -- "$test_world" \
         > "$logs/page-down.log" 2>&1
     if grep -q 'сервер: не запущений' "$logs/page-down.log"; then
         say_ok "бачить, що сервера немає"
@@ -198,7 +206,8 @@ run_screen() {
     # той самий клієнт без синхронізації дає 300-450 кадрів за секунду.
     # Саме це, а не «втома системи», і стояло за плаваючими провалами
     # цього кроку з 03.09.2026.
-    NOVSYNC=1 timeout 30 ./run.sh --демо > "$logs/screen-client.log" 2>&1
+    NOVSYNC=1 timeout 30 ./run.sh --демо "$test_world" \
+        > "$logs/screen-client.log" 2>&1
     godot --headless --path game --script res://probes/screen.gd \
         > "$logs/screen.log" 2>&1
     if grep -q '✓' "$logs/screen.log"; then
@@ -217,7 +226,8 @@ run_fight() {
     start_server "$logs/server-fight.log" --полігон \
         || { say_bad "сервер не піднявся"; return; }
     : > "$logs/fight.log"
-    godot --headless --path game -- --демо > "$logs/fight.log" 2>&1 &
+    godot --headless --path game -- --демо "$test_world" \
+        > "$logs/fight.log" 2>&1 &
     local player=$!
     own_client=$player
     # Чекаємо не «доки вийде час», а доки все, що перевіряємо, з'явиться в
@@ -286,7 +296,8 @@ run_shop() {
     start_server "$logs/server-shop.log" --полігон \
         || { say_bad "сервер не піднявся"; return; }
     : > "$logs/shop.log"
-    godot --headless --path game -- --демо --крамар > "$logs/shop.log" 2>&1 &
+    godot --headless --path game -- --демо --крамар "$test_world" \
+        > "$logs/shop.log" 2>&1 &
     local player=$!
     own_client=$player
     local waited=0
@@ -362,7 +373,8 @@ run_memory() {
     stop_server
     start_server "$logs/server-memory.log" --полігон \
         || { say_bad "сервер не піднявся"; return; }
-    godot --headless --path game -- --демо > "$logs/memory.log" 2>&1 &
+    godot --headless --path game -- --демо "$test_world" \
+        > "$logs/memory.log" 2>&1 &
     local player=$!
     own_client=$player
     local grew=0

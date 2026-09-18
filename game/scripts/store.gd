@@ -65,7 +65,9 @@ func load_character(name: String) -> void:
 					print("[база] ‼ читання %s не вдалось, код %d"
 							% [name, code])
 				loaded.emit(name, row))
-	var url := "%s/%s?name=eq.%s" % [base_url, _table, name.uri_encode()]
+	var url := "%s/%s?name=eq.%s&world=eq.%s" \
+			% [base_url, _table, name.uri_encode(),
+			GameData.world_key().uri_encode()]
 	request.request(url)
 
 
@@ -140,6 +142,10 @@ func call_rpc(name: String, args: Dictionary) -> void:
 static func row_of(name: String, who: Node) -> Dictionary:
 	return {
 		"name": name,
+		# Персонажі розділені по світах (П-204): ключ у базі — пара
+		# (ім'я, світ), тож без цього поля запис пішов би не в той світ
+		# або створив би двійника.
+		"world": GameData.world_key(),
 		# Порожній рядок — не NULL: зовнішній ключ на `accounts` таку річ
 		# не пускає (П-118). `null` для PostgREST — це справжня відсутність
 		# значення.

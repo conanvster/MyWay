@@ -39,7 +39,7 @@ END
 $$;
 
 -- ── увійти ────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION game.login(login text, password text)
+CREATE OR REPLACE FUNCTION game.login(login text, password text, world text)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
@@ -55,14 +55,15 @@ BEGIN
                'name', c.name, 'level', c.level, 'race', c.race,
                'sex', c.sex)), '[]'::jsonb)
         INTO list
-        FROM game.characters c WHERE c.account = login.login;
+        FROM game.characters c
+        WHERE c.account = login.login AND c.world = login.world;
     RETURN jsonb_build_object('ok', true, 'characters', list);
 END
 $$;
 
 -- ── створити персонажа на акаунті ─────────────────────────────────────
 CREATE OR REPLACE FUNCTION game.new_character(
-    login text, password text, name text, race text, sex text)
+    login text, password text, name text, race text, sex text, world text)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
@@ -72,21 +73,24 @@ BEGIN
     IF kept IS NULL OR kept <> crypt(new_character.password, kept) THEN
         RETURN jsonb_build_object('ok', false, 'why', 'невірний акаунт або пароль');
     END IF;
-    IF EXISTS (SELECT 1 FROM game.characters c WHERE c.name = new_character.name) THEN
+    IF EXISTS (SELECT 1 FROM game.characters c
+               WHERE c.name = new_character.name
+                 AND c.world = new_character.world) THEN
         RETURN jsonb_build_object('ok', false, 'why', 'таке ім’я вже зайняте');
     END IF;
-    INSERT INTO game.characters (name, account, race, sex)
+    INSERT INTO game.characters (name, account, race, sex, world)
         VALUES (new_character.name, new_character.login,
-                new_character.race, new_character.sex);
+                new_character.race, new_character.sex,
+                new_character.world);
     RETURN jsonb_build_object('ok', true);
 END
 $$;
 
 REVOKE ALL ON FUNCTION game.register(text, text) FROM public;
-REVOKE ALL ON FUNCTION game.login(text, text) FROM public;
-REVOKE ALL ON FUNCTION game.new_character(text, text, text, text, text) FROM public;
+REVOKE ALL ON FUNCTION game.login(text, text, text) FROM public;
+REVOKE ALL ON FUNCTION game.new_character(text, text, text, text, text, text) FROM public;
 GRANT EXECUTE ON FUNCTION game.register(text, text) TO game_anon;
-GRANT EXECUTE ON FUNCTION game.login(text, text) TO game_anon;
-GRANT EXECUTE ON FUNCTION game.new_character(text, text, text, text, text) TO game_anon;
+GRANT EXECUTE ON FUNCTION game.login(text, text, text) TO game_anon;
+GRANT EXECUTE ON FUNCTION game.new_character(text, text, text, text, text, text) TO game_anon;
 
 NOTIFY pgrst, 'reload schema';

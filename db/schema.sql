@@ -7,7 +7,11 @@
 CREATE SCHEMA IF NOT EXISTS game;
 
 CREATE TABLE IF NOT EXISTS game.characters (
-    name        text PRIMARY KEY,
+    name        text NOT NULL,
+    -- Світи розділені (П-204): логін і пароль одні, персонажі свої в
+    -- кожному. Світ зветься іменем свого файлу даних — тією самою
+    -- назвою, якою він уже зветься в коді (`GameData.map_path()`).
+    world       text NOT NULL DEFAULT 'map.json',
     level       integer NOT NULL DEFAULT 1,
     respect     integer NOT NULL DEFAULT 0,   -- дає рівні
     experience  integer NOT NULL DEFAULT 0,   -- валюта на скіли
@@ -23,7 +27,10 @@ CREATE TABLE IF NOT EXISTS game.characters (
     items       jsonb   NOT NULL DEFAULT '{}'::jsonb,   -- складані: ім'я -> скільки
     things      jsonb   NOT NULL DEFAULT '[]'::jsonb,   -- поодинокі, з афіксами
     gear        jsonb   NOT NULL DEFAULT '{}'::jsonb,   -- слот -> номер у things
-    saved_at    timestamptz NOT NULL DEFAULT now()
+    saved_at    timestamptz NOT NULL DEFAULT now(),
+    -- Ім'я унікальне В МЕЖАХ СВІТУ, а не на всю гру: той самий «Ork»
+    -- може бути і тут, і там, як на окремих серверах L2.
+    PRIMARY KEY (name, world)
 );
 
 -- Роль, під якою ходить PostgREST. Пароль замінити на свій.

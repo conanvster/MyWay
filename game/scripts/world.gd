@@ -133,7 +133,9 @@ func _ready() -> void:
 		if OS.get_cmdline_user_args().has("--перевірка-бази"):
 			store.answered.connect(func(name: String, reply: Dictionary) -> void:
 					print("[перевірка] %s -> %s" % [name, reply]))
-			store.call_rpc("login", {"login": "конан", "password": "таємниця"})
+			store.call_rpc("login", {"login": "конан",
+					"password": "таємниця",
+					"world": GameData.world_key()})
 		multiplayer.peer_disconnected.connect(_on_left)
 		if OS.get_cmdline_user_args().has("--полігон"):
 			_range()
@@ -497,8 +499,12 @@ func sign_in(login: String, password: String, register: bool = false) -> void:
 			print("[акаунт] %s увійшов, персонажів %d"
 					% [login, _signed[id]["персонажі"].size()]),
 			CONNECT_ONE_SHOT)
+	# Світ передаємо завжди: база віддає перелік персонажів лише того
+	# світу, у якому стоїть ЦЕЙ сервер (П-204). `register` світу не
+	# знає — новий акаунт однаково без персонажів.
 	store.call_rpc("register" if register else "login",
-			{"login": login, "password": password})
+			{"login": login, "password": password,
+			"world": GameData.world_key()})
 
 
 ## Створити персонажа на своєму акаунті.
@@ -521,7 +527,8 @@ func create_character(name: String, race: String, sex: String) -> void:
 			print("[акаунт] %s створив персонажа %s" % [who["логін"], name]),
 			CONNECT_ONE_SHOT)
 	store.call_rpc("new_character", {"login": who["логін"],
-			"password": who["пароль"], "name": name, "race": race, "sex": sex})
+			"password": who["пароль"], "name": name, "race": race,
+			"sex": sex, "world": GameData.world_key()})
 
 
 ## Обрати персонажа й нарешті зайти у світ.

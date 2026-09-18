@@ -12,7 +12,7 @@ extends Node
 ##
 ## Ганяти так (сценою, бо потрібні автозавантаження):
 ##     godot --headless --path game res://scenes/rescue.tscn
-##     godot --headless --path game res://scenes/rescue.tscn -- --світ2
+##     godot --headless --path game res://scenes/rescue.tscn -- --світ1
 
 const MAIN := preload("res://scenes/main.tscn")
 
@@ -111,7 +111,7 @@ func _far_town(world: Node3D, _land: Node, me: Node3D, towns: Array) -> void:
 	me.place_at(Vector3(x, world.ground_at(x, z) - 900.0, z), 0.0)
 	world._rescue(me, "проба")
 	var at: Vector3 = me.global_position
-	_yes("провалився біля (%.0f, %.0f) — вернуло до (%.0f, %.0f), а не в столицю"
+	_yes("провалився біля (%.0f, %.0f) — вернуло до (%.0f, %.0f), не в столицю"
 			% [x, z, at.x, at.z],
 			absf(at.x - float(last[0])) < 0.5
 					and absf(at.z - float(last[2])) < 0.5)

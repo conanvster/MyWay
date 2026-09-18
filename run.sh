@@ -29,8 +29,9 @@
 #                     7 грейдів кольором, і аналіз — скільки святинь
 #                     узагалі влазить у теперішню мапу
 #   ./run.sh --вітрина  вікна «Речі», «Стати», «Скіли» з речами в кожному слоті
-#   ./run.sh --світ2  клієнт у світі версії 2 (згенерована карта, 5632 м).
-#                     Сервер теж треба підняти з ним: ./run-server.sh --світ2
+#   ./run.sh --run    клієнт в ОСНОВНОМУ світі — це світ 2 (П-205).
+#   ./run.sh --світ1  клієнт у світі 600 м: він лишився для проб.
+#                     Сервер треба підняти з тим самим: ./run-server.sh --світ1
 #   ./run.sh --світ2-згори  увесь світ версії 2 згори одним знімком —
 #                     щоб порівняти з намальованим аркушем карти
 #   ./run.sh --світ2-карта  карта світу версії 2: цілий аркуш і
@@ -86,15 +87,16 @@ else
 fi
 
 case "${1:-}" in
-    --run)  exec godot --path "$proj" "${vsync[@]}" ;;
-    --світ2) exec godot --path "$proj" "${vsync[@]}" -- --світ2 ;;
+    --run)  exec godot --path "$proj" "${vsync[@]}" -- "${@:2}" ;;
+    --світ1) exec godot --path "$proj" "${vsync[@]}" -- --світ1 "${@:2}" ;;
+    --світ2) exec godot --path "$proj" "${vsync[@]}" -- --світ2 "${@:2}" ;;
     --світ2-згори) exec godot --path "$proj" --script res://probes/world2_view.gd ;;
     --світ2-карта) exec godot --path "$proj" --script res://probes/world2_map.gd ;;
     --світ2-місця) exec godot --path "$proj" --script res://probes/world2_spots.gd ;;
     --демо-світ2) exec godot --path "$proj" "${vsync[@]}" -- --демо --світ2 ;;
-    --демо) exec godot --path "$proj" "${vsync[@]}" -- --демо ;;
+    --демо) exec godot --path "$proj" "${vsync[@]}" -- --демо "${@:2}" ;;
     --демо-вікна) exec godot --path "$proj" "${vsync[@]}" -- --демо --вікна ;;
-    --демо-крамар) exec godot --path "$proj" "${vsync[@]}" -- --демо --крамар ;;
+    --демо-крамар) exec godot --path "$proj" "${vsync[@]}" -- --демо --крамар "${@:2}" ;;
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
     --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --рослини) exec godot --path "$proj" --script res://probes/plants.gd ;;

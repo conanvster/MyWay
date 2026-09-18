@@ -33,6 +33,8 @@ var _play: Button
 var _db_button: Button
 var _server_button: Button
 var _log: Label
+## Вибір світу (П-204): персонажі в кожному світі свої.
+var _world_pick: OptionButton
 var _since := 0.0
 var _probe: HTTPRequest
 
@@ -76,6 +78,7 @@ func _build() -> void:
 	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(head)
 
+	_world_pick = _worlds(box)
 	_db_light = _line(box, "база: перевіряю…")
 	_db_button = _button(box, "Підняти базу", _start_db)
 	_server_light = _line(box, "сервер: перевіряю…")
@@ -86,6 +89,38 @@ func _build() -> void:
 
 	_log = _line(box, "")
 	_log.add_theme_font_size_override("font_size", 12)
+
+
+## Вибір світу (П-204). Персонажі в кожному світі свої, тож світ треба
+## обрати ДО входу — саме тут, а не прапорцем у командному рядку.
+##
+## Змінюємо не аргументи процесу, а `GameData.chosen_map`: сторінка й
+## гра живуть в одному процесі, і цього досить. Серверові світ іде
+## прапорцем, бо він процес окремий.
+func _worlds(box: VBoxContainer) -> OptionButton:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	box.add_child(row)
+	var title := Label.new()
+	title.text = "світ:"
+	row.add_child(title)
+	var pick := OptionButton.new()
+	pick.custom_minimum_size = Vector2(340, 34)
+	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Основний перший (П-205): світ 600 м лишився для проб.
+	pick.add_item("Світ 2 — 5632 м, основний")
+	pick.set_item_metadata(0, GameData.MAP2_PATH)
+	pick.add_item("Світ 1 — 600 м, тестовий")
+	pick.set_item_metadata(1, GameData.MAP_PATH)
+	pick.selected = 1 if GameData.map_path() == GameData.MAP_PATH else 0
+	pick.item_selected.connect(func(at: int) -> void:
+			GameData.chosen_map = str(pick.get_item_metadata(at))
+			_log.text = "світ: %s. Якщо сервер уже стоїть в іншому — " \
+					% GameData.world_key() + "зупини й підніми знову"
+			_said = false
+			_since = CHECK_EVERY)
+	row.add_child(pick)
+	return pick
 
 
 func _line(box: VBoxContainer, text: String) -> Label:
@@ -221,19 +256,35 @@ func _paint() -> void:
 
 # ── запуск ────────────────────────────────────────────────────────────
 
-func _start_server() -> void:
-	var args := ["--headless", "--path", ProjectSettings.globalize_path("res://"),
-			"--", "--server"]
+## З чим піднімати сервер. Окремою функцією, щоб її перевіряла проба:
+## сам запуск процесу в пробі не поставиш.
+func _server_args() -> Array:
+	var args := ["--headless", "--path",
+			ProjectSettings.globalize_path("res://"), "--", "--server"]
 	# Сервер — у тому самому світі, що й ця сторінка. Доти сторінка
-	# піднімала його БЕЗ `--світ2`, навіть коли сама відкрита з ним: сервер
-	# будував світ версії 1, клієнт — версії 2, і персонаж з'являвся під
-	# землею (слово замовника 11.09.2026: «персонаж з'являється під землею,
-	# немає змоги навіть зробити телепорт в місто»).
-	if OS.get_cmdline_user_args().has("--світ2"):
-		args.append("--світ2")
+	# піднімала його БЕЗ `--світ2`, навіть коли сама відкрита з ним:
+	# сервер будував світ версії 1, клієнт — версії 2, і персонаж
+	# з'являвся під землею (слово замовника 11.09.2026).
+	#
+	# Світ тепер беремо з вибору на сторінці (П-204), а не лише з
+	# прапорця: прапорець задає те, що вибрано СПОЧАТКУ, далі вирішує
+	# людина. Сервер — процес окремий, і світ йому йде так само
+	# прапорцем.
+	# Прапорець даємо ЗАВЖДИ, обидва — і той, що збігається з
+	# замовчуванням. Інакше вибір «світ 1» на сторінці не доїхав би до
+	# сервера: він процес окремий, замовчування в нього своє (П-205,
+	# основний світ — другий), і сторінка опинилась би в одному світі,
+	# а сервер у другому.
+	args.append("--світ1" if GameData.map_path() == GameData.MAP_PATH
+			else "--світ2")
 	if _db_alive:
 		args.append("--база")
 		args.append(DB_URL)
+	return args
+
+
+func _start_server() -> void:
+	var args := _server_args()
 	_server_pid = OS.create_process(OS.get_executable_path(), args)
 	_log.text = "сервер запущено, номер %d%s" % [_server_pid,
 			"" if _db_alive else " — без бази"]

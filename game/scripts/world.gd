@@ -1014,13 +1014,23 @@ func _on_joined(id: int) -> void:
 				if name != _names.get(id, "") or not creatures.has(id):
 					return
 				Store.apply_row(creatures[id], row, data.items)
+				_rescue(creatures[id], name)
 				# Стартові скіли даються ПІСЛЯ читання: інакше прочитане
 				# з бази («скілів немає») затирає їх, і новий персонаж
 				# заходить у світ ні з чим. Спіймано на живому прогоні.
-				if creatures[id].learned.is_empty():
-					for key in data.starting_skills:
+				#
+				# Доростають, а не лише роздаються порожньому: стартовий
+				# перелік із часом поповнюється (так з'явилось
+				# «повернення в місто», П-176), і персонаж, заведений
+				# раніше, лишався без нього назавжди — а це єдиний вихід
+				# із дірки. Знайдено 19.09.2026: Ork рівня 6 не мав ні
+				# скіла, ні кнопки, коли провалився.
+				for key in data.starting_skills:
+					if not creatures[id].learned.has(key):
 						creatures[id].learn(key,
 								int(data.starting_skills[key]))
+						print("[база] %s дістав стартовий скіл «%s»"
+								% [name, key])
 				creatures[id].refresh_stats()
 				if row.is_empty():
 					print("[база] %s новий, починає з нуля" % name)
@@ -1997,6 +2007,94 @@ func _unhandled_input(event: InputEvent) -> void:
 # ── спільне: істоти у сцені ───────────────────────────────────────────
 
 ## Висота землі в точці — питає спавнер, щоб не садити монстрів у ґрунт.
+## Нижче землі на стільки метрів — це вже не «стоїть на схилі», а
+## «провалився». Три метри дає запас на нерівність під ногами й на те,
+## що збережена висота — центр тіла, а не підошва.
+const FELL_THROUGH := 3.0
+
+
+## Чи ціле те місце, де персонаж вийшов із гри. Порожній рядок — ціле;
+## інакше рядок каже, ЩО саме з ним не так (P3: мовчки не ковтаємо).
+##
+## Знайдено 19.09.2026 на живій грі: персонаж провалився крізь землю в
+## столиці світу 2, сервер зберіг `y = -156 895`, і кожен наступний вхід
+## клав його назад у те саме падіння — гравець тонув, не встигши нічого
+## зробити.
+func _place_gone(at: Vector3) -> String:
+	# Підземелля стоять поза межами світу навмисно (П-167). Якщо те саме
+	# підземелля ще відкрите — місце ціле, гравець просто в ньому.
+	if dungeons != null:
+		var floor_y: float = dungeons.floor_at(at.x, at.z)
+		if not is_nan(floor_y):
+			return "" if at.y >= floor_y - FELL_THROUGH \
+					else "провалився крізь підлогу підземелля"
+	if not _inside_world(at):
+		# Сюди ж потрапляє й підземелля, яке закрилось: вони не
+		# зберігаються, тож після перезапуску сервера гравець опинився б
+		# на 40 м над морем без підлоги під ногами.
+		return "місця вже немає: поза межами світу"
+	var ground := ground_at(at.x, at.z)
+	if at.y < ground - FELL_THROUGH:
+		return "під землею на %.0f м" % (ground - at.y)
+	return ""
+
+
+## Перевірка місця при кожному вході (слово замовника 19.09.2026:
+## «перевірялось чи доступне місце, можливо воно зникло, чи змінилось,
+## то телепортувати гравця в найближче місто»).
+##
+## Кличеться після читання з бази — саме там лежить те, де гравця застав
+## вихід, і саме йому не можна вірити на слово.
+func _rescue(a: Node3D, who: String) -> void:
+	var at: Vector3 = a.global_position
+	var why := _place_gone(at)
+	if why == "":
+		return
+	var town := _nearest_town(at)
+	var high := ground_at(town.x, town.y)
+	# 6 м запасу, як при вході й у `combat.send_home`: падає сам і сідає
+	# на видиму поверхню, а не в ґрунт.
+	a.place_at(Vector3(town.x, high + 6.0, town.y), a.facing)
+	print("[база] ‼ %s: %s — переніс у найближче місто (%.0f, %.0f)"
+			% [who, why, town.x, town.y])
+
+
+## Найближче місто до точки. Села версії 2 сюди теж потрапляють —
+## `towns()` їх віддає разом із містами, і для загубленого гравця село
+## нічим не гірше: це рівний майданчик із землею під ногами.
+##
+## Міст у мапі немає взагалі — лишається (0,0): там стоїть вхід у світ.
+func _nearest_town(at: Vector3) -> Vector2:
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("towns"):
+		return Vector2.ZERO
+	var best := Vector2.ZERO
+	var best_far := INF
+	for town: Dictionary in land.towns():
+		var mid: Array = town.get("центр", [0, 0, 0])
+		var spot := Vector2(float(mid[0]), float(mid[2]))
+		var far: float = Vector2(at.x, at.z).distance_to(spot)
+		if far < best_far:
+			best_far = far
+			best = spot
+	return best
+
+
+## Чи точка взагалі в цьому світі. Світи міняються прапорцем `--світ2`,
+## а персонаж у базі один на обидва: збережений за 1748 м від столиці
+## світу 2 і відкритий у світі 600 м опиниться далеко поза картою.
+func _inside_world(at: Vector3) -> bool:
+	var earth: Dictionary = data.map.get("земля", {})
+	var side := float(earth.get("сторона", 0.0))
+	if side <= 0.0:
+		return true
+	var from: Array = earth.get("початок", [-side * 0.5, -side * 0.5])
+	var x0 := float(from[0])
+	var z0 := float(from[1])
+	return at.x >= x0 and at.x <= x0 + side \
+			and at.z >= z0 and at.z <= z0 + side
+
+
 func ground_at(x: float, z: float) -> float:
 	# У підземеллі земля — його підлога, а не рельєф світу під ним
 	# (П-190): інакше монстр з'являвся б за 40 м під склепом.

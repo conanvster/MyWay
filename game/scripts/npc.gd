@@ -7,6 +7,12 @@ extends StaticBody3D
 ## і сервер знає, де він, — цього досить, щоб місто перестало бути
 ## порожнім, а крамниця мала куди прийти.
 
+## Ремесла, за якими гра щось вмикає. Ті самі рядки лежать у
+## `data/map.json` → `ремесло`; тримати їх копіями по всьому
+## `world.gd` означало б, що перейменування в даних тихо вимкне вікно.
+const WAREHOUSE := "завідувач складу"
+const GUILD := "гільдмайстер"
+
 @export var who := "мешканець"
 @export var craft := ""
 ## Номер у переліку `map.json → місто → мешканці`. Ним клієнт і сервер
@@ -20,19 +26,6 @@ var goods: Array = []
 @export var tint := Color(0.75, 0.7, 0.6)
 
 
-## Пофарбувати. Кликати ПІСЛЯ того, як з'явився меш: у `_ready` його ще
-## немає, якщо вузол збирається кодом, — на цьому я вже раз попався, і
-## мешканці міста вийшли всі білі.
-func repaint() -> void:
-	var mesh := get_node_or_null("Mesh")
-	if mesh == null or mesh.mesh == null:
-		return
-	var paint := StandardMaterial3D.new()
-	paint.albedo_color = tint
-	paint.roughness = 0.9
-	mesh.set_surface_override_material(0, paint)
-
-
 ## Idle/Idle_Talking по черзі, кожні 3-5 с (слово замовника 05.09.2026)
 ## — самі й «дихають», і «говорять» одне з одним, а не всі разом в один
 ## такт. Свій таймер, бо NPC не проходить крізь client_view.smooth()
@@ -42,7 +35,6 @@ var _talking := true
 
 
 func _ready() -> void:
-	repaint()
 	_switch_left = randf_range(3.0, 5.0)
 
 
@@ -59,8 +51,7 @@ func _process(delta: float) -> void:
 
 ## Ім'я над головою — той самий прийом, що й `Creature.show_tag` (П-126),
 ## тільки NPC не Creature, і зріст завжди 1,75 (модель людини, П-162), не
-## `body_height()`. Клич ПІСЛЯ того, як Mesh уже додано — той самий
-## порядок, що й `repaint()`.
+## `body_height()`. Клич ПІСЛЯ того, як Mesh уже додано.
 const TAG_HEIGHT := 2.15
 
 
@@ -85,3 +76,13 @@ func title() -> String:
 
 func trades() -> bool:
 	return not goods.is_empty()
+
+
+## Чи бере на зберігання (П-145). Питати цим, а не рівністю рядків.
+func keeps() -> bool:
+	return craft == WAREHOUSE
+
+
+## Чи вчить скілів за руни (П-145).
+func teaches() -> bool:
+	return craft == GUILD

@@ -11,6 +11,12 @@ extends Node3D
 ## `@rpc` і створення істот. Чому саме так: шлях вузла має збігатися на
 ## клієнті й сервері, і возитися з цим для кожного модуля не варто.
 ##
+## «Тонкий» тут означає не «короткий». Заміряно 18.09.2026: 2006 рядків,
+## 62 `@rpc`, 110 функцій, найдовша — 86 рядків (`client_spawn`). Крок
+## 1.1 звів його з 648 до 263, відтоді наросли двері підземель, склад,
+## гільдія, карта й підвантаження ділянками — але логіка назовні не
+## протекла: жодна довша функція не рахує бою, цін чи видимості сама.
+##
 ##     vision.gd       хто кого бачить
 ##     combat.gd       удар, шкода, смерть, строк трупа
 ##     actions.gd      черга дій, цілі, вміння
@@ -941,7 +947,7 @@ func _tick_grace_places() -> void:
 func _zones() -> Array:
 	var from_data: Array = data.map.get("зони появи", [])
 	if not from_data.is_empty():
-		return _zones_from_data(from_data)
+		return _zones_from_data(from_data) + _shrine_zones()
 	var found := find_children("*", "MobZone", true, false)
 	if found.is_empty():
 		push_warning("[світ] у сцені немає жодної зони появи — монстрів не буде")
@@ -974,6 +980,25 @@ func _zones_from_data(list: Array) -> Array:
 		made.append(zone)
 	print("[світ] зони появи з даних: %d" % made.size())
 	return made
+
+
+## Охорона святинь (П-153) — теж `MobZone`, але не намальована в сцені
+## й не записана серед «зон появи»: її ставить кільцем сам
+## `landscape.gd`, дитиною святині. У версії 1 вона підбиралась разом з
+## усіма зі сцени; у версії 2 зони беруться з даних, і без цього рядка
+## святиня стояла б зовсім без охорони — тобто активувалась би без бою,
+## а бій за неї і є вся її механіка.
+##
+## Намальовані в сцені зони сюди свідомо НЕ потрапляють: вони зроблені
+## під світ 600 м, і саме через них монстри тонули на 5632 м.
+func _shrine_zones() -> Array:
+	var out: Array = []
+	for one in find_children("*", "MobZone", true, false):
+		if one.get_parent() is Shrine:
+			out.append(one)
+	if not out.is_empty():
+		print("[світ] плюс охорона святинь: зон %d" % out.size())
+	return out
 
 
 func _on_joined(id: int) -> void:
@@ -1219,7 +1244,7 @@ func ask_talk(at: int) -> void:
 	if who == null:
 		return
 	rpc_id(id, "client_talk", at, who.title(), who.trades(),
-			who.craft == "завідувач складу", who.craft == "гільдмайстер")
+			who.keeps(), who.teaches())
 
 
 ## Показати прилавок. Асортимент шлемо цілком: він короткий і не
@@ -1304,7 +1329,7 @@ func ask_warehouse(at: int) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "завідувач складу":
+	if who == null or not who.keeps():
 		return
 	send_things(id)
 	send_warehouse(id, at)
@@ -1316,7 +1341,7 @@ func ask_store_thing(at: int, thing_at: int) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "завідувач складу":
+	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = warehouse.store_thing(a, thing_at)
@@ -1332,7 +1357,7 @@ func ask_withdraw_thing(at: int, thing_at: int) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "завідувач складу":
+	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = warehouse.withdraw_thing(a, thing_at)
@@ -1348,7 +1373,7 @@ func ask_store_stack(at: int, name: String) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "завідувач складу":
+	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = warehouse.store_stack(a, name)
@@ -1364,7 +1389,7 @@ func ask_withdraw_stack(at: int, name: String) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "завідувач складу":
+	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = warehouse.withdraw_stack(a, name)
@@ -1418,7 +1443,7 @@ func ask_guild(at: int) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "гільдмайстер":
+	if who == null or not who.teaches():
 		return
 	var a: Node = creatures.get(id)
 	rpc_id(id, "client_guild", at, _guild_rows(a))
@@ -1430,7 +1455,7 @@ func ask_learn_skill(at: int, key: String) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "гільдмайстер":
+	if who == null or not who.teaches():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = runes.learn(a, key)
@@ -1448,7 +1473,7 @@ func ask_raise_skill(at: int, key: String) -> void:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	var who: NPC = _resident(id, at)
-	if who == null or who.craft != "гільдмайстер":
+	if who == null or not who.teaches():
 		return
 	var a: Node = creatures.get(id)
 	var why: String = runes.raise(a, key)

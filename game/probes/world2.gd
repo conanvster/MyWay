@@ -242,6 +242,68 @@ func _go() -> void:
 	if off > 0.6:
 		_fail("зіткнення зсунуте відносно видимої землі на %.2f м" % off)
 
+	print("\n— святині (П-174) —")
+	# Досі їх у версії 2 не було: 55 координат версії 1 пораховані на ЇЇ
+	# рельєфі. Тепер рахуються в `tools/svit2.py` на цьому. Міряємо те
+	# саме, що й у зон появи, і ще портал: він стоїть за 5 м убік, і
+	# якщо ТАМ вода, гравець вийде з підземелля в море.
+	var shrines_from: Array = map.get("святині", [])
+	var built: Array = land.shrines()
+	print("  у даних %d, збудовано %d" % [shrines_from.size(), built.size()])
+	if shrines_from.is_empty():
+		_fail("у даних немає святинь — у версії 2 нема куди йти по ключ")
+	if built.size() != shrines_from.size():
+		_fail("збудовано не стільки святинь, скільки в даних")
+	var by_grade := {}
+	var wet_shrine := 0
+	var wet_gate := 0
+	var off_ground := 0.0
+	for k in built.size():
+		var shrine: Node3D = built[k]
+		var at: Vector3 = shrine.global_position
+		by_grade[shrine.grade] = int(by_grade.get(shrine.grade, 0)) + 1
+		off_ground = maxf(off_ground,
+				absf(at.y - land.height_at(at.x, at.z)))
+		# Саме́ місце й усе кільце охорони (14 м ± розкид 4 м).
+		var damp := at.y <= sea_level + 1.0
+		for j in 16:
+			var turn := TAU * float(j) / 16.0
+			for far: float in [10.0, 14.0, 18.0]:
+				var under: float = land.height_at(
+						at.x + cos(turn) * far, at.z + sin(turn) * far)
+				if under <= sea_level + 1.0:
+					damp = true
+		if damp:
+			wet_shrine += 1
+		var gate: Vector3 = at + Shrine.PORTAL_AT
+		if land.height_at(gate.x, gate.z) <= sea_level + 1.0:
+			wet_gate += 1
+	var grades := by_grade.keys()
+	grades.sort()
+	var line := ""
+	for g: String in grades:
+		line += "%s×%d " % [g, by_grade[g]]
+	print("  грейди: %s" % line.strip_edges())
+	print("  святиня від видимої землі: не далі %.2f м" % off_ground)
+	print("  мокрих (сама чи кільце охорони): %d · мокрих порталів: %d"
+			% [wet_shrine, wet_gate])
+	var apart := 1e9
+	for k in built.size():
+		for j in range(k + 1, built.size()):
+			var a: Vector3 = (built[k] as Node3D).global_position
+			var b: Vector3 = (built[j] as Node3D).global_position
+			apart = minf(apart, Vector2(a.x - b.x, a.z - b.z).length())
+	if built.size() > 1:
+		print("  найближча пара: %.0f м" % apart)
+		if apart < 28.0:
+			_fail("дві святині ближче, ніж їхні кільця охорони")
+	if off_ground > 1.0:
+		_fail("святиня стоїть не на видимій землі")
+	if wet_shrine > 0:
+		_fail("%d святинь стоять у воді або кільцем у воді" % wet_shrine)
+	if wet_gate > 0:
+		_fail("%d порталів дивляться у воду" % wet_gate)
+
 	print("\n— ліс не тоне —")
 	var sunk := 0
 	var trees := 0

@@ -13,3 +13,7 @@ export/
 асети/
 *.zip
 .logs/
+
+# Blender: резервні копії й кеш Python у tools/blender
+*.blend1
+__pycache__/

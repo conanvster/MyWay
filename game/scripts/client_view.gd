@@ -660,7 +660,7 @@ func input(event: InputEvent) -> void:
 			use_slot(slot, event.shift_pressed)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
-		click_at(event.position)
+		click_at(event.position, event.double_click)
 
 
 ## Розкладка панелі — П-58; поки просто 1–7 підряд.
@@ -671,7 +671,9 @@ func slot_of(code: int) -> int:
 
 
 ## Перший клік по цілі бере її, наступні по вже вибраній — б'ють (П-20).
-func click_at(where: Vector2) -> void:
+## Подвійний клік по мешканцю — одразу розмова (слово замовника
+## 19.09.2026: «по подвійному кліку на NPC теж відкривається діалог»).
+func click_at(where: Vector2, double := false) -> void:
 	var me: Node = _me()
 	if me == null:
 		return
@@ -694,6 +696,8 @@ func click_at(where: Vector2) -> void:
 		# шкоди приходить вікно розмови (П-132). Окремої кнопки «говорити»
 		# не треба, і панель не росте від кожного нового мешканця.
 		_aim_resident(body)
+		if double:
+			_talk_to_resident()
 		return
 	if body is Shrine:
 		_aim_shrine(body)
@@ -779,6 +783,22 @@ func _aim_resident(body: NPC) -> void:
 		_link.to_server(&"select_target", [0])
 	if _world.hud != null:
 		_world.hud.aim_resident(body.title(), body.trades())
+
+
+## Заговорити до вибраного мешканця: близько — одразу, далеко —
+## підійти й тоді заговорити (`_approach_resident`). Спільне для «удару»
+## по мешканцю й подвійного кліку.
+func _talk_to_resident() -> void:
+	var me: Node = _me()
+	if me == null or _resident < 0:
+		return
+	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE:
+		_link.to_server(&"ask_talk", [_resident])
+		return
+	_wait_talk = _resident
+	_wait_left = REACH_TIME
+	me.walk_to = _resident_at
+	_say("підходжу до мешканця")
 
 
 ## Те саме ззовні: сервер сказав, що ціллю став хтось інший.
@@ -1034,13 +1054,7 @@ func use_slot(slot: int, shift: bool) -> void:
 		if action != "attack":
 			_say("до мешканця це не застосуєш")
 			return
-		if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE:
-			_link.to_server(&"ask_talk", [_resident])
-			return
-		_wait_talk = _resident
-		_wait_left = REACH_TIME
-		me.walk_to = _resident_at
-		_say("підходжу до мешканця")
+		_talk_to_resident()
 		return
 	if me == null or need <= 0.0 or me.target_id == 0:
 		_link.to_server(&"use_slot", [slot, shift])

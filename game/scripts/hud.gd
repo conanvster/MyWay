@@ -2030,8 +2030,48 @@ func set_states(mine: Array, target: int, theirs: Array) -> void:
 		_fill_states(_target_states, theirs if target == _target else [])
 
 
+## Підпис стану для підказки.
+func _state_tip(one: Array) -> String:
+	var left := int(one[3])
+	return "%s\n%s ×%.2f\n%s" % [str(one[0]),
+			STAT_TITLES.get(str(one[1]), str(one[1])), float(one[2]),
+			"поки живий" if left < 0 else "лишилось %d с" % left]
+
+
+## Мітка комірки стану. Латиницею: ім'я мітки в Godot мусить бути
+## ASCII, кириличне мовчки відкидається (спіймано пробою 19.09.2026).
+const STATE_META := "state_key"
+
+
+## Що робить комірку ТІЄЮ САМОЮ: ім'я, стат, множник, чи вічний.
+## Секунди сюди не входять — вони тикають.
+static func _state_key(one: Array) -> String:
+	return "%s|%s|%s|%s" % [one[0], one[1], one[2], int(one[3]) < 0]
+
+
 func _fill_states(holder: Control, row: Array) -> void:
-	for child in holder.get_children():
+	# Сервер шле стани щосекунди — секунди тикають. Перебудова комірок
+	# щоразу знищувала й підказку під мишею: вона зникала за секунду
+	# (слово замовника 19.09.2026: «залиш підказку поки курсор покриває
+	# баф»). Тепер той самий набір станів лише оновлює секунди й текст
+	# підказки на місці; перебудова — коли стан з'явився чи зник.
+	var keys := row.map(func(one: Array) -> String: return _state_key(one))
+	var cells := holder.get_children()
+	var same := cells.size() == row.size()
+	if same:
+		for i in cells.size():
+			if str(cells[i].get_meta(STATE_META, "")) != keys[i]:
+				same = false
+				break
+	if same:
+		for i in cells.size():
+			var one: Array = row[i]
+			cells[i].tooltip_text = _state_tip(one)
+			var seconds: Label = cells[i].get_node_or_null("Секунди")
+			if seconds != null:
+				seconds.text = str(int(one[3]))
+		return
+	for child in cells:
 		holder.remove_child(child)
 		child.queue_free()
 	for i in row.size():
@@ -2044,9 +2084,8 @@ func _fill_states(holder: Control, row: Array) -> void:
 		cell.size = Vector2(STATE_SIDE, STATE_SIDE)
 		# PASS, а не IGNORE: інакше підказка під мишею не з'явиться.
 		cell.mouse_filter = Control.MOUSE_FILTER_PASS
-		cell.tooltip_text = "%s\n%s ×%.2f\n%s" % [title,
-				STAT_TITLES.get(str(one[1]), str(one[1])), factor,
-				"поки живий" if left < 0 else "лишилось %d с" % left]
+		cell.tooltip_text = _state_tip(one)
+		cell.set_meta(STATE_META, keys[i])
 		holder.add_child(cell)
 		_plate(Vector2(STATE_SIDE, STATE_SIDE),
 				BUFF_EDGE if factor >= 1.0 else DEBUFF_EDGE, cell)
@@ -2076,6 +2115,7 @@ func _fill_states(holder: Control, row: Array) -> void:
 			mark.position = Vector2(4, 4)
 		if left >= 0:
 			var seconds := _text(11, cell)
+			seconds.name = "Секунди"
 			seconds.text = str(left)
 			seconds.position = Vector2(STATE_SIDE - 16.0, STATE_SIDE - 16.0)
 

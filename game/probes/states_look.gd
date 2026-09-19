@@ -94,6 +94,37 @@ func _go() -> void:
 	_yes("підказка під мишею: «%s»" % first.tooltip_text.replace("\n", " · "),
 			first.tooltip_text.begins_with("павутина"))
 
+	# Сервер шле стани щосекунди. Той самий набір — ті самі комірки: інакше
+	# підказка під мишею зникала за секунду (слово замовника 19.09.2026).
+	var cell_before: Control = hud._my_states.get_child(0)
+	var ticked: Array = []
+	for one: Array in row:
+		var next := one.duplicate()
+		if int(next[3]) > 0:
+			next[3] = int(next[3]) - 1
+		ticked.append(next)
+	hud.set_states(ticked, -7, theirs)
+	await get_tree().process_frame
+	var cell_after: Control = hud._my_states.get_child(0)
+	_yes("секунда минула — комірка та сама, підказка лишається",
+			cell_after == cell_before and is_instance_valid(cell_before))
+	# Секунди — на комірці, у якої вони є (вічний стан без них).
+	var ticking := -1
+	for i in ticked.size():
+		if int(ticked[i][3]) >= 0:
+			ticking = i
+			break
+	var seconds: Label = hud._my_states.get_child(ticking) \
+			.get_node_or_null("Секунди") if ticking >= 0 else null
+	_yes("секунди оновились на місці: %s (чекали %d)"
+			% [seconds.text if seconds != null else "—",
+			   int(ticked[ticking][3]) if ticking >= 0 else -1],
+			seconds != null and seconds.text == str(int(ticked[ticking][3])))
+	hud.set_states(ticked.slice(1), -7, theirs)
+	await get_tree().process_frame
+	_yes("стан спав — комірок стало %d" % hud._my_states.get_child_count(),
+			hud._my_states.get_child_count() == ticked.size() - 1)
+
 	for f in 20:
 		await get_tree().process_frame
 	var args := OS.get_cmdline_user_args()

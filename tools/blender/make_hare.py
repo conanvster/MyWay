@@ -36,13 +36,16 @@ BONES = [
 ]
 
 
-def armature():
+def armature(bones=None):
+    """Скелет з переліку (ім'я, голова, хвіст, батько). Спільний для
+    чотирилапих: вовк і ведмідь беруть звідси все, крім форми."""
+    bones = bones or BONES
     data = bpy.data.armatures.new("Скелет")
     rig = bpy.data.objects.new("Скелет", data)
     bpy.context.scene.collection.objects.link(rig)
     bpy.context.view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
-    for name, head, tail, parent in BONES:
+    for name, head, tail, parent in bones:
         bone = data.edit_bones.new(name)
         bone.head = head
         bone.tail = tail
@@ -50,6 +53,33 @@ def armature():
             bone.parent = data.edit_bones[parent]
     bpy.ops.object.mode_set(mode="OBJECT")
     return rig
+
+
+def join_parts(rig, parts):
+    """Гладко затінити, з'єднати в одне тіло й прив'язати до скелета."""
+    for obj in parts:
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.shade_smooth()
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in parts:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    mesh = bpy.context.active_object
+    mesh.name = "Тіло"
+    mesh.parent = rig
+    mod = mesh.modifiers.new("Скелет", "ARMATURE")
+    mod.object = rig
+    return mesh
+
+
+def fur(name, rgb, picture):
+    """Матеріал хутра з картинок `fur_texture.py`."""
+    tex = os.path.join(ROOT, "art", "monsters", "textures")
+    return base.material(name, rgb, os.path.join(tex, picture + ".png"),
+                         os.path.join(tex, "хутро-нормаль.png"))
 
 
 def body(rig):
@@ -233,9 +263,10 @@ def actions(rig):
     rig.animation_data.action = bpy.data.actions["Idle"]
 
 
-def previews(rig, folder):
+def previews(rig, folder, zoom=1.0):
     """Кадри для перевірки оком: 3/4 для вигляду, збоку — для руху, і
-    зблизька в EEVEE — чи хутро не блищить."""
+    зблизька в EEVEE — чи хутро не блищить. `zoom` — у скільки разів
+    звір більший за зайця: камери відсуваються в стільки ж."""
     scene = bpy.context.scene
     scene.render.resolution_x = 480
     scene.render.resolution_y = 360
@@ -262,7 +293,7 @@ def previews(rig, folder):
     scene.world = world
     for name, frame, view in shots:
         at, rot = views[view]
-        cam.location = at
+        cam.location = [c * zoom for c in at]
         cam.rotation_euler = [math.radians(a) for a in rot]
         if view == "зблизька":
             scene.render.engine = "BLENDER_EEVEE"

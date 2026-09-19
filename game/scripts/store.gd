@@ -263,3 +263,63 @@ func due(delta: float) -> bool:
 		return false
 	_since = 0.0
 	return true
+
+
+# ── Будь-яка таблиця (Ф7, підземелля й штрафи світу) ─────────────────
+#
+# Три звертання без SQL, тим самим PostgREST. Відповідь — у `done`:
+# рядки для `fetch`, успіх для `put` і `drop`. Збій друкується вголос
+# (P3): коли міграцію ще не застосовано, PostgREST відповідає 404, і
+# людина має це побачити, а не гадати, чому підземелля не збереглись.
+
+## Прочитати рядки. `query` — фільтр PostgREST без `?`: «world=eq.x».
+func fetch(table: String, query: String, done: Callable) -> void:
+	_ask(table, query, HTTPClient.METHOD_GET, "", done)
+
+
+## Додати або замінити рядок за первинним ключем.
+func put(table: String, row: Dictionary, done: Callable = Callable()) -> void:
+	_ask(table, "", HTTPClient.METHOD_POST, JSON.stringify(row), done)
+
+
+## Видалити рядки за фільтром.
+func drop(table: String, query: String, done: Callable = Callable()) -> void:
+	_ask(table, query, HTTPClient.METHOD_DELETE, "", done)
+
+
+func _ask(table: String, query: String, method: int, body: String,
+		done: Callable) -> void:
+	if not works():
+		if done.is_valid():
+			done.call(false, [])
+		return
+	var request := HTTPRequest.new()
+	add_child(request)
+	request.request_completed.connect(
+			func(result: int, code: int, _headers: PackedStringArray,
+					answer: PackedByteArray) -> void:
+				request.queue_free()
+				var ok: bool = result == HTTPRequest.RESULT_SUCCESS \
+						and code >= 200 and code < 300
+				var rows: Array = []
+				if ok and method == HTTPClient.METHOD_GET:
+					var parsed: Variant = JSON.parse_string(
+							answer.get_string_from_utf8())
+					if parsed is Array:
+						rows = parsed
+				if not ok:
+					push_error("[база] %s: код %d, причина %d"
+							% [table, code, result])
+					print("[база] ‼ %s не вдалось: код %d, причина %d%s"
+							% [table, code, result,
+							   " — чи застосовано міграцію?"
+									if code == 404 else ""])
+				if done.is_valid():
+					done.call(ok, rows))
+	var url := "%s/%s" % [base_url, table]
+	if query != "":
+		url += "?" + query
+	var headers := PackedStringArray(["Content-Type: application/json"])
+	if method == HTTPClient.METHOD_POST:
+		headers.append("Prefer: resolution=merge-duplicates")
+	request.request(url, headers, method, body)

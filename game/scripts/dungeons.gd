@@ -73,6 +73,18 @@ func raise(at: int, template_id: String, with_seed: int,
 	return entry
 
 
+## Прибрати підземелля (Ф7: строк минув). Монстрів його зон спершу
+## прибирає спавнер — зони лежать у показі й підуть разом із ним.
+func close(at: int) -> void:
+	if not open.has(at):
+		return
+	var view: Node = open[at]["view"]
+	open.erase(at)
+	if is_instance_valid(view):
+		view.queue_free()
+	print("[підземелля] %d закрито" % at)
+
+
 ## Куди ставити гравця, що зайшов.
 func entry_point(at: int) -> Vector3:
 	var plan: DungeonPlan = open[at]["plan"]

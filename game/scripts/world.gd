@@ -55,6 +55,8 @@ var warehouse: Warehouse
 var runes: Runes
 ## Відкриті підземелля за порталами святинь (П-190).
 var dungeons: Dungeons
+## Строк підземель і штраф світу, з базою (Ф7). Лише на сервері.
+var life: DungeonLife
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
@@ -130,6 +132,10 @@ func _ready() -> void:
 		store = Store.new()
 		add_child(store)
 		store.setup(Net.db)
+		life = DungeonLife.new()
+		life.name = "СтрокПідземель"
+		add_child(life)
+		life.setup(store, dungeons.book.life, GameData.world_key())
 		if OS.get_cmdline_user_args().has("--перевірка-бази"):
 			store.answered.connect(func(name: String, reply: Dictionary) -> void:
 					print("[перевірка] %s -> %s" % [name, reply]))
@@ -143,6 +149,8 @@ func _ready() -> void:
 			# Зони з даних (світ 2) сплять, доки поруч немає гравця.
 			spawner.dormant = not data.map.get("зони появи", []).is_empty()
 			spawner.start(_zones())
+			# Після спавнера: відновлене підземелля додає йому свої зони.
+			life.restore(_restore_dungeon, close_dungeon)
 		_mark_ready()
 		print("[світ] сервер чекає гравців")
 	else:
@@ -275,6 +283,9 @@ func _physics_process(delta: float) -> void:
 			remove(id)
 		spawner.tick(delta)
 		_tick_shrines(delta)
+		if life != null:
+			for at: int in life.tick(delta):
+				close_dungeon(at)
 		_tick_grace_places()
 		_tick_water(delta)
 		if store != null and store.due(delta):
@@ -693,7 +704,7 @@ func _tick_shrines(delta: float) -> void:
 	for i in all.size():
 		var shrine: Shrine = all[i]
 		# Активовану не чіпаємо: назад в «під охороною» її вертає лише
-		# закриття підземелля, якого ще немає.
+		# закриття підземелля (`close_dungeon`, Ф7).
 		if shrine.stage == Shrine.Stage.АКТИВОВАНА:
 			continue
 		var zone: Node = shrine.get_node_or_null("Охорона")
@@ -762,7 +773,10 @@ func activate_shrine(id: int, at: int) -> void:
 	shrine.set_stage(Shrine.Stage.АКТИВОВАНА)
 	_shrine_sent[at] = Shrine.Stage.АКТИВОВАНА
 	link.to_all(&"client_shrine", [at, Shrine.Stage.АКТИВОВАНА])
-	link.notice(id, "святиня активована: %s відкрито портал" % shrine.grade)
+	if life != null:
+		life.activated(at, shrine.grade)
+	link.notice(id, "святиня активована: %s відкрито портал на %.0f днів"
+			% [shrine.grade, life.days_open() if life != null else 0.0])
 	_after_bag(id, a)
 
 
@@ -846,6 +860,8 @@ func enter_dungeon(id: int, at: int) -> void:
 			return
 		spawner.add_zones(dungeons.zones_for(at, data.mobs))
 		link.to_all(&"client_dungeon", [at, template, with_seed, shrine.grade])
+		if life != null:
+			life.built(at, template, with_seed)
 	var entry: Dictionary = dungeons.open[at]
 	a.place_at(dungeons.entry_point(at), 0.0)
 	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
@@ -874,17 +890,93 @@ func leave_dungeon(id: int) -> void:
 	if flat > PORTAL_REACH:
 		link.notice(id, "вихід задалеко")
 		return
+	a.place_at(_beside_shrine(at), 0.0)
+	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
+	link.notice(id, "повернувся до святині")
+
+
+## Поруч із колом порталу святині, а не в ньому: інакше одразу знову
+## «увійти?».
+func _beside_shrine(at: int) -> Vector3:
 	var land: Node = get_node_or_null("Landscape")
 	var shrine: Shrine = land.shrines()[at]
 	var gate: Portal = shrine.portal()
 	var from: Vector3 = gate.global_position if gate != null \
 			else shrine.global_position
-	# Поруч із колом, а не в ньому: інакше одразу знову «увійти?».
 	var back := from + Vector3(0.0, 0.0, Portal.RING + 2.0)
 	back.y = ground_at(back.x, back.z) + 1.0
-	a.place_at(back, 0.0)
-	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
-	link.notice(id, "повернувся до святині")
+	return back
+
+
+## Підземелля, відкрите до перезапуску сервера (Ф7): святиня знову
+## світиться відкритою, а якщо в нього вже заходили — стоїть те саме
+## підземелля з тими самими шаблоном і зерном.
+func _restore_dungeon(at: int, record: Dictionary) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	if land == null or not land.has_method("shrines") \
+			or at < 0 or at >= land.shrines().size():
+		print("[підземелля] ‼ святині %d у цьому світі немає" % at)
+		return
+	var shrine: Shrine = land.shrines()[at]
+	shrine.set_stage(Shrine.Stage.АКТИВОВАНА)
+	_shrine_sent[at] = Shrine.Stage.АКТИВОВАНА
+	var template := str(record["template"])
+	if template == "":
+		return
+	if dungeons.raise(at, template, int(record["seed"]),
+			str(record["grade"])).is_empty():
+		return
+	spawner.add_zones(dungeons.zones_for(at, data.mobs))
+
+
+## Строк минув (Ф7, П-153): бос не вбитий — підземелля закривається,
+## хто всередині — повертається до святині, святиня знову під охороною,
+## а на світ падає штраф.
+func close_dungeon(at: int) -> void:
+	var title := "за святинею %d" % at
+	if dungeons.open.has(at):
+		var entry: Dictionary = dungeons.open[at]
+		title = "«%s»" % entry["plan"].title
+		var back := _beside_shrine(at)
+		for id: int in creatures.keys():
+			var a: Node3D = creatures[id]
+			if id <= 0 or dungeons.index_at(a.global_position.x,
+					a.global_position.z) != at:
+				continue
+			a.place_at(back, 0.0)
+			link.to_watchers(id, &"client_place",
+					[id, a.global_position, a.facing])
+		spawner.drop_zones(entry["zones"])
+		dungeons.close(at)
+		link.to_all(&"client_dungeon_closed", [at])
+	life.expire(at)
+	var land: Node = get_node_or_null("Landscape")
+	if land != null and land.has_method("shrines") \
+			and at >= 0 and at < land.shrines().size():
+		land.shrines()[at].set_stage(Shrine.Stage.ПІД_ОХОРОНОЮ)
+		_shrine_sent[at] = Shrine.Stage.ПІД_ОХОРОНОЮ
+		link.to_all(&"client_shrine", [at, Shrine.Stage.ПІД_ОХОРОНОЮ])
+	for id: int in creatures:
+		if id < 0:
+			penalize(creatures[id])
+	var text := "підземелля %s закрилось: бос не вбитий за %.0f днів — " \
+			% [title, life.days_open()] \
+			+ "світ під штрафом на %.0f днів, монстри сильніші" \
+			% life.days_penalty()
+	print("[підземелля] " + text)
+	for id: int in creatures:
+		if id > 0:
+			link.notice(id, text)
+
+
+## Повісити на монстра чинні штрафи світу (Ф7). Той самий стан удруге не
+## подвоюється — поновлює строк (П-108), тож кликати можна скільки
+## завгодно.
+func penalize(m: Node) -> void:
+	if life == null:
+		return
+	for state: State in life.penalty_states():
+		m.add_state(state)
 
 
 ## Розповісти новому гравцеві, які підземелля вже відкриті: сервер шле
@@ -895,6 +987,12 @@ func _tell_dungeons(peer: int) -> void:
 		var entry: Dictionary = dungeons.open[at]
 		link.to_one(peer, &"client_dungeon", [at, entry["template"],
 				entry["seed"], entry["grade"]])
+
+
+## Сервер закрив підземелля (Ф7) — прибрати його й у себе.
+@rpc("authority", "call_remote", "reliable")
+func client_dungeon_closed(at: int) -> void:
+	dungeons.close(at)
 
 
 ## Сервер відкрив підземелля — клієнт будує те саме з тих самих чисел.

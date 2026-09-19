@@ -73,6 +73,27 @@ func add_zones(zones: Array) -> void:
 				respawn(_slots.size() - 1)
 
 
+## Прибрати зони разом із їхніми монстрами — підземелля закрилось (Ф7).
+## Гнізда інших зон переіндексовуються: `_slots_of` тримає номери.
+func drop_zones(zones: Array) -> void:
+	var kept: Array = []
+	for slot: Dictionary in _slots:
+		if not zones.has(slot["zone"]):
+			kept.append(slot)
+			continue
+		var id: int = slot["id"]
+		if id != 0 and _creatures.has(id):
+			_world.remove(id)
+	_slots = kept
+	for zone: Variant in zones:
+		_zones.erase(zone)
+		_awake.erase(zone)
+		_quiet.erase(zone)
+	_slots_of.clear()
+	for i in _slots.size():
+		_slots_of.get_or_add(_slots[i]["zone"], []).append(i)
+
+
 func tick(delta: float) -> void:
 	if dormant:
 		_look_in -= delta
@@ -115,6 +136,10 @@ func respawn(slot: int) -> int:
 		at.y = _world.ground_at(at.x, at.z) + 6.0
 	var m: Node = _world.spawn(id, at)
 	m.setup(at, zone.kind, zone.aggressive, _data.for_kind(zone.kind))
+	# Штраф світу за незачищені підземелля (Ф7) — і на тих, хто
+	# з'являється вже після нього.
+	if _world.has_method("penalize"):
+		_world.penalize(m)
 	_slots[slot]["id"] = id
 	_slots[slot]["in"] = 0.0
 	return id

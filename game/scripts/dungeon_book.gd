@@ -21,6 +21,8 @@ const PATH := "res://data/dungeons.json"
 var templates: Dictionary = {}
 ## стиль -> як малювати й кого пускати.
 var styles: Dictionary = {}
+## Строк і штраф світу (Ф7): {"строк_днів", "штраф_днів", "штраф"}.
+var life: Dictionary = {}
 
 
 static func load_book() -> DungeonBook:
@@ -36,6 +38,7 @@ static func load_book() -> DungeonBook:
 		return book
 	book.templates = raw.get("шаблони", {})
 	book.styles = raw.get("стилі", {})
+	book.life = raw.get("життя", {})
 	return book
 
 

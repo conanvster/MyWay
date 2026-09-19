@@ -293,7 +293,7 @@ func _quit() -> void:
 ## Висота рахована під вміст, не на око: 26 на «хто це» плюс 13 рядків
 ## по 21 плюс три смужки по 14 = 341. На 330 останній рядок наполовину
 ## вилазив за край вікна.
-const STATS_INNER := Vector2(276, 344)
+const STATS_INNER := Vector2(276, 366)
 
 ## Скільки місця на групу: рядок і повітря під смужкою.
 const STAT_ROW := 21.0
@@ -329,7 +329,8 @@ func _build_stats() -> void:
 			["рівень", "вільних очок"],
 			["сила", "спритність", "витривалість", "інтелект", "чуття"],
 			["здоров'я", "мана"],
-			["фіз. атака", "маг. атака", "фіз. захист", "маг. захист"]]
+			["фіз. атака", "маг. атака", "фіз. захист", "маг. захист",
+			 "швидкість"]]
 	for group_at in groups.size():
 		for field: String in groups[group_at]:
 			var name_text := _gothic_text(13, page, PARCHMENT_DIM)
@@ -338,8 +339,9 @@ func _build_stats() -> void:
 			var value := _gothic_text(13, page)
 			value.name = field
 			value.text = "—"
-			value.position = Vector2(STATS_INNER.x - 98, at)
-			value.size = Vector2(70, 18)
+			# Ширше, ніж число: «37.9  (33.0)» — чинне й власне поруч.
+			value.position = Vector2(STATS_INNER.x - 128, at)
+			value.size = Vector2(100, 18)
 			value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			_stats_fields[field] = value
 			if SPENDABLE.has(field):
@@ -390,12 +392,24 @@ func set_stats(data: Dictionary) -> void:
 		var plus: Button = _stats_spend.get(field)
 		if plus != null:
 			plus.disabled = _stats_points <= 0
-	_put("здоров'я", "%d" % int(data.get("здоров'я", 0)))
-	_put("мана", "%d" % int(data.get("мана", 0)))
-	_put("фіз. атака", "%.1f" % float(data.get("атака", 0.0)))
-	_put("маг. атака", "%.1f" % float(data.get("магічна атака", 0.0)))
-	_put("фіз. захист", "%.1f" % float(data.get("захист", 0.0)))
-	_put("маг. захист", "%.1f" % float(data.get("магічний захист", 0.0)))
+	_put_derived(data, "здоров'я", "здоров'я", "%d")
+	_put_derived(data, "мана", "мана", "%d")
+	_put_derived(data, "фіз. атака", "атака", "%.1f")
+	_put_derived(data, "маг. атака", "магічна атака", "%.1f")
+	_put_derived(data, "фіз. захист", "захист", "%.1f")
+	_put_derived(data, "маг. захист", "магічний захист", "%.1f")
+	_put_derived(data, "швидкість", "швидкість", "%.1f")
+
+
+## Похідне число так само, як стати: чинне, а в дужках власне — без речей
+## і бафів. Зелене, коли щось його зсунуло.
+func _put_derived(data: Dictionary, field: String, key: String,
+		fmt: String) -> void:
+	var now := float(data.get(key, 0.0))
+	var base := float(data.get(key + " базова", now))
+	var same := absf(now - base) < 0.05
+	var text := fmt % now if same else (fmt + "  (" + fmt + ")") % [now, base]
+	_put(field, text, PARCHMENT if same else Color(0.62, 0.82, 0.58))
 
 
 func _put(field: String, value: String, tint: Color = PARCHMENT) -> void:

@@ -367,10 +367,14 @@ func _serve_self(peer: int) -> void:
 			PackedStringArray(me.queue), me.level, me.respect,
 			combat.progress.need_for(me.level, me.race, me.sex))
 	# Стати шлемо не щотіку, а коли вони справді змінились: рівень, речі,
-	# баф. Відбиток дешевий — п'ять чисел і рівень.
-	var mark := "%d/%d/%d/%d/%d/%d/%d" % [me.level, me.stat_points,
-			me.stats.strength, me.stats.agility, me.stats.stamina,
-			me.stats.intellect, me.stats.sense]
+	# баф. Відбиток дешевий — п'ять чисел, рівень і похідні: баф
+	# священика множить атаку, захист і швидкість, не чіпаючи статів, і
+	# без них вікно не бачило ні його появи, ні кінця.
+	var mark := "%d/%d/%d/%d/%d/%d/%d/%d/%.2f/%.2f/%.2f" % [me.level,
+			me.stat_points, me.stats.strength, me.stats.agility,
+			me.stats.stamina, me.stats.intellect, me.stats.sense,
+			me.stats.max_hp(), me.stats.physical_attack(),
+			me.stats.physical_defence(), me.stats.move_speed()]
 	if _stats_mark.get(peer, "") != mark:
 		_stats_mark[peer] = mark
 		send_stats(peer)
@@ -1434,6 +1438,17 @@ func _stats_row(a: Node) -> Dictionary:
 		"магічна атака": a.stats.magical_attack(),
 		"захист": a.stats.physical_defence(),
 		"магічний захист": a.stats.magical_defence(),
+		"швидкість": a.stats.move_speed(),
+		# Власне, без речей і бафів — щоб у вікні було видно, що саме
+		# дав баф (замовник 19.09.2026: «не бачу в статах, на що
+		# повпливав баф»).
+		"здоров'я базова": a.base_stats.max_hp(),
+		"мана базова": a.base_stats.max_mp(),
+		"атака базова": a.base_stats.physical_attack(),
+		"магічна атака базова": a.base_stats.magical_attack(),
+		"захист базова": a.base_stats.physical_defence(),
+		"магічний захист базова": a.base_stats.magical_defence(),
+		"швидкість базова": a.base_stats.move_speed(),
 	}
 
 

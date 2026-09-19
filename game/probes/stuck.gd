@@ -2,7 +2,8 @@ extends SceneTree
 ## Чи застрягає гравець у точці підземелля (скарга замовника 19.09.2026,
 ## знімок 19-57-38: x 4170,7 y 40,7 z −8931,2 у «Кузні глибин»).
 ## Відтворює підземелля з тим самим шаблоном і зерном, ставить гравця
-## в точку й пробує рушити в 8 боків.
+## в точку й пробує рушити в 8 боків — по 2,5 с на бік: запобіжник
+## `Creature._unwedge` рятує після 1 с заклинювання.
 ##
 ##     godot --headless --path game --script res://probes/stuck.gd -- \
 ##         <шаблон> <зерно> <святиня> <x> <y> <z>
@@ -54,7 +55,7 @@ func _go() -> void:
 			await physics_frame
 			hero.server_step(1.0 / 60.0)
 		var from: Vector3 = hero.global_position
-		for i in 60:
+		for i in 150:
 			hero.wanted = dir
 			await physics_frame
 			hero.server_step(1.0 / 60.0)

@@ -86,6 +86,16 @@ var _stuck_clock := 0.0
 var _escape_left := 0.0
 var _escape_dir := Vector3.ZERO
 var _escape_diag := Vector3.ZERO
+## Заклинило: хоче йти, а не зрушив ані на міліметр, — і відступ назад
+## теж не рятує. Так буває на гострому ребрі стіни підземелля: рушій
+## рахує нормаль зіткнення навпаки, і капсулу тягне в стіну, в будь-який
+## бік і навіть униз (застрягання замовника 19.09.2026, «Хід під
+## костелом»: точка прохідна, але жоден з 8 боків не рухає). Після
+## WEDGED_AFTER такого стояння — переставити на найближче вільне місце
+## тієї самої підлоги (`_unwedge`).
+const WEDGED_AFTER := 1.0
+const WEDGED_MOVE := 0.002
+var _wedged := 0.0
 ## Куди сервер сказав стати. Клієнт плавно підтягується сюди.
 var server_position := Vector3.ZERO
 
@@ -462,6 +472,73 @@ func place_at(pos: Vector3, look: float) -> void:
 	rotation.y = look
 
 
+## Ознака саме вади рушія: нормаль зіткнення дивиться ВІД істоти (тягне
+## в стіну). Коли просто тиснеш у рівну стіну, нормаль дивиться на тебе —
+## тоді це не застрягання, і переставляти не треба.
+func _pulled_in() -> bool:
+	for i in get_slide_collision_count():
+		var hit := get_slide_collision(i)
+		var away := global_position - hit.get_position()
+		away.y = 0.0
+		if hit.get_normal().dot(away) < 0.0:
+			return true
+	return false
+
+
+## Найближче місце, де капсула ні з чим не перетинається, під нею підлога,
+## а дорога від теперішнього місця до нього не перетинає стіну (щоб не
+## вискочити в товщу скелі чи за стіну). Кільця від 0,3 до 2,4 м.
+func _unwedge() -> void:
+	var space := get_world_3d().direct_space_state
+	var shapes: Array[CollisionShape3D] = []
+	for child in get_children():
+		if child is CollisionShape3D and not child.disabled:
+			shapes.append(child)
+	# Початок істоти — центр капсули, не п'яти: ставимо так, щоб низ
+	# капсули був на 5 см над знайденою підлогою.
+	var feet := 1.0
+	for holder in shapes:
+		if holder.shape is CapsuleShape3D:
+			feet = holder.shape.height * 0.5 - holder.position.y
+	var from := global_position
+	var eye := Vector3(0, 1.0, 0)
+	for step in range(1, 9):
+		var r := 0.3 * step
+		for turn in 12:
+			var spot := from + Vector3(r, 0.3, 0).rotated(Vector3.UP,
+					TAU * turn / 12.0)
+			var road := PhysicsRayQueryParameters3D.create(from + eye,
+					spot + eye, 1)
+			if not space.intersect_ray(road).is_empty():
+				continue
+			var down := PhysicsRayQueryParameters3D.create(spot + eye,
+					spot - Vector3(0, 3.0, 0), 1)
+			var ground := space.intersect_ray(down)
+			if ground.is_empty() or ground["normal"].y < 0.7:
+				continue
+			var stand: Vector3 = ground["position"] + Vector3(0, feet + 0.05,
+					0)
+			var free := true
+			for holder in shapes:
+				var q := PhysicsShapeQueryParameters3D.new()
+				q.shape = holder.shape
+				q.collision_mask = 1
+				q.transform = Transform3D(global_basis, stand) \
+						* holder.transform
+				if not space.intersect_shape(q, 1).is_empty():
+					free = false
+					break
+			if free:
+				place_at(stand, facing)
+				velocity = Vector3.ZERO
+				print(("[рух] %s заклинило в (%.1f, %.1f, %.1f) — переставлено"
+						+ " на %.1f м") % [name, from.x, from.y, from.z,
+						from.distance_to(stand)])
+				return
+	print(("[рух] ‼ %s заклинило в (%.1f, %.1f, %.1f), вільного місця"
+			+ " за 2,4 м немає") % [name, from.x, from.y, from.z])
+
+
 func server_step(delta: float) -> void:
 	if not is_alive():
 		corpse_left = maxf(0.0, corpse_left - delta)
@@ -515,7 +592,17 @@ func server_step(delta: float) -> void:
 		speed *= casting_move
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
+	var before := global_position
 	move_and_slide()
+	if dir.length() > 0.1 and speed > 0.0 \
+			and global_position.distance_to(before) < WEDGED_MOVE \
+			and _pulled_in():
+		_wedged += delta
+		if _wedged >= WEDGED_AFTER:
+			_wedged = 0.0
+			_unwedge()
+	else:
+		_wedged = 0.0
 
 	attack_ready_in = maxf(0.0, attack_ready_in - delta)
 	busy_in = maxf(0.0, busy_in - delta)

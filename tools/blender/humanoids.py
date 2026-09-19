@@ -143,6 +143,18 @@ SPECIES = {
                                       ("наплічники", (0.3, 0.3, 0.34))],
                               weapon="алебарда", moves="зброя",
                               eyes=(1.0, 0.6, 0.1)),
+    # Скелети (конвеєр «К»): тіла немає — кістки з простих фігур уздовж
+    # кісток скелета людини (слово «усе своє», не набір KayKit).
+    "скелет": dict(bones=True, moves="мрець", eyes=(0.4, 0.8, 1.0)),
+    "скелет-воїн": dict(bones=True, weapon="меч", shield=True,
+                        outfit=[("шолом-кістяка", (0.45, 0.45, 0.48))],
+                        moves="зброя", eyes=(0.4, 0.8, 1.0)),
+    "скелет-лучник": dict(bones=True, weapon="лук", moves="чари",
+                          outfit=[("каптур-кістяка", (0.2, 0.18, 0.16))],
+                          eyes=(0.4, 0.8, 1.0)),
+    "скелет-маг": dict(bones=True, weapon="посох", moves="чари",
+                       outfit=[("мантія-кістяка", (0.2, 0.12, 0.3))],
+                       eyes=(0.7, 0.3, 1.0)),
 }
 
 # Частини тіла під вбрання — умова на точку, як одяг гравця.
@@ -683,9 +695,92 @@ def previews(rig, folder, tag, keep):
     rig.animation_data.action = keep["Idle"]
 
 
+# Кістки скелета, уздовж яких ставиться кістка з фігур (товщина, м).
+LIMBS = {"upperarm_l": 0.024, "upperarm_r": 0.024, "lowerarm_l": 0.019,
+         "lowerarm_r": 0.019, "thigh_l": 0.03, "thigh_r": 0.03,
+         "calf_l": 0.024, "calf_r": 0.024, "clavicle_l": 0.014,
+         "clavicle_r": 0.014, "neck_01": 0.02, "spine_01": 0.022,
+         "spine_02": 0.022, "spine_03": 0.022, "foot_l": 0.02,
+         "foot_r": 0.02, "hand_l": 0.02, "hand_r": 0.02}
+
+
+def bone_body(rig, eyes_rgb):
+    """Кістяк: тіло людини геть, кістки з фігур на кістках скелета —
+    рухи людини лягають так само."""
+    for obj in list(bpy.data.objects):
+        if obj.type == "MESH":
+            bpy.data.objects.remove(obj)
+    ivory = solid("Кістка", (0.86, 0.82, 0.7), 0.6)
+    dark = solid("Очниці", (0.02, 0.02, 0.02), 0.9)
+    glow = solid("Вогник", eyes_rgb, 0.3, glow=6.0)
+    p = base.part
+    mw = rig.matrix_world
+    made = []
+    for name, r in LIMBS.items():
+        b = rig.data.bones[name]
+        a, t = mw @ b.head_local, mw @ b.tail_local
+        made.append(bar(a, t, r, ivory, name))
+        made.append(p("sphere", name, tuple(a), (r * 1.3,) * 3, ivory))
+    head = mw @ rig.data.bones["Head"].head_local
+    c = head + Vector((0, -0.01, 0.07))
+    made += [p("sphere", "Head", tuple(c), (0.085, 0.1, 0.1), ivory),
+             p("sphere", "Head", tuple(c + Vector((0, -0.05, -0.08))),
+               (0.06, 0.05, 0.035), ivory)]
+    for sign in (1, -1):
+        made.append(p("sphere", "Head",
+                      tuple(c + Vector((sign * 0.035, -0.08, 0.0))),
+                      (0.024, 0.02, 0.022), dark))
+        spark = p("sphere", "Head",
+                  tuple(c + Vector((sign * 0.035, -0.092, 0.0))),
+                  (0.009, 0.006, 0.009), glow)
+        # «Eyes», як очі людини: по них проба бачить, куди дивиться череп.
+        spark.name = "Eyes"
+        made.append(spark)
+    # Ребра — кільця на хребті, таз — сплющена куля.
+    for i, z in enumerate((1.4, 1.34, 1.28, 1.22, 1.16)):
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.14 - i * 0.008,
+                                         minor_radius=0.012,
+                                         location=(0, 0.01, z))
+        ring = bpy.context.active_object
+        ring.scale = (1.0, 0.75, 1.0)
+        bpy.ops.object.transform_apply(scale=True)
+        group = ring.vertex_groups.new(name="spine_03" if z > 1.3
+                                       else "spine_02")
+        group.add(list(range(len(ring.data.vertices))), 1.0, "REPLACE")
+        ring.data.materials.append(ivory)
+        made.append(ring)
+    made.append(p("sphere", "pelvis", (0, 0.03, 0.97), (0.15, 0.09, 0.07),
+                  ivory))
+    return made
+
+
+def bar(a, b, radius, mat, bone):
+    obj = blade_obj("кістка", (a + b) * 0.5, (radius * 2, radius * 2,
+                                               (b - a).length),
+                    (0, 0, 0), mat, bone, "cyl")
+    obj.rotation_mode = "QUATERNION"
+    return _aim(obj, a, b)
+
+
+def _aim(obj, a, b):
+    """Повернути вже застосований циліндр уздовж a→b (він стоїть по Z)."""
+    q = (b - a).normalized().to_track_quat("Z", "Y")
+    for v in obj.data.vertices:
+        v.co = q @ (v.co - ((a + b) * 0.5)) + (a + b) * 0.5
+    return obj
+
+
 def build(name, shots=None):
     s = SPECIES[name]
     rig, body = races.load(s.get("sex", "чоловік"))
+    if s.get("bones"):
+        made = bone_body(rig, s.get("eyes", (0.4, 0.8, 1.0)))
+        made += skeleton_outfit(s.get("outfit", []))
+        if s.get("weapon"):
+            made += weapon(s["weapon"])
+        if s.get("shield"):
+            made += shield()
+        return finish(name, rig, made, s, shots)
     races.inflate(body, s.get("bulk", 0.0))
     fur = reskin(body, s["skin"])
     made = outfit(body, s.get("outfit", []))
@@ -707,6 +802,30 @@ def build(name, shots=None):
         made += weapon(s["weapon"])
     if s.get("shield"):
         made += shield()
+    return finish(name, rig, made, s, shots)
+
+
+def skeleton_outfit(items):
+    """Вбрання кістяка: тіла немає, тож не шкаралупа з тіла, а фігури."""
+    p = base.part
+    out = []
+    for what, rgb in items:
+        mat = solid("Вбрання-" + what, rgb)
+        if what == "шолом-кістяка":
+            out.append(p("sphere", "Head", (0, -0.005, 1.75),
+                         (0.105, 0.12, 0.08), mat))
+        elif what == "каптур-кістяка":
+            out.append(p("sphere", "Head", (0, 0.02, 1.73),
+                         (0.12, 0.13, 0.13), mat))
+            out.append(cape(mat))
+        elif what == "мантія-кістяка":
+            out.append(skirt(mat))
+            out.append(p("sphere", "spine_03", (0, 0.02, 1.3),
+                         (0.18, 0.12, 0.2), mat))
+    return out
+
+
+def finish(name, rig, made, s, shots):
     races.attach(rig, made)
     keep = moves(rig, s.get("moves", "звір"))
     if shots:

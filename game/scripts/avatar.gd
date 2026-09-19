@@ -21,6 +21,15 @@ var bar: Array[String] = ["attack", "next_player", "next_mob",
 const MODEL_MALE := "res://models/player/Superhero_Male_FullBody.gltf"
 const MODEL_FEMALE := "res://models/player/Superhero_Female_FullBody.gltf"
 const MODEL_ANIM := "res://models/player/animations/UAL1_Standard.glb"
+## Людина, ельф і орк обох статей, одягнені (19.09.2026, слово замовника:
+## «на базі моделі людини зробити ельфа й орка з рухами як у людини, і
+## хоча б 1 комплект одягу для всіх»). Зроблені з тієї самої моделі
+## людини з тим самим скелетом (`tools/blender/make_races.py`), тож рухи
+## UAL1 пересаджуються на них так само. Немає файлу — лишається гола
+## модель людини вище.
+const RACE_MODEL := "res://models/own/races/%s-%s.gltf"
+## Зріст раси, метрів. Числа виконавця, замовник не називав.
+const RACE_HEIGHT := {"людина": 1.75, "ельф": 1.85, "орк": 1.9}
 
 var is_local := false
 ## Куди йти, коли ведуть мишею: клік по землі ставить сюди точку, і
@@ -47,8 +56,10 @@ func _ready() -> void:
 
 ## Поставити справжню модель замість капсули — той самий прийом, що й у
 ## `mob.gd::_apply_look()`, тільки за статтю, не за видом монстра.
-func apply_sex(sex: String) -> void:
-	var made := MODEL_FEMALE if sex == "жінка" else MODEL_MALE
+func apply_sex(sex: String, race: String = "людина") -> void:
+	var made := RACE_MODEL % [race, "жінка" if sex == "жінка" else "чоловік"]
+	if not ResourceLoader.exists(made):
+		made = MODEL_FEMALE if sex == "жінка" else MODEL_MALE
 	if not ResourceLoader.exists(made):
 		return
 	var old_body := get_node_or_null("Mesh")
@@ -61,7 +72,7 @@ func apply_sex(sex: String) -> void:
 	skin.name = "Mesh"
 	skin.path = made
 	skin.anim_path = MODEL_ANIM
-	skin.height = 1.75
+	skin.height = float(RACE_HEIGHT.get(race, 1.75))
 	add_child(skin)
 	skin.build()
 	seat_model()

@@ -345,7 +345,7 @@ func _serve(peer: int) -> void:
 		var other: Node3D = creatures[id]
 		rpc_id(peer, "client_spawn", id, other.global_position,
 				other.facing, _kind_of(other), _names.get(id, ""),
-				other.level, other.sex)
+				other.level, other.sex, other.race)
 		# Смуга здоров'я цілі мусить знати, скільки його всього.
 		rpc_id(peer, "client_vitals", id, other.hp, other.stats.max_hp())
 	for id in diff["gone"]:
@@ -1187,7 +1187,7 @@ func _on_joined(id: int) -> void:
 		a.learn(skill_key, int(data.starting_skills[skill_key]))
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
 	rpc_id(id, "client_spawn", id, a.global_position, a.facing,
-			_kind_of(a), _names.get(id, ""), a.level, a.sex)
+			_kind_of(a), _names.get(id, ""), a.level, a.sex, a.race)
 	rpc_id(id, "client_vision", a.vision_radius())
 	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
 	rpc_id(id, "client_bar", PackedStringArray(a.bar))
@@ -1780,7 +1780,8 @@ func _kind_of(who: Node) -> int:
 
 @rpc("authority", "call_remote", "reliable")
 func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
-		title: String = "", level: int = 1, sex: String = "чоловік") -> void:
+		title: String = "", level: int = 1, sex: String = "чоловік",
+		race: String = "людина") -> void:
 	if creatures.has(id):
 		return
 	var a := spawn(id, pos)
@@ -1801,7 +1802,7 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 		# пізніше зі статами — інакше чужого гравця бачили б капсулою,
 		# доки вікно «Стати» не відкриють.
 		if a.has_method("apply_sex"):
-			a.apply_sex(sex)
+			a.apply_sex(sex, race)
 	_tag(id)
 	if id == multiplayer.get_unique_id():
 		a.become_local()

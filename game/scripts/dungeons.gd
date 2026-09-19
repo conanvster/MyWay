@@ -22,6 +22,12 @@ const ORIGIN := Vector3(0.0, 40.0, -9000.0)
 ## Найбільше підземелля — 150 клітинок по `DungeonPlan.CELL` = 300 м;
 ## 600 лишає між сусідніми понад 300.
 const APART := 600.0
+## Рівні одного підземелля (П-153, Ф5′, 19.09.2026) — рядком углиб по z,
+## з тим самим кроком. Адреса рівня — одне число: святиня × LEVELS +
+## рівень (рівень 0 — той, куди веде портал святині). Так усе, що вже
+## знало підземелля за номером, лишилось працювати з рівнем 0.
+const LEVELS := 16
+const MAX_DEPTH := 10
 ## На скільки кроків шляху від виходу ставити гравця: не в самому колі
 ## виходу, інакше одразу вискочило б «вийти?».
 const ENTRY_STEP := 8
@@ -30,8 +36,9 @@ const ENTRY_STEP := 8
 const RESPAWN := 600.0
 
 var book: DungeonBook
-## Номер святині -> {"template", "seed", "grade", "plan", "view", "exit",
-## "zones"}.
+## Адреса рівня (`key`) -> {"template", "seed", "grade", "plan", "view",
+## "exit", "zones", "depth", "down"}. `down` — портал «Далі» в палаті
+## боса, запалюється смертю боса (Ф6); на останньому рівні його немає.
 var open: Dictionary = {}
 
 
@@ -39,13 +46,27 @@ func _ready() -> void:
 	book = DungeonBook.load_book()
 
 
+static func key(shrine: int, level: int) -> int:
+	return shrine * LEVELS + level
+
+
+static func shrine_of(at: int) -> int:
+	return at / LEVELS
+
+
+static func level_of(at: int) -> int:
+	return at % LEVELS
+
+
 static func spot_for(at: int) -> Vector3:
-	return ORIGIN + Vector3(float(at) * APART, 0.0, 0.0)
+	return ORIGIN + Vector3(float(shrine_of(at)) * APART, 0.0,
+			-float(level_of(at)) * APART)
 
 
-## Збудувати підземелля за святинею `at` (або повернути вже збудоване).
+## Збудувати рівень підземелля `at` (адреса — `key`), або повернути вже
+## збудований. `depth` — скільки рівнів у всьому підземеллі.
 func raise(at: int, template_id: String, with_seed: int,
-		grade: String) -> Dictionary:
+		grade: String, depth: int = 1) -> Dictionary:
 	if open.has(at):
 		return open[at]
 	if not book.templates.has(template_id):
@@ -65,7 +86,7 @@ func raise(at: int, template_id: String, with_seed: int,
 	exit.position = plan.at(plan.room_cell(plan.exit_room))
 	var entry := {"template": template_id, "seed": with_seed,
 			"grade": grade, "plan": plan, "view": view, "exit": exit,
-			"zones": []}
+			"zones": [], "depth": depth, "down": null}
 	open[at] = entry
 	print("[підземелля] %d: «%s» (%s), грейд %s, зерно %d — %d мс"
 			% [at, plan.title, template_id, grade, with_seed,
@@ -73,16 +94,44 @@ func raise(at: int, template_id: String, with_seed: int,
 	return entry
 
 
-## Прибрати підземелля (Ф7: строк минув). Монстрів його зон спершу
-## прибирає спавнер — зони лежать у показі й підуть разом із ним.
-func close(at: int) -> void:
-	if not open.has(at):
-		return
-	var view: Node = open[at]["view"]
-	open.erase(at)
-	if is_instance_valid(view):
-		view.queue_free()
-	print("[підземелля] %d закрито" % at)
+## Прибрати все підземелля святині — усі його рівні (Ф7: строк минув;
+## Ф6: зачищено). Монстрів зон спершу прибирає спавнер — зони лежать у
+## показі й підуть разом із ним.
+func close(shrine: int) -> void:
+	for at: int in levels_of(shrine):
+		var view: Node = open[at]["view"]
+		open.erase(at)
+		if is_instance_valid(view):
+			view.queue_free()
+	print("[підземелля] за святинею %d закрито" % shrine)
+
+
+## Відкриті рівні підземелля святині, згори вниз.
+func levels_of(shrine: int) -> Array[int]:
+	var out: Array[int] = []
+	for at: int in open:
+		if shrine_of(at) == shrine:
+			out.append(at)
+	out.sort()
+	return out
+
+
+## Запалити портал «Далі» там, де був бос (Ф6). Той самий вузол, що й
+## «Вихід», лише назва інша.
+func light_down(at: int) -> Portal:
+	var entry: Dictionary = open.get(at, {})
+	if entry.is_empty():
+		return null
+	if entry["down"] != null and is_instance_valid(entry["down"]):
+		return entry["down"]
+	var plan: DungeonPlan = entry["plan"]
+	var down := Portal.new()
+	down.name = "Далі"
+	down.grade = entry["grade"]
+	entry["view"].add_child(down)
+	down.position = plan.at(plan.room_cell(plan.boss_room))
+	entry["down"] = down
+	return down
 
 
 ## Куди ставити гравця, що зайшов.
@@ -121,13 +170,17 @@ func floor_at(x: float, z: float) -> float:
 ##
 ## Зона — вузьке коло на прохідній клітинці: ширше — і випадкова точка
 ## лягла б у камінь, звідки монстр падав би в порожнечу під підземеллям.
-func zones_for(at: int, mobs: Dictionary) -> Array:
+## `with_boss` — false для рівня, чий бос уже вбитий (відновлення після
+## перезапуску): вдруге він не з'являється.
+func zones_for(at: int, mobs: Dictionary, with_boss: bool = true) -> Array:
 	var entry: Dictionary = open[at]
 	var plan: DungeonPlan = entry["plan"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(entry["seed"]) + 1
 	var made: Array = []
 	for slot: Dictionary in book.populate(plan, entry["grade"], mobs, rng):
+		if slot["boss"] and not with_boss:
+			continue
 		var zone := MobZone.new()
 		zone.name = "Зграя%d" % made.size()
 		zone.kind = int(slot["kind"])
@@ -137,6 +190,10 @@ func zones_for(at: int, mobs: Dictionary) -> Array:
 		zone.aggressive = true
 		zone.respawn_after = RESPAWN
 		zone.respawn_spread = 60.0
+		# Бос (Ф6) не вертається: його смерть і є зачистка рівня.
+		if slot["boss"]:
+			zone.boss = true
+			zone.respawn_after = INF
 		var holder := CollisionShape3D.new()
 		var ring := CylinderShape3D.new()
 		ring.radius = 0.6

@@ -101,6 +101,7 @@ func _ready() -> void:
 	link = Messenger.new(self, vision)
 	combat = Combat.new(creatures, link)
 	combat.ground_height = ground_at
+	combat.on_kill = _on_kill
 	# Куди вертає оживлення й скіл «повернутися в місто»: центр першого
 	# міста мапи. У версії 1 і 2 це (0,0) — столиця там навмисно, — але
 	# число тепер із даних, а не зашите в коді.
@@ -290,6 +291,7 @@ func _physics_process(delta: float) -> void:
 		if life != null:
 			for at: int in life.tick(delta):
 				close_dungeon(at)
+		_tick_clearing(delta)
 		_tick_grace_places()
 		_tick_water(delta)
 		if store != null and store.due(delta):
@@ -836,10 +838,11 @@ func ask_enter_dungeon(at: int) -> void:
 
 ## Те саме без мережі — щоб перевірялось пробою (див. `activate_shrine`).
 ##
-## Перше входження ВІДКРИВАЄ підземелля: випадковий шаблон із бібліотеки
-## (рівно випадково — П-191), зерно, заселення за грейдом святині. Далі
-## будь-хто заходить у те саме, доки воно стоїть: «відкрити й зачистити
-## можуть різні гравці» (П-153).
+## Перше входження ВІДКРИВАЄ підземелля: шаблон із бібліотеки з вагами
+## статів того, хто відкрив (П-191), скільки рівнів — теж від його сили
+## (Ф5′), зерно, заселення за грейдом святині. Далі будь-хто заходить у
+## те саме, доки воно стоїть: «відкрити й зачистити можуть різні гравці»
+## (П-153).
 func enter_dungeon(id: int, at: int) -> void:
 	var a: Node = creatures.get(id)
 	var land: Node = get_node_or_null("Landscape")
@@ -859,26 +862,96 @@ func enter_dungeon(id: int, at: int) -> void:
 	if flat > PORTAL_REACH:
 		link.notice(id, "портал задалеко")
 		return
-	if not dungeons.open.has(at):
+	var first := Dungeons.key(at, 0)
+	if not dungeons.open.has(first):
+		var power := DungeonBook.power_of(a)
+		var depth := dungeons.book.depth_for(power)
 		var rng := RandomNumberGenerator.new()
 		rng.randomize()
-		var template := dungeons.book.pick(rng)
+		var template := dungeons.book.pick_weighted(rng, power, 0)
 		var with_seed := rng.randi() % 1000000000
-		if dungeons.raise(at, template, with_seed, shrine.grade).is_empty():
+		if not _raise_level(at, 0, template, with_seed, shrine.grade,
+				depth):
 			link.notice(id, "‼ підземелля не збудувалось")
 			return
-		spawner.add_zones(dungeons.zones_for(at, data.mobs))
-		link.to_all(&"client_dungeon", [at, template, with_seed, shrine.grade])
 		if life != null:
-			life.built(at, template, with_seed)
-	var entry: Dictionary = dungeons.open[at]
-	a.place_at(dungeons.entry_point(at), 0.0)
+			life.built(at, template, with_seed, depth, power)
+	_arrive(id, a, first)
+
+
+## Збудувати рівень `level` підземелля святини `at`, заселити й сказати
+## всім клієнтам. `with_boss` — false, коли бос цього рівня вже вбитий.
+func _raise_level(at: int, level: int, template: String, with_seed: int,
+		grade: String, depth: int, with_boss: bool = true) -> bool:
+	var key := Dungeons.key(at, level)
+	if dungeons.raise(key, template, with_seed, grade, depth).is_empty():
+		return false
+	spawner.add_zones(dungeons.zones_for(key, data.mobs, with_boss))
+	link.to_all(&"client_dungeon", [key, template, with_seed, grade, depth])
+	return true
+
+
+## Поставити гравця на вхід рівня `key` і сказати, де він.
+func _arrive(id: int, a: Node, key: int) -> void:
+	var entry: Dictionary = dungeons.open[key]
+	a.place_at(dungeons.entry_point(key), 0.0)
 	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
-	link.notice(id, "підземелля «%s» · ворота %s"
-			% [entry["plan"].title, entry["grade"]])
+	link.to_one(id, &"client_place", [id, a.global_position, a.facing])
+	link.notice(id, "підземелля «%s» · ворота %s · рівень %d з %d"
+			% [entry["plan"].title, entry["grade"],
+			   Dungeons.level_of(key) + 1, int(entry["depth"])])
 
 
-## Вийти з підземелля — з кола «Вихід» назад до святині.
+## Спуститися порталом «Далі» (Ф5′/Ф6): він запалюється в палаті боса,
+## щойно бос повалений. Наступний рівень будується першим, хто спустився,
+## — з вагами сили того, хто ВІДКРИВ підземелля (вона збережена), тож і
+## після перезапуску вийде той самий розклад складності.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_descend(key: int) -> void:
+	if not Net.is_server:
+		return
+	descend(multiplayer.get_remote_sender_id(), key)
+
+
+func descend(id: int, key: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive() or not dungeons.open.has(key):
+		return
+	var entry: Dictionary = dungeons.open[key]
+	var down: Portal = entry["down"]
+	if down == null or not is_instance_valid(down):
+		link.notice(id, "прохід далі ще закритий — спершу бос")
+		return
+	var flat := Vector2(a.global_position.x - down.global_position.x,
+			a.global_position.z - down.global_position.z).length()
+	if flat > PORTAL_REACH:
+		link.notice(id, "прохід задалеко")
+		return
+	var at := Dungeons.shrine_of(key)
+	var next := Dungeons.level_of(key) + 1
+	var depth := int(entry["depth"])
+	if next >= depth:
+		return
+	var below := Dungeons.key(at, next)
+	if not dungeons.open.has(below):
+		var power: int = int(life.records.get(at, {}).get("power",
+				DungeonBook.power_of(a))) if life != null \
+				else DungeonBook.power_of(a)
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		var template := dungeons.book.pick_weighted(rng, power, next)
+		var with_seed := rng.randi() % 1000000000
+		if not _raise_level(at, next, template, with_seed, entry["grade"],
+				depth):
+			link.notice(id, "‼ рівень не збудувався")
+			return
+		if life != null:
+			life.built_level(at, next, template, with_seed)
+	_arrive(id, a, below)
+
+
+## Вийти з підземелля — з кола «Вихід» назад до святині. «Вихід» є на
+## кожному рівні.
 @rpc("any_peer", "call_remote", "reliable")
 func ask_leave_dungeon() -> void:
 	if not Net.is_server:
@@ -890,16 +963,16 @@ func leave_dungeon(id: int) -> void:
 	var a: Node = creatures.get(id)
 	if a == null or not a.is_alive():
 		return
-	var at := dungeons.index_at(a.global_position.x, a.global_position.z)
-	if at < 0:
+	var key := dungeons.index_at(a.global_position.x, a.global_position.z)
+	if key < 0:
 		return
-	var exit: Portal = dungeons.open[at]["exit"]
+	var exit: Portal = dungeons.open[key]["exit"]
 	var flat := Vector2(a.global_position.x - exit.global_position.x,
 			a.global_position.z - exit.global_position.z).length()
 	if flat > PORTAL_REACH:
 		link.notice(id, "вихід задалеко")
 		return
-	a.place_at(_beside_shrine(at), 0.0)
+	a.place_at(_beside_shrine(Dungeons.shrine_of(key)), 0.0)
 	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
 	link.notice(id, "повернувся до святині")
 
@@ -917,9 +990,66 @@ func _beside_shrine(at: int) -> Vector3:
 	return back
 
 
+## Скільки секунд підземелля стоїть після зачистки, перш ніж закритись:
+## щоб гравці встигли забрати здобич. Число виконавця.
+const CLEAR_AFTER := 60.0
+## Святиня -> скільки секунд лишилось до закриття зачищеного.
+var _clearing: Dictionary = {}
+
+
+## Хтось загинув (кличе `combat._kill`). Цікавить лише бос рівня
+## підземелля (Ф6): його смерть — прохід далі або, на останньому рівні,
+## зачистка всього підземелля.
+func _on_kill(victim_id: int, victim: Node) -> void:
+	if victim_id >= 0 or not victim.get("is_boss"):
+		return
+	var key := dungeons.index_at(victim.global_position.x,
+			victim.global_position.z)
+	if key < 0:
+		return
+	var entry: Dictionary = dungeons.open[key]
+	for zone: Node in entry["zones"]:
+		if zone is MobZone and zone.boss:
+			zone.spent = true
+	var at := Dungeons.shrine_of(key)
+	var level := Dungeons.level_of(key)
+	var depth := int(entry["depth"])
+	if life != null:
+		life.boss_down(at, level)
+	if level + 1 < depth:
+		dungeons.light_down(key)
+		link.to_all(&"client_dungeon_down", [key])
+		_tell_inside(at, "бос повалений — у його палаті відкрився прохід "
+				+ "на рівень %d з %d" % [level + 2, depth])
+	else:
+		_clearing[at] = CLEAR_AFTER
+		_tell_inside(at, "останній бос повалений — підземелля зачищено! "
+				+ "За %.0f с воно закриється, без штрафу" % CLEAR_AFTER)
+
+
+## Сказати всім гравцям, що зараз у підземеллі святині `at`.
+func _tell_inside(at: int, text: String) -> void:
+	for id: int in creatures:
+		var a: Node3D = creatures[id]
+		if id <= 0:
+			continue
+		var key := dungeons.index_at(a.global_position.x, a.global_position.z)
+		if key >= 0 and Dungeons.shrine_of(key) == at:
+			link.notice(id, text)
+
+
+func _tick_clearing(delta: float) -> void:
+	for at: int in _clearing.keys():
+		_clearing[at] -= delta
+		if _clearing[at] <= 0.0:
+			_clearing.erase(at)
+			_shut(at, false)
+
+
 ## Підземелля, відкрите до перезапуску сервера (Ф7): святиня знову
-## світиться відкритою, а якщо в нього вже заходили — стоїть те саме
-## підземелля з тими самими шаблоном і зерном.
+## світиться відкритою, а якщо в нього вже заходили — стоять ті самі
+## рівні з тими самими шаблонами й зернами; де бос уже вбитий, його
+## немає, а прохід далі горить.
 func _restore_dungeon(at: int, record: Dictionary) -> void:
 	var land: Node = get_node_or_null("Landscape")
 	if land == null or not land.has_method("shrines") \
@@ -932,33 +1062,63 @@ func _restore_dungeon(at: int, record: Dictionary) -> void:
 	var template := str(record["template"])
 	if template == "":
 		return
-	if dungeons.raise(at, template, int(record["seed"]),
-			str(record["grade"])).is_empty():
+	var depth := int(record.get("depth", 1))
+	var cleared := int(record.get("cleared", 0))
+	if cleared >= depth:
+		# Зачищене, але закритись не встигло — закриваємо тепер.
+		_shut(at, false)
 		return
-	spawner.add_zones(dungeons.zones_for(at, data.mobs))
+	var levels: Array = record.get("levels", [])
+	if levels.is_empty():
+		levels = [{"template": template, "seed": int(record["seed"])}]
+	for level in levels.size():
+		var one: Dictionary = levels[level]
+		if not _raise_level(at, level, str(one["template"]),
+				int(one["seed"]), str(record["grade"]), depth,
+				level >= cleared):
+			return
+		if level < cleared:
+			dungeons.light_down(Dungeons.key(at, level))
 
 
-## Строк минув (Ф7, П-153): бос не вбитий — підземелля закривається,
-## хто всередині — повертається до святині, святиня знову під охороною,
-## а на світ падає штраф.
+## Строк минув (Ф7, П-153): бос не вбитий — підземелля закривається зі
+## штрафом світу.
 func close_dungeon(at: int) -> void:
+	_shut(at, true)
+
+
+## Закрити підземелля святині `at` з усіма рівнями: хто всередині —
+## до святині, святиня знову під охороною. `penalty` — строк минув
+## (штраф світу, Ф7); без нього — зачищено (Ф6).
+func _shut(at: int, penalty: bool) -> void:
+	var levels := dungeons.levels_of(at)
 	var title := "за святинею %d" % at
-	if dungeons.open.has(at):
-		var entry: Dictionary = dungeons.open[at]
-		title = "«%s»" % entry["plan"].title
+	if not levels.is_empty():
+		title = "«%s»" % dungeons.open[levels[0]]["plan"].title
 		var back := _beside_shrine(at)
 		for id: int in creatures.keys():
 			var a: Node3D = creatures[id]
-			if id <= 0 or dungeons.index_at(a.global_position.x,
-					a.global_position.z) != at:
+			if id <= 0:
+				continue
+			var key := dungeons.index_at(a.global_position.x,
+					a.global_position.z)
+			if key < 0 or Dungeons.shrine_of(key) != at:
 				continue
 			a.place_at(back, 0.0)
 			link.to_watchers(id, &"client_place",
 					[id, a.global_position, a.facing])
-		spawner.drop_zones(entry["zones"])
+			link.to_one(id, &"client_place",
+					[id, a.global_position, a.facing])
+		for key: int in levels:
+			spawner.drop_zones(dungeons.open[key]["zones"])
 		dungeons.close(at)
 		link.to_all(&"client_dungeon_closed", [at])
-	life.expire(at)
+	if life != null:
+		if penalty:
+			life.expire(at)
+		else:
+			life.clear(at)
+	_clearing.erase(at)
 	var land: Node = get_node_or_null("Landscape")
 	if land != null and land.has_method("shrines") \
 			and at >= 0 and at < land.shrines().size():
@@ -966,28 +1126,40 @@ func close_dungeon(at: int) -> void:
 		_shrine_sent[at] = Shrine.Stage.ПІД_ОХОРОНОЮ
 		link.to_all(&"client_shrine", [at, Shrine.Stage.ПІД_ОХОРОНОЮ])
 	link.to_all(&"client_dungeon_days", [at, -1.0, ""])
-	for id: int in creatures:
-		if id < 0:
-			penalize(creatures[id])
-	var text := "підземелля %s закрилось: бос не вбитий за %.0f днів — " \
-			% [title, life.days_open()] \
-			+ "світ під штрафом на %.0f днів, монстри сильніші" \
-			% life.days_penalty()
+	var text := ""
+	if penalty:
+		for id: int in creatures:
+			if id < 0:
+				penalize(creatures[id])
+		text = "підземелля %s закрилось: бос не вбитий за %.0f днів — " \
+				% [title, life.days_open()] \
+				+ "світ під штрафом на %.0f днів, монстри сильніші" \
+				% life.days_penalty()
+	else:
+		text = "підземелля %s зачищено й закрилось" % title
 	print("[підземелля] " + text)
 	for id: int in creatures:
 		if id > 0:
 			link.notice(id, text)
 
 
-## Повісити на монстра чинні штрафи світу (Ф7). Той самий стан удруге не
-## подвоюється — поновлює строк (П-108), тож кликати можна скільки
-## завгодно.
+## Повісити на монстра чинні штрафи світу (Ф7) і, в глибоких рівнях
+## підземелля, «глибину» (Ф5′: що глибше, то сильніші). Той самий стан
+## удруге не подвоюється — поновлює строк (П-108), тож кликати можна
+## скільки завгодно.
 func penalize(m: Node) -> void:
-	if life == null:
-		return
 	var was: int = m.stats.max_hp()
-	for state: State in life.penalty_states():
-		m.add_state(state)
+	if life != null:
+		for state: State in life.penalty_states():
+			m.add_state(state)
+	var key := dungeons.index_at(m.global_position.x, m.global_position.z) \
+			if dungeons != null else -1
+	var level := Dungeons.level_of(key) if key >= 0 else 0
+	if level > 0:
+		for one: Dictionary in dungeons.book.weights.get("глибина", []):
+			var stat := str(one.get("стат", ""))
+			m.add_state(State.new("глибина %d · %s" % [level, stat], stat,
+					pow(float(one.get("множник", 1.0)), level), INF))
 	# Здоров'я — тією самою часткою від нового максимуму: цілий монстр
 	# лишається цілим (утричі товщим), поранений — так само пораненим.
 	var now: int = m.stats.max_hp()
@@ -999,10 +1171,12 @@ func penalize(m: Node) -> void:
 ## лише зміни, а ці сталися до його приходу (та сама пастка, що зі
 ## святинями).
 func _tell_dungeons(peer: int) -> void:
-	for at: int in dungeons.open:
-		var entry: Dictionary = dungeons.open[at]
-		link.to_one(peer, &"client_dungeon", [at, entry["template"],
-				entry["seed"], entry["grade"]])
+	for key: int in dungeons.open:
+		var entry: Dictionary = dungeons.open[key]
+		link.to_one(peer, &"client_dungeon", [key, entry["template"],
+				entry["seed"], entry["grade"], entry["depth"]])
+		if entry["down"] != null:
+			link.to_one(peer, &"client_dungeon_down", [key])
 
 
 ## Скільки лишилось підземеллю за святинею `at` (Ф8). Від'ємне —
@@ -1035,17 +1209,25 @@ func client_appearance(id: int, race: String, sex: String,
 	a.wear(look, data.items)
 
 
-## Сервер закрив підземелля (Ф7) — прибрати його й у себе.
+## Сервер закрив підземелля святині (Ф7/Ф6) — прибрати всі його рівні й
+## у себе.
 @rpc("authority", "call_remote", "reliable")
 func client_dungeon_closed(at: int) -> void:
 	dungeons.close(at)
 
 
-## Сервер відкрив підземелля — клієнт будує те саме з тих самих чисел.
+## Бос рівня повалений — запалити в себе портал «Далі».
+@rpc("authority", "call_remote", "reliable")
+func client_dungeon_down(key: int) -> void:
+	dungeons.light_down(key)
+
+
+## Сервер відкрив рівень підземелля — клієнт будує те саме з тих самих
+## чисел.
 @rpc("authority", "call_remote", "reliable")
 func client_dungeon(at: int, template: String, with_seed: int,
-		grade: String) -> void:
-	dungeons.raise(at, template, with_seed, grade)
+		grade: String, depth: int = 1) -> void:
+	dungeons.raise(at, template, with_seed, grade, depth)
 
 
 ## Благодатні місця: зони, де відновлюють швидко (П-113). Перевіряємо

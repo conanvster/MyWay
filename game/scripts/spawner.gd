@@ -121,6 +121,8 @@ func tick(delta: float) -> void:
 ## Монстр з'являється у випадковій точці своєї зони (П-66).
 func respawn(slot: int) -> int:
 	var zone: MobZone = _slots[slot]["zone"]
+	if zone.spent:
+		return 0
 	_last_mob_id += 1
 	var id := -_last_mob_id
 	var at := _free_point(zone)
@@ -136,6 +138,7 @@ func respawn(slot: int) -> int:
 		at.y = _world.ground_at(at.x, at.z) + 6.0
 	var m: Node = _world.spawn(id, at)
 	m.setup(at, zone.kind, zone.aggressive, _data.for_kind(zone.kind))
+	m.is_boss = zone.boss
 	# Штраф світу за незачищені підземелля (Ф7) — і на тих, хто
 	# з'являється вже після нього.
 	if _world.has_method("penalize"):

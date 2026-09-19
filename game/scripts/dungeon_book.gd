@@ -23,6 +23,8 @@ var templates: Dictionary = {}
 var styles: Dictionary = {}
 ## Строк і штраф світу (Ф7): {"строк_днів", "штраф_днів", "штраф"}.
 var life: Dictionary = {}
+## Ваги статів і глибина (П-191, Ф5′).
+var weights: Dictionary = {}
 
 
 static func load_book() -> DungeonBook:
@@ -39,6 +41,7 @@ static func load_book() -> DungeonBook:
 	book.templates = raw.get("шаблони", {})
 	book.styles = raw.get("стилі", {})
 	book.life = raw.get("життя", {})
+	book.weights = raw.get("ваги", {})
 	return book
 
 
@@ -48,11 +51,64 @@ func ids() -> Array:
 	return found
 
 
-## Рівно випадково, як сказав замовник. Ваги зі статів гравця (рішення
-## П-153 від 01.09) сюди ще не підключені — див. fork П-191.
+## Рівно випадково — запасний шлях, коли сили гравця не знаємо.
 func pick(rng: RandomNumberGenerator) -> String:
 	var all := ids()
 	return str(all[rng.randi_range(0, all.size() - 1)])
+
+
+# ── Ваги статів (П-191: слово замовника 19.09.2026 — «з вагами статів») ─
+#
+# Випадково, як і сказано 13.09.2026, але сильнішому частіше випадає
+# складніше: у шаблону складності t вага exp(−(t − бажана)² / 2), де
+# бажана складність росте з силою гравця й з глибиною рівня. Числа
+# (кроки, розкид) — виконавця, у `dungeons.json → ваги`.
+
+## Сила гравця для підземелля: сума БАЗОВИХ статів — те, що він виростив,
+## без бафів і речей. На старті 50 (п'ять статів по 10), +3 за рівень.
+static func power_of(who: Node) -> int:
+	var b: Stats = who.base_stats
+	return b.strength + b.agility + b.stamina + b.intellect + b.sense
+
+
+## Бажана складність шаблону (1…5) для сили `power` на рівні `level`.
+func wanted_tier(power: int, level: int) -> float:
+	var w: Dictionary = weights
+	var from := float(w.get("сила_старту", 50))
+	var per_tier := float(w.get("сили_на_складність", 6))
+	var per_level := float(w.get("складність_на_рівень", 0.5))
+	return clampf(1.0 + (power - from) / per_tier + level * per_level,
+			1.0, 5.0)
+
+
+## Скільки рівнів у підземеллі, яке відкриває гравець сили `power`.
+func depth_for(power: int) -> int:
+	var w: Dictionary = weights
+	var from := float(w.get("сила_старту", 50))
+	var per_level := float(w.get("сили_на_рівень_глибини", 9))
+	return clampi(int(w.get("рівнів_мінімум", 2))
+			+ floori(maxf(0.0, power - from) / per_level), 1,
+			Dungeons.MAX_DEPTH)
+
+
+func pick_weighted(rng: RandomNumberGenerator, power: int,
+		level: int) -> String:
+	var aim := wanted_tier(power, level)
+	var spread := float(weights.get("розкид", 1.0))
+	var all := ids()
+	var total := 0.0
+	var each: Array[float] = []
+	for id: String in all:
+		var t := float(templates[id].get("складність", 1))
+		var w := exp(-pow(t - aim, 2.0) / (2.0 * spread * spread))
+		each.append(w)
+		total += w
+	var roll := rng.randf() * total
+	for i in all.size():
+		roll -= each[i]
+		if roll <= 0.0:
+			return str(all[i])
+	return str(all[all.size() - 1])
 
 
 func make(template_id: String, with_seed: int) -> DungeonPlan:
@@ -107,11 +163,17 @@ func populate(plan: DungeonPlan, grade: String, mobs: Dictionary,
 			fit.append(kind)
 	if fit.is_empty():
 		fit = kinds
-	var strongest := kinds[0]
-	for kind in kinds:
-		if int(mobs[str(kind)].get("рівень", 1)) \
-				> int(mobs[str(strongest)].get("рівень", 1)):
-			strongest = kind
+	var strongest := _strongest(mobs, kinds)
+	# Бос — найсильніший вид НАСТУПНОЇ смуги (П-192, слово замовника
+	# 19.09.2026: «бос із наступної смуги»); за воротами E — з тих, з
+	# кого падає ключ D. Наступної смуги немає — лишається своя.
+	var boss := strongest
+	var grades: Array = ItemBook.GRADES
+	var up := grades.find(grade) + 1
+	if up > 0 and up < grades.size():
+		var next := band(mobs, grades[up])
+		if not next.is_empty() and next != kinds:
+			boss = _strongest(mobs, next)
 
 	var tier := plan.tier
 	var from_exit := plan.distances(plan.room_cell(plan.exit_room))
@@ -125,7 +187,7 @@ func populate(plan: DungeonPlan, grade: String, mobs: Dictionary,
 		if from_exit[plan.index(cell.x, cell.y)] < quiet:
 			continue
 		if r == plan.boss_room:
-			slots.append(_slot(mobs, cell, strongest, 1, true))
+			slots.append(_slot(mobs, cell, boss, 1, true))
 			slots.append(_slot(mobs, _near(plan, cell, rng), fit[0],
 					1 + tier, false))
 			continue
@@ -158,6 +220,15 @@ func populate(plan: DungeonPlan, grade: String, mobs: Dictionary,
 			slots.append(_slot(mobs, c, kind,
 					rng.randi_range(1, 1 + tier / 2), false))
 	return slots
+
+
+static func _strongest(mobs: Dictionary, kinds: Array[int]) -> int:
+	var best := kinds[0]
+	for kind in kinds:
+		if int(mobs[str(kind)].get("рівень", 1)) \
+				> int(mobs[str(best)].get("рівень", 1)):
+			best = kind
+	return best
 
 
 func _slot(mobs: Dictionary, cell: Vector2i, kind: int, count: int,

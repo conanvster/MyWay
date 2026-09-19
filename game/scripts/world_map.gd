@@ -383,6 +383,8 @@ const ROCK := Color(0.07, 0.065, 0.06)
 const PASSAGE := Color(0.78, 0.7, 0.55)
 const DEEP := Color(0.42, 0.36, 0.28)
 const EXIT := Color(0.55, 0.85, 1.0)
+## Прохід на наступний рівень (Ф5′) — після поваленого боса.
+const DOWN := Color(1.0, 0.72, 0.3)
 ## Скільки точок картинки на клітинку: план 64…150 клітинок, а вікно
 ## 480 точок — без цього розтягнута картинка вийшла б розмитою.
 const PLAN_PIXELS := 4
@@ -447,8 +449,17 @@ func _draw_dungeon(at: int) -> void:
 		draw_string(_font, dot + Vector2(10, 4), "вихід",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, EXIT)
 
-	draw_string(_font, Vector2(8, 16), "%s · ворота %s"
-			% [plan.title, entry["grade"]],
+	var down: Portal = entry.get("down")
+	if down != null and is_instance_valid(down):
+		var p: Vector3 = down.global_position
+		var ring: Vector2 = to_map.call(p.x, p.z)
+		draw_arc(ring, 7.0, 0.0, TAU, 24, DOWN, 2.0)
+		draw_string(_font, ring + Vector2(10, 4), "далі",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, DOWN)
+
+	draw_string(_font, Vector2(8, 16), "%s · ворота %s · рівень %d з %d"
+			% [plan.title, entry["grade"], Dungeons.level_of(at) + 1,
+			   int(entry.get("depth", 1))],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TOWN)
 	_draw_me(to_map.call(me.x, me.z))
 
@@ -476,8 +487,9 @@ func _draw_open_dungeons() -> void:
 			draw_arc(dot, 8.0, 0.0, TAU, 24, tone, 2.5)
 			draw_circle(dot, 3.0, tone)
 		var title := "ще не відкрите"
-		if dungeons != null and dungeons.open.has(at):
-			title = dungeons.open[at]["plan"].title
+		var first := Dungeons.key(at, 0)
+		if dungeons != null and dungeons.open.has(first):
+			title = dungeons.open[first]["plan"].title
 		lines.append("%s · %s · %s" % [grade, title,
 				ClientView._days_text(world.days_left(at))])
 		tones.append(tone)

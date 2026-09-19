@@ -263,14 +263,24 @@ func _watch_portals(delta: float) -> void:
 					"Увійти в підземелля за воротами %s?" % gate.grade, go)
 			return
 	for at: int in dungeons.open:
-		var exit: Portal = dungeons.open[at]["exit"]
-		if not exit.entered(my_id, pos):
-			continue
-		me.walk_to = Vector3.ZERO
-		_world.hud.ask_confirm(
-				"Вийти з підземелля «%s»?" % dungeons.open[at]["plan"].title,
-				func() -> void: _link.to_server(&"ask_leave_dungeon"))
-		return
+		var entry: Dictionary = dungeons.open[at]
+		var exit: Portal = entry["exit"]
+		if exit.entered(my_id, pos):
+			me.walk_to = Vector3.ZERO
+			_world.hud.ask_confirm(
+					"Вийти з підземелля «%s»?" % entry["plan"].title,
+					func() -> void: _link.to_server(&"ask_leave_dungeon"))
+			return
+		# Прохід далі в палаті поваленого боса (Ф5′/Ф6).
+		var down: Portal = entry["down"]
+		if down != null and is_instance_valid(down) \
+				and down.entered(my_id, pos):
+			me.walk_to = Vector3.ZERO
+			var key := at
+			_world.hud.ask_confirm("Спуститися на рівень %d з %d?"
+					% [Dungeons.level_of(key) + 2, int(entry["depth"])],
+					func() -> void: _link.to_server(&"ask_descend", [key]))
+			return
 
 
 ## Усередині підземелля — його повітря, без сонця, і ліхтар довкола

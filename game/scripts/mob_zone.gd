@@ -26,6 +26,11 @@ extends Area3D
 ## Через скільки з'являється заміна вбитому, і наскільки випадково.
 @export var respawn_after: float = 12.0
 @export var respawn_spread: float = 4.0
+## Бос рівня підземелля (Ф6): один, не вертається, його смерть
+## запалює прохід далі.
+@export var boss := false
+## Бос повалений — зона більше не заселяється, навіть коли прокинеться.
+var spent := false
 
 
 func _ready() -> void:

@@ -337,6 +337,11 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 ## Хтось загинув. Тут-таки й винагорода вбивці: повага, досвід і дроп
 ## (крок 3). Гравець за гравця поки не отримує нічого — це PvP, і воно
 ## має свої правила (П-88).
+## Кому сказати про смерть, крім клієнтів: світ ловить так боса
+## підземелля (Ф6). (victim_id, victim) -> void.
+var on_kill: Callable
+
+
 func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	victim.die()
 	# Гравець за смерть втрачає повагу: рівно 10% обсягу поточного рівня
@@ -358,6 +363,8 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
 	if me > 0 and victim_id < 0:
 		_reward(me, killer, victim)
+	if on_kill.is_valid():
+		on_kill.call(victim_id, victim)
 
 
 ## Скільки дісталось убивці. Множник за різницю рівнів (П-104) б'є по

@@ -30,7 +30,10 @@ const DAY := 86400.0
 ## упізнає монстра під штрафом (фіолетова помітка, П-213).
 const PENALTY_NAME := "штраф світу"
 
-## Номер святині -> {"grade", "template", "seed", "opened", "closes"}.
+## Номер святині -> {"grade", "template", "seed", "opened", "closes",
+## "depth", "power", "levels", "cleared"} (останні чотири — Ф5′/Ф6:
+## скільки рівнів, сила того, хто відкрив, збудовані рівні
+## [{template, seed}] і скільки босів уже повалено).
 var records: Dictionary = {}
 ## Чинні штрафи: [{"shrine", "until"}].
 var penalties: Array = []
@@ -88,7 +91,11 @@ func restore(restored: Callable, expired: Callable) -> void:
 						"template": str(row["template"]),
 						"seed": int(row["seed"]),
 						"opened": int(row["opened_at"]),
-						"closes": int(row["closes_at"])}
+						"closes": int(row["closes_at"]),
+						"depth": int(row.get("depth", 1)),
+						"power": int(row.get("power", 50)),
+						"levels": row.get("levels", []),
+						"cleared": int(row.get("cleared", 0))}
 				if now() >= int(records[at]["closes"]):
 					expired.call(at)
 				else:
@@ -100,17 +107,54 @@ func restore(restored: Callable, expired: Callable) -> void:
 func activated(at: int, grade: String) -> void:
 	var from := now()
 	records[at] = {"grade": grade, "template": "", "seed": 0,
-			"opened": from, "closes": from + int(days_open() * DAY)}
+			"opened": from, "closes": from + int(days_open() * DAY),
+			"depth": 1, "power": 50, "levels": [], "cleared": 0}
 	_save(at)
 
 
-## Перший вхід збудував підземелля — запам'ятати, яке саме.
-func built(at: int, template: String, with_seed: int) -> void:
+## Перший вхід збудував підземелля — запам'ятати, яке саме, скільки в ньому
+## рівнів і яка сила того, хто відкрив (з нею вибираються глибші рівні).
+func built(at: int, template: String, with_seed: int, depth: int = 1,
+		power: int = 50) -> void:
 	if not records.has(at):
 		return
 	records[at]["template"] = template
 	records[at]["seed"] = with_seed
+	records[at]["depth"] = depth
+	records[at]["power"] = power
+	records[at]["levels"] = [{"template": template, "seed": with_seed}]
 	_save(at)
+
+
+## Хтось спустився й збудував рівень `level`.
+func built_level(at: int, level: int, template: String,
+		with_seed: int) -> void:
+	if not records.has(at):
+		return
+	var levels: Array = records[at]["levels"]
+	while levels.size() <= level:
+		levels.append({})
+	levels[level] = {"template": template, "seed": with_seed}
+	_save(at)
+
+
+## Бос рівня `level` повалений (Ф6).
+func boss_down(at: int, level: int) -> void:
+	if not records.has(at):
+		return
+	records[at]["cleared"] = maxi(int(records[at]["cleared"]), level + 1)
+	_save(at)
+
+
+## Зачищено (Ф6): запис геть, штрафу немає.
+func clear(at: int) -> void:
+	records.erase(at)
+	_again.erase(at)
+	if _store != null and _store.works():
+		if _busy.has(at):
+			_drop_after[at] = true
+		else:
+			_drop_row(at)
 
 
 ## Скільки днів лишилось, для напису. -1 — не активована.
@@ -202,7 +246,9 @@ func _save(at: int) -> void:
 	_store.put(DUNGEONS, {"world": _world_key, "shrine": at,
 			"grade": r["grade"], "template": r["template"],
 			"seed": r["seed"], "opened_at": r["opened"],
-			"closes_at": r["closes"]},
+			"closes_at": r["closes"], "depth": r["depth"],
+			"power": r["power"], "levels": r["levels"],
+			"cleared": r["cleared"]},
 			func(_ok: bool, _rows: Array) -> void:
 				_busy.erase(at)
 				if _drop_after.has(at):

@@ -187,11 +187,11 @@ func _go() -> void:
 	world._restore_dungeon(2, {"template": "старий-льох", "seed": 77,
 			"grade": land.shrines()[2].grade})
 	_yes("відновлення після перезапуску: святиня відкрита, підземелля «%s»"
-			% (world.dungeons.open[2]["template"]
-					if world.dungeons.open.has(2) else "—"),
+			% (world.dungeons.open[Dungeons.key(2, 0)]["template"]
+					if world.dungeons.open.has(Dungeons.key(2, 0)) else "—"),
 			land.shrines()[2].stage == Shrine.Stage.АКТИВОВАНА
-			and world.dungeons.open.has(2)
-			and world.dungeons.open[2]["seed"] == 77)
+			and world.dungeons.open.has(Dungeons.key(2, 0))
+			and world.dungeons.open[Dungeons.key(2, 0)]["seed"] == 77)
 
 	print("\n— лічильник днів і список на карті (Ф8) —")
 	world.client_dungeon_days(2, 29.5 * DAY, "E")

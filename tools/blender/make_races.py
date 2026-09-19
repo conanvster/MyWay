@@ -224,6 +224,50 @@ def _boot_feet(body, gap):
     return made
 
 
+# Волосся — коротка стрижка (19.09.2026, план: «волосся моделі гравця»;
+# моделей зачісок у безкоштовному наборі немає). Копія шкіри верху й
+# потилиці голови, відсунута на 7 мм, з картинкою пасм. Колір — за
+# расою, вибір виконавця. Під шоломом гра його ховає
+# (`skinned_model.gd:wear`).
+HAIR = {"людина": "волосся-русяве", "ельф": "волосся-світле",
+        "орк": "волосся-чорне"}
+
+
+def hair(body, race):
+    bones = dominant(body)
+    mw = body.matrix_world
+    piece = body.copy()
+    piece.data = body.data.copy()
+    piece.name = "Волосся"
+    bpy.context.scene.collection.objects.link(piece)
+    bm = bmesh.new()
+    bm.from_mesh(piece.data)
+    # Верх голови над лобом і вся потилиця вище шиї; обличчя й вуха
+    # відкриті.
+    drop = [v for v in bm.verts
+            if bones.get(v.index, "") != "Head"
+            or not ((mw @ v.co).z >= 1.735
+                    or ((mw @ v.co).y > 0.02 and (mw @ v.co).z >= 1.6))]
+    bmesh.ops.delete(bm, geom=drop, context="VERTS")
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * 0.007
+    bm.to_mesh(piece.data)
+    bm.free()
+    tex = os.path.join(ROOT, "art", "monsters", "textures")
+    mat = bpy.data.materials.new("Волосся")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    bsdf.inputs["Roughness"].default_value = 0.8
+    bsdf.inputs["Specular IOR Level"].default_value = 0.25
+    image = mat.node_tree.nodes.new("ShaderNodeTexImage")
+    image.image = bpy.data.images.load(os.path.join(tex, HAIR[race] + ".png"))
+    mat.node_tree.links.new(image.outputs["Color"], bsdf.inputs["Base Color"])
+    piece.data.materials.clear()
+    piece.data.materials.append(mat)
+    return piece
+
+
 def uv_of_nearest(body, point):
     """UV тієї точки тіла, що найближча до `point`."""
     mw = body.matrix_world
@@ -368,6 +412,11 @@ def attach(rig, objs):
 
 def previews(folder, tag):
     scene = bpy.context.scene
+    # У грі одяг з'являється лише вдягнутим; на картинці шолом накрив би
+    # волосся — ховаємо його тут.
+    for obj in bpy.data.objects:
+        if obj.name.startswith("Одяг-Шолом"):
+            obj.hide_render = True
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 360
     scene.render.resolution_y = 540
@@ -412,6 +461,7 @@ def main():
     inflate(body, RACES[race][0])
     reskin(body, race, sex)
     made = clothes(body)
+    made.append(hair(body, race))
     ears_and_tusks(body, race)
     attach(rig, made)
     if len(args) > 3:

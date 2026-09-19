@@ -165,6 +165,10 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		mesh.visible = shown.has(piece)
 		if mesh.visible:
 			mesh.material_override = _cloth(shown[piece])
+	# Волосся (19.09.2026) — під шоломом його не видно.
+	for hair: Node in find_children("Волосся*", "MeshInstance3D", true,
+			false):
+		hair.visible = not shown.has("Шолом")
 
 
 static var _cloths: Dictionary = {}

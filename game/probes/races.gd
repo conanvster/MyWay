@@ -89,6 +89,15 @@ func _check(race: String, sex: String) -> void:
 	if worn != ["Сорочка", "Чоботи", "Штани"]:
 		problems.append("вдягнено куртку й чоботи, видно: %s"
 				% ", ".join(worn))
+	var hair: Array = skin.find_children("Волосся*", "MeshInstance3D", true,
+			false)
+	if hair.is_empty() or not hair[0].visible:
+		problems.append("без шолома волосся не видно")
+	hero.wear({"голова": "шолом з кори дуба"}, goods)
+	if not hair.is_empty() and hair[0].visible:
+		problems.append("під шоломом волосся стирчить")
+	hero.wear({"тіло": "куртка з кори дуба", "взуття": "чоботи з кори дуба"},
+			goods)
 	for mesh: MeshInstance3D in pieces:
 		if mesh.visible and (mesh.material_override == null
 				or mesh.material_override.albedo_texture == null):

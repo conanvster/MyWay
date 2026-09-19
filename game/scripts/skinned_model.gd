@@ -47,6 +47,21 @@ const REVERSED_MOUNTS := {
 ## розвертається сама.
 const OWN_DIR := "res://models/own/"
 
+## Одяг на моделі гравця (19.09.2026, слово замовника: «моделі
+## роздягнені, і коли в інвентарі вдягаю одяг — та частина, яку вдягаю,
+## вдягається в моделі; при купівлі різних сетів вигляд аватара
+## змінюється»). Комірка спорядження -> частини моделі
+## (`tools/blender/make_races.py`, вузли «Одяг-…»). Окремої комірки для
+## ніг у грі немає — штани йдуть із «тілом» разом із сорочкою (П-215).
+const PIECES := {
+	"тіло": ["Сорочка", "Штани"],
+	"ремінь": ["Пасок"],
+	"взуття": ["Чоботи"],
+	"рукавиці": ["Рукавиці"],
+	"голова": ["Шолом"],
+}
+const PIECE_PREFIX := "Одяг-"
+
 var path := ""
 var height := 1.0
 var tint := Color(1, 1, 1)
@@ -104,6 +119,8 @@ func build() -> void:
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
 	if _player != null:
 		_play_if_has(["Idle"])
+	# Одяг сховано, доки нічого не вдягнуто.
+	wear({}, null)
 
 
 ## Забрати `AnimationPlayer` із окремого файла (П-150): пряма пересадка,
@@ -128,6 +145,48 @@ func _borrow_player(body: Node, from_path: String) -> AnimationPlayer:
 	body.add_child(found)
 	donor.queue_free()
 	return found
+
+
+## Вдягти: показати частини вдягнутих речей і пофарбувати їх за
+## `вигляд` речі в `data/items.json` — {"колір", "текстура", "масштаб",
+## "шорсткість"}. Решта частин ховається: модель без речей роздягнена.
+## Вигляд — у даних, не в моделі: новий набір речей — новий вигляд без
+## жодного перемальовування моделей.
+func wear(look: Dictionary, goods: ItemBook) -> void:
+	var shown := {}
+	for slot: String in look:
+		var base: Dictionary = goods.base_of(look[slot]) if goods != null \
+				else {}
+		for piece: String in PIECES.get(slot, []):
+			shown[piece] = base.get("вигляд", {})
+	for mesh: MeshInstance3D in find_children(PIECE_PREFIX + "*",
+			"MeshInstance3D", true, false):
+		var piece := str(mesh.name).trim_prefix(PIECE_PREFIX)
+		mesh.visible = shown.has(piece)
+		if mesh.visible:
+			mesh.material_override = _cloth(shown[piece])
+
+
+static var _cloths: Dictionary = {}
+
+
+## Матеріал речі за її `вигляд` — один на весь однаковий вигляд.
+static func _cloth(look: Dictionary) -> StandardMaterial3D:
+	var key := str(look)
+	if _cloths.has(key):
+		return _cloths[key]
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(str(look.get("колір", "#8a7a60")))
+	m.roughness = float(look.get("шорсткість", 0.9))
+	var picture := str(look.get("текстура", ""))
+	if picture != "":
+		if ResourceLoader.exists(picture):
+			m.albedo_texture = load(picture)
+			m.uv1_scale = Vector3.ONE * float(look.get("масштаб", 4.0))
+		else:
+			print("[одяг] ‼ немає текстури ", picture)
+	_cloths[key] = m
+	return m
 
 
 ## Пофарбувати. У готових моделей свої кольори, тож фарбу не чіпаємо —

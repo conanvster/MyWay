@@ -345,7 +345,7 @@ func _serve(peer: int) -> void:
 		var other: Node3D = creatures[id]
 		rpc_id(peer, "client_spawn", id, other.global_position,
 				other.facing, _kind_of(other), _names.get(id, ""),
-				other.level, other.sex, other.race)
+				other.level, other.sex, other.race, look_of(other))
 		# Смуга здоров'я цілі мусить знати, скільки його всього.
 		rpc_id(peer, "client_vitals", id, other.hp, other.stats.max_hp())
 	for id in diff["gone"]:
@@ -1024,6 +1024,17 @@ func days_left(at: int) -> float:
 			- Time.get_ticks_msec()) / 1000.0 / DungeonLife.DAY)
 
 
+## Раса, стать і що вдягнуто — змінились або щойно прочитані з бази.
+@rpc("authority", "call_remote", "reliable")
+func client_appearance(id: int, race: String, sex: String,
+		look: Dictionary) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or not a.has_method("apply_sex"):
+		return
+	a.apply_sex(sex, race)
+	a.wear(look, data.items)
+
+
 ## Сервер закрив підземелля (Ф7) — прибрати його й у себе.
 @rpc("authority", "call_remote", "reliable")
 func client_dungeon_closed(at: int) -> void:
@@ -1179,7 +1190,10 @@ func _on_joined(id: int) -> void:
 							% [name, creatures[id].level,
 							   creatures[id].respect])
 				rpc_id(id, "client_place", id, creatures[id].global_position,
-						creatures[id].facing), CONNECT_ONE_SHOT)
+						creatures[id].facing)
+				# Поява пішла клієнтові ДО того, як база відповіла, — зі
+				# статтю й расою за замовчуванням. Тепер справжні.
+				_tell_look(id, creatures[id]), CONNECT_ONE_SHOT)
 		store.load_character(_names[id])
 	a.bar = data.bar if not data.bar.is_empty() else a.bar
 	# Стартові скіли — заглушка до рун і крамниць (П-97).
@@ -1187,7 +1201,8 @@ func _on_joined(id: int) -> void:
 		a.learn(skill_key, int(data.starting_skills[skill_key]))
 	# Себе гравець бачить завжди; решту роздасть звірка зон бачення.
 	rpc_id(id, "client_spawn", id, a.global_position, a.facing,
-			_kind_of(a), _names.get(id, ""), a.level, a.sex, a.race)
+			_kind_of(a), _names.get(id, ""), a.level, a.sex, a.race,
+			look_of(a))
 	rpc_id(id, "client_vision", a.vision_radius())
 	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
 	rpc_id(id, "client_bar", PackedStringArray(a.bar))
@@ -1332,6 +1347,7 @@ func ask_wear(at: int, want: String = "") -> void:
 		return
 	link.notice(id, "вдягнено: %s" % a.things[at].title())
 	_after_bag(id, a)
+	_tell_look(id, a)
 
 
 ## Зняти те, що стоїть у цьому слоті.
@@ -1346,6 +1362,31 @@ func ask_take_off(slot: String) -> void:
 	a.unequip(slot)
 	link.notice(id, "знято: %s" % slot)
 	_after_bag(id, a)
+	_tell_look(id, a)
+
+
+## Вигляд гравця для чужих очей (19.09.2026, слово замовника: «моделі
+## роздягнені, і коли в інвентарі вдягаю одяг — та частина, яку
+## вдягаю, вдягається в моделі»): комірка -> назва речі, лише ті
+## комірки, що видно на тілі (`SkinnedModel.PIECES`).
+func look_of(a: Node) -> Dictionary:
+	var out := {}
+	if not ("gear" in a):
+		return out
+	for slot: String in a.gear:
+		if not SkinnedModel.PIECES.has(slot):
+			continue
+		var at: int = int(a.gear[slot])
+		if at >= 0 and at < a.things.size():
+			out[slot] = a.things[at].base
+	return out
+
+
+## Сказати собі й усім, хто бачить, як тепер виглядає гравець.
+func _tell_look(id: int, a: Node) -> void:
+	var args := [id, a.race, a.sex, look_of(a)]
+	link.to_one(id, &"client_appearance", args)
+	link.to_watchers(id, &"client_appearance", args)
 
 
 ## Ужити складану річ — кристал душі й таке інше.
@@ -1781,7 +1822,7 @@ func _kind_of(who: Node) -> int:
 @rpc("authority", "call_remote", "reliable")
 func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 		title: String = "", level: int = 1, sex: String = "чоловік",
-		race: String = "людина") -> void:
+		race: String = "людина", worn: Dictionary = {}) -> void:
 	if creatures.has(id):
 		return
 	var a := spawn(id, pos)
@@ -1803,6 +1844,7 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 		# доки вікно «Стати» не відкриють.
 		if a.has_method("apply_sex"):
 			a.apply_sex(sex, race)
+			a.wear(worn, data.items)
 	_tag(id)
 	if id == multiplayer.get_unique_id():
 		a.become_local()

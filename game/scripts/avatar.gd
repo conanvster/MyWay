@@ -76,10 +76,25 @@ func apply_sex(sex: String, race: String = "людина") -> void:
 	add_child(skin)
 	skin.build()
 	seat_model()
+	# Нова модель — роздягнена; вдягаємо те, що вже було вдягнуто.
+	skin.wear(_look, _goods)
 	# Розворот обличчя (Superhero змонтований у +Z, рушій рахує вперед
 	# як -Z) тепер робить сам build() — SkinnedModel.REVERSED_MOUNTS,
 	# спільний список на всі змонтовані задом наперед моделі, не лише
 	# людину (П-162: виявилось, що й частина монстрів така сама).
+
+
+## Що вдягнуто, для показу: комірка -> назва речі (`world.look_of`).
+var _look: Dictionary = {}
+var _goods: ItemBook = null
+
+
+func wear(look: Dictionary, goods: ItemBook) -> void:
+	_look = look
+	_goods = goods
+	var skin := model()
+	if skin is SkinnedModel:
+		skin.wear(look, goods)
 
 
 func become_local() -> void:

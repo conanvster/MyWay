@@ -71,13 +71,28 @@ func _check(race: String, sex: String) -> void:
 		problems.append("рухів лише %d" % moves)
 	if moved < 0.05:
 		problems.append("ходьба не рушить ногу (%.3f рад)" % moved)
-	var clothes := 0
-	for mesh: MeshInstance3D in skin.find_children("*", "MeshInstance3D",
-			true, false):
-		if mesh.name.begins_with("Одяг"):
-			clothes += 1
-	if clothes < 4:
-		problems.append("одягу %d речей з 4" % clothes)
+	# Одяг (19.09.2026): без речей модель роздягнена; вдягнене показує
+	# рівно свої частини, пофарбовані за `вигляд` речі.
+	var pieces := _pieces(skin)
+	if pieces.size() < 6:
+		problems.append("частин одягу %d з 6" % pieces.size())
+	if not _shown(pieces).is_empty():
+		problems.append("без речей видно: %s" % ", ".join(_shown(pieces)))
+	var goods := ItemBook.new()
+	var raw: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/items.json"))
+	goods.load_from(raw)
+	hero.wear({"тіло": "куртка з кори дуба", "взуття": "чоботи з кори дуба"},
+			goods)
+	var worn := _shown(pieces)
+	worn.sort()
+	if worn != ["Сорочка", "Чоботи", "Штани"]:
+		problems.append("вдягнено куртку й чоботи, видно: %s"
+				% ", ".join(worn))
+	for mesh: MeshInstance3D in pieces:
+		if mesh.visible and (mesh.material_override == null
+				or mesh.material_override.albedo_texture == null):
+			problems.append("%s без текстури кори" % mesh.name)
 	skin.animate(0.0)
 	for i in 30:
 		await process_frame
@@ -92,6 +107,23 @@ func _check(race: String, sex: String) -> void:
 		problems.append("низ моделі на %.2f м" % low)
 	_report(race, sex, problems, moves, moved, tall - low)
 	hero.queue_free()
+
+
+func _pieces(skin: Node) -> Array[MeshInstance3D]:
+	var out: Array[MeshInstance3D] = []
+	for mesh: MeshInstance3D in skin.find_children("*", "MeshInstance3D",
+			true, false):
+		if str(mesh.name).begins_with(SkinnedModel.PIECE_PREFIX):
+			out.append(mesh)
+	return out
+
+
+func _shown(pieces: Array[MeshInstance3D]) -> Array[String]:
+	var out: Array[String] = []
+	for mesh in pieces:
+		if mesh.visible:
+			out.append(str(mesh.name).trim_prefix(SkinnedModel.PIECE_PREFIX))
+	return out
 
 
 func _report(race: String, sex: String, problems: Array[String],

@@ -49,20 +49,34 @@ RACES = {
     "орк": (0.012, 0.045, True),
 }
 
-# Одяг: річ -> (кістки, відступ від шкіри, колір, шорсткість).
-# Межі між речами — за висотою (м), бо кістка таза спільна для
-# сорочки, паска й штанів.
+# Одяг: річ -> (кістки, відступ від шкіри, колір, шорсткість, де).
+# «де» — умова на точку (м, T-поза, перед — −Y): межі між речами
+# проходять і по висоті (кістка таза спільна для сорочки, паска й
+# штанів), і вздовж руки (рукавиця — від середини передпліччя).
+# Колір тут — лише для картинок у Blender: у грі частину фарбує річ,
+# яку вдягнули (`skinned_model.gd:wear`, `вигляд` у items.json).
+FINGERS = {"%s_%02d_%s" % (f, n, s) for f in ("index", "middle", "pinky",
+                                                "ring", "thumb")
+           for n in (1, 2, 3, 4) for s in ("l", "r")} | \
+    {"%s_04_leaf_%s" % (f, s) for f in ("index", "middle", "pinky", "ring",
+                                         "thumb") for s in ("l", "r")}
 CLOTHES = {
     "Сорочка": ({"spine_01", "spine_02", "spine_03", "clavicle_l",
                  "clavicle_r", "upperarm_l", "upperarm_r", "pelvis"},
-                0.012, (0.52, 0.42, 0.28), 0.95, (0.97, 2.0)),
+                0.012, (0.52, 0.42, 0.28), 0.95, lambda p: p.z >= 0.97),
     "Пасок": ({"pelvis", "spine_01"}, 0.019, (0.1, 0.065, 0.04), 0.55,
-              (0.93, 1.0)),
+              lambda p: 0.93 <= p.z <= 1.0),
     "Штани": ({"pelvis", "thigh_l", "thigh_r", "calf_l", "calf_r"},
-              0.008, (0.22, 0.15, 0.09), 0.9, (0.3, 1.0)),
+              0.008, (0.22, 0.15, 0.09), 0.9, lambda p: 0.3 <= p.z <= 1.0),
     "Чоботи": ({"calf_l", "calf_r", "foot_l", "foot_r", "ball_l",
                 "ball_r", "ball_leaf_l", "ball_leaf_r"}, 0.011,
-               (0.09, 0.06, 0.04), 0.6, (-1.0, 0.34)),
+               (0.09, 0.06, 0.04), 0.6, lambda p: p.z <= 0.34),
+    "Рукавиці": ({"lowerarm_l", "lowerarm_r", "hand_l", "hand_r"} | FINGERS,
+                 0.005, (0.3, 0.2, 0.12), 0.7, lambda p: abs(p.x) >= 0.6),
+    # Шолом — верх і потилиця голови: лоб над бровами відкритий, обличчя
+    # теж.
+    "Шолом": ({"Head"}, 0.013, (0.35, 0.3, 0.25), 0.6,
+              lambda p: p.z >= 1.715 or (p.y > 0.035 and p.z >= 1.6)),
 }
 
 
@@ -129,7 +143,7 @@ def clothes(body):
     """Одяг — копії шматків тіла з тими самими вагами кісток."""
     made = []
     bones = dominant(body)
-    for name, (keep, gap, rgb, rough, (z_lo, z_hi)) in CLOTHES.items():
+    for name, (keep, gap, rgb, rough, inside) in CLOTHES.items():
         piece = body.copy()
         piece.data = body.data.copy()
         piece.name = "Одяг-" + name
@@ -139,7 +153,7 @@ def clothes(body):
         bm.from_mesh(piece.data)
         drop = [v for v in bm.verts
                 if bones.get(v.index, "") not in keep
-                or not (z_lo <= (mw @ v.co).z <= z_hi)]
+                or not inside(mw @ v.co)]
         bmesh.ops.delete(bm, geom=drop, context="VERTS")
         bm.normal_update()
         for v in bm.verts:

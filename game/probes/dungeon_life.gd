@@ -273,7 +273,8 @@ func _through_db(url: String, world: Node) -> void:
 	var done := [0]
 	for table: String in [DungeonLife.DUNGEONS, DungeonLife.PENALTIES]:
 		store.drop(table, "world=eq.%s" % KEY.uri_encode(),
-				func(ok: bool, _rows: Array) -> void: done[0] += 1 if ok else 0)
+				func(ok: bool, _rows: Array) -> void:
+					done[0] += 1 if ok else 0)
 	await get_tree().create_timer(1.0).timeout
 	_yes("прибрано за собою", done[0] == 2)
 

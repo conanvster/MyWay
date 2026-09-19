@@ -123,7 +123,7 @@ func respawn(slot: int) -> int:
 	var zone: MobZone = _slots[slot]["zone"]
 	_last_mob_id += 1
 	var id := -_last_mob_id
-	var at := zone.random_point()
+	var at := _free_point(zone)
 	# Поставити НАД землею, не рівно на ній: зона намальована в редакторі
 	# площиною, а земля під нею горбкувата (крок 6), і меш ліпить трикутники
 	# лінійно між вершинами кожні 4 м, тоді як `ground_at` рахує шум у самій
@@ -143,6 +143,44 @@ func respawn(slot: int) -> int:
 	_slots[slot]["id"] = id
 	_slots[slot]["in"] = 0.0
 	return id
+
+
+## Скільки метрів між монстрами при появі. Монстри тепер не проходять
+## одне крізь одного (шар «монстри»), і поява за 6 м угорі над іншим
+## монстром поклала б нового йому на голову. Двоє найбільших (ведмідь,
+## капсула 0,8 м) поруч — 1,6.
+const SPAWN_GAP := 1.6
+const SPAWN_TRIES := 8
+
+
+## Точка зони, де поруч немає живого монстра. Зона тісна (кільце в
+## ході підземелля — 0,6 м) — береться найвільніша з кількох спроб.
+func _free_point(zone: MobZone) -> Vector3:
+	var best := zone.random_point()
+	var best_gap := _gap(best)
+	for i in SPAWN_TRIES - 1:
+		if best_gap >= SPAWN_GAP:
+			break
+		var at := zone.random_point()
+		var gap := _gap(at)
+		if gap > best_gap:
+			best = at
+			best_gap = gap
+	return best
+
+
+## Відстань по горизонталі до найближчого живого монстра.
+func _gap(at: Vector3) -> float:
+	var near := INF
+	for id in _creatures:
+		if id >= 0:
+			continue
+		var m: Node3D = _creatures[id]
+		if not m.is_alive():
+			continue
+		near = minf(near, Vector2(m.global_position.x - at.x,
+				m.global_position.z - at.z).length())
+	return near
 
 
 ## Розбудити зони, до яких підійшли, і приспати ті, від яких усі пішли.

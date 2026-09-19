@@ -32,6 +32,13 @@ func _zones() -> void:
 	# Вище в журналі буде «Identifier not found: Net» — так і має бути:
 	# у режимі --script автозавантажень немає, тому `world.gd` не
 	# компілюється. Зони від нього не залежать: вони окремі вузли.
+	# Світ-клієнт сам стукає на 127.0.0.1, а там може саме йти
+	# гра замовника (19.09.2026: проба під'єдналась до живого
+	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
+	# і `Net.join()` нічого не робить.
+	var net: Node = root.get_node_or_null("Net")
+	if net != null:
+		net.joined = true
 	var world: Node3D = MAIN.instantiate()
 	root.add_child(world)
 	await process_frame

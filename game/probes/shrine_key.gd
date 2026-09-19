@@ -131,6 +131,11 @@ func _go() -> void:
 	await get_tree().process_frame
 	var data := GameData.new()
 	data.load_all()
+	# Світ-клієнт сам стукає на 127.0.0.1, а там може саме йти
+	# гра замовника (19.09.2026: проба під'єдналась до живого
+	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
+	# і `Net.join()` нічого не робить.
+	Net.joined = true
 	var world: Node3D = MAIN.instantiate()
 	get_tree().root.add_child(world)
 	await get_tree().process_frame

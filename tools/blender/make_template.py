@@ -35,6 +35,8 @@ def material(name, rgb):
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
     bsdf.inputs["Roughness"].default_value = 0.7
+    # Колір і для вікна Blender (режим Solid), не лише для рендера й гри.
+    mat.diffuse_color = (*rgb, 1.0)
     return mat
 
 
@@ -71,7 +73,10 @@ def part(kind, bone, at, size, mat, rotate=(0, 0, 0)):
     """Одна фігура тіла, уся — на одній кістці."""
     if kind == "sphere":
         bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10,
-                                             location=at)
+                                             location=at, rotation=rotate)
+    elif kind == "cone":
+        bpy.ops.mesh.primitive_cone_add(vertices=10, location=at,
+                                        rotation=rotate, radius2=0.25)
     else:
         bpy.ops.mesh.primitive_cylinder_add(vertices=12, location=at,
                                             rotation=rotate)
@@ -185,4 +190,5 @@ def main():
     print("[заготовка] збережено", path)
 
 
-main()
+if __name__ == "__main__":
+    main()

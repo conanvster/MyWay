@@ -401,12 +401,27 @@ func lay_down() -> void:
 	var mesh := get_node_or_null("Mesh")
 	if mesh == null:
 		return
-	if mesh is SkinnedModel and mesh.has_move("Death01"):
-		mesh.show_move("Death01")
+	var fall := death_move()
+	if fall != "":
+		mesh.show_move(fall)
 		return
 	mesh.rotation = Vector3(PI / 2.0, 0.0, 0.0)
 	# Лежить на боці: вісь фігурки — на висоті її товщини над землею.
 	mesh.position = Vector3(0.0, 0.15 - foot_drop(), 0.0)
+
+
+## Власний рух падіння моделі, або порожньо. У людини він зветься
+## `Death01` (набір Quaternius), у своїх моделей з Blender — `Death`
+## (19.09.2026: без цього заєць не падав своїм рухом на бік, а гра
+## перекидала всю модель на спину поворотом на 90°).
+func death_move() -> String:
+	var mesh := get_node_or_null("Mesh")
+	if not (mesh is SkinnedModel):
+		return ""
+	for name: String in ["Death01", "Death"]:
+		if mesh.has_move(name):
+			return name
+	return ""
 
 
 ## Зворотне до `lay_down`. Теж суто вигляд, теж викликає клієнт.
@@ -416,7 +431,7 @@ func stand_up() -> void:
 	var mesh := get_node_or_null("Mesh")
 	if mesh == null:
 		return
-	if mesh is SkinnedModel and mesh.has_move("Death01"):
+	if death_move() != "":
 		mesh.show_move("Idle")
 		return
 	mesh.rotation = Vector3.ZERO

@@ -29,12 +29,32 @@ def clear():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def material(name, rgb):
+def material(name, rgb, colour_map=None, normal_map=None):
+    """Матеріал. З картинками (`fur_texture.py`) — хутро: колір із
+    картинки, ворс — картою нормалей, шорсткість майже 1 і слабкий
+    відблиск, інакше поверхня блищить, як шліфована (слово замовника
+    19.09.2026). Лише картинки: вузли-шуми glTF не переносить."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
     bsdf.inputs["Roughness"].default_value = 0.7
+    if colour_map:
+        bsdf.inputs["Roughness"].default_value = 0.95
+        bsdf.inputs["Specular IOR Level"].default_value = 0.15
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = bpy.data.images.load(colour_map)
+        links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    if normal_map:
+        bump = nodes.new("ShaderNodeTexImage")
+        bump.image = bpy.data.images.load(normal_map)
+        bump.image.colorspace_settings.name = "Non-Color"
+        nm = nodes.new("ShaderNodeNormalMap")
+        nm.inputs["Strength"].default_value = 1.0
+        links.new(bump.outputs["Color"], nm.inputs["Color"])
+        links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
     # Колір і для вікна Blender (режим Solid), не лише для рендера й гри.
     mat.diffuse_color = (*rgb, 1.0)
     return mat

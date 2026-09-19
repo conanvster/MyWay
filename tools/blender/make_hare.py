@@ -20,6 +20,8 @@ import bpy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_template as base  # noqa: E402
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 BONES = [
     ("hips", (0, 0.13, 0.23), (0, -0.02, 0.26), None),
     ("chest", (0, -0.02, 0.26), (0, -0.15, 0.28), "hips"),
@@ -51,8 +53,12 @@ def armature():
 
 
 def body(rig):
-    fur = base.material("Хутро", (0.34, 0.2, 0.1))
-    light = base.material("Світле", (0.8, 0.76, 0.7))
+    tex = os.path.join(ROOT, "art", "monsters", "textures")
+    bump = os.path.join(tex, "хутро-нормаль.png")
+    fur = base.material("Хутро", (0.34, 0.2, 0.1),
+                        os.path.join(tex, "хутро-буре.png"), bump)
+    light = base.material("Світле", (0.8, 0.76, 0.7),
+                          os.path.join(tex, "хутро-світле.png"), bump)
     pink = base.material("Рожеве", (0.75, 0.35, 0.35))
     dark = base.material("Очі", (0.01, 0.01, 0.01))
     p = base.part
@@ -111,10 +117,18 @@ def body(rig):
     return mesh
 
 
+## Власна вісь Z кістки тулуба дивиться ВНИЗ (заміряно: (0, −0,2, −0,98)),
+## тож «підняти» в її осях — це мінус. Рухи нижче пишуть зсув тулуба
+## по-людськи — «вгору» додатне, — а тут він перекладається.
+UP_IN_HIPS = -1.0
+
+
 def pose(rig, frame, bone, rot=(0, 0, 0), loc=(0, 0, 0)):
     b = rig.pose.bones[bone]
     b.rotation_mode = "XYZ"
     b.rotation_euler = [math.radians(a) for a in rot]
+    if bone == "hips":
+        loc = (loc[0], loc[1], loc[2] * UP_IN_HIPS)
     b.location = loc
     b.keyframe_insert("rotation_euler", frame=frame)
     b.keyframe_insert("location", frame=frame)
@@ -150,7 +164,7 @@ def actions(rig):
     # Walk — стрибок, 16 кадрів: присів → відштовхнувся задніми →
     # летить із витягнутими передніми → приземлився.
     action(rig, "Walk", 16, {
-        1: {"hips": ((0, 0, 0), (0, 0, -0.03)),
+        1: {"hips": ((0, 0, 0), (0, 0, -0.012)),
             "hind.L": ((-25, 0, 0), (0, 0, 0)),
             "hind.R": ((-25, 0, 0), (0, 0, 0)),
             "front.L": ((20, 0, 0), (0, 0, 0)),
@@ -174,30 +188,37 @@ def actions(rig):
              "hind.R": ((-10, 0, 0), (0, 0, 0)),
              "front.L": ((10, 0, 0), (0, 0, 0)),
              "front.R": ((10, 0, 0), (0, 0, 0))},
-        16: {"hips": ((0, 0, 0), (0, 0, -0.03)),
+        16: {"hips": ((0, 0, 0), (0, 0, -0.012)),
              "hind.L": ((-25, 0, 0), (0, 0, 0)),
              "hind.R": ((-25, 0, 0), (0, 0, 0)),
              "front.L": ((20, 0, 0), (0, 0, 0)),
              "front.R": ((20, 0, 0), (0, 0, 0))},
     })
-    # Attack, 16 кадрів: дибки — і лівою-правою, як зайці боксують.
-    # Кістка тулуба дивиться на −Y: «+» по X опускає морду (видно на
-    # рендері), тож дибки — «−».
-    up = ((-45, 0, 0), (0, 0, 0))
-    # Задні лапи крутяться разом із тулубом — повертаємо їх назад на
-    # той самий кут, щоб стояли на землі.
-    stand = ((45, 0, 0), (0, 0, 0))
-    boxing = {"hips": up, "hind.L": stand, "hind.R": stand,
-              "head": ((25, 0, 0), (0, 0, 0))}
-    action(rig, "Attack", 16, {
+    # Attack, 20 кадрів (слово замовника 19.09.2026: «коли атакує —
+    # повинен бити лапами в стрибку і відскакувати назад»): присів →
+    # стрибок уперед і вгору → у повітрі лівою-правою → приземлився →
+    # відскок назад. Кістка тулуба дивиться на −Y: зсув по її Y — уперед,
+    # «−» по X — морда вгору (перевірено рендером збоку).
+    def at(pitch, up, ahead, **more):
+        keys = {"hips": ((pitch, 0, 0), (0, ahead, up))}
+        for bone, angle in more.items():
+            keys[bone.replace("_", ".")] = ((angle, 0, 0), (0, 0, 0))
+        return keys
+    action(rig, "Attack", 20, {
         1: rest,
-        5: {**boxing, "front.L": ((-70, 0, 0), (0, 0, 0)),
-            "front.R": ((-40, 0, 0), (0, 0, 0))},
-        9: {**boxing, "front.L": ((-30, 0, 0), (0, 0, 0)),
-            "front.R": ((-95, 0, 0), (0, 0, 0))},
-        12: {**boxing, "front.L": ((-95, 0, 0), (0, 0, 0)),
-             "front.R": ((-30, 0, 0), (0, 0, 0))},
-        16: rest,
+        4: at(6, -0.012, 0.0, hind_L=-25, hind_R=-25, front_L=20,
+              front_R=20),
+        7: at(-30, 0.12, 0.1, hind_L=45, hind_R=45, front_L=-100,
+              front_R=-40, head=20, ear_L=30, ear_R=30),
+        9: at(-32, 0.14, 0.14, hind_L=40, hind_R=40, front_L=-35,
+              front_R=-105, head=22, ear_L=35, ear_R=35),
+        11: at(-28, 0.11, 0.16, hind_L=35, hind_R=35, front_L=-105,
+               front_R=-35, head=20, ear_L=30, ear_R=30),
+        13: at(8, 0.0, 0.14, hind_L=-20, hind_R=-20, front_L=15,
+               front_R=15),
+        16: at(-12, 0.07, 0.02, hind_L=30, hind_R=30, front_L=-20,
+               front_R=-20, ear_L=25, ear_R=25),
+        20: rest,
     })
     # Death, 30 кадрів: завалюється на бік, лапи обм'якли.
     action(rig, "Death", 30, {
@@ -213,31 +234,51 @@ def actions(rig):
 
 
 def previews(rig, folder):
-    """Кадри для перевірки оком: спокій, стрибок, бокс, смерть."""
+    """Кадри для перевірки оком: 3/4 для вигляду, збоку — для руху, і
+    зблизька в EEVEE — чи хутро не блищить."""
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_WORKBENCH"
-    scene.display.shading.color_type = "MATERIAL"
-    scene.display.shading.light = "STUDIO"
     scene.render.resolution_x = 480
     scene.render.resolution_y = 360
     cam_data = bpy.data.cameras.new("Камера")
     cam = bpy.data.objects.new("Камера", cam_data)
     scene.collection.objects.link(cam)
     scene.camera = cam
-    cam.location = (1.2, -1.35, 0.62)
-    cam.rotation_euler = (math.radians(76), 0, math.radians(42))
     cam_data.lens = 50
-    shots = [("Idle", 1), ("Walk", 1), ("Walk", 5), ("Walk", 9),
-             ("Attack", 9), ("Death", 30)]
-    for name, frame in shots:
+    views = {
+        "три-чверті": ((1.2, -1.35, 0.62), (76, 0, 42)),
+        "збоку": ((2.0, -0.1, 0.35), (86, 0, 90)),
+        "зблизька": ((0.55, -0.7, 0.45), (72, 0, 38)),
+    }
+    shots = [("Idle", 1, "три-чверті"), ("Walk", 9, "три-чверті"), ("Death", 30, "три-чверті"),
+             ("Attack", 4, "збоку"), ("Attack", 9, "збоку"),
+             ("Attack", 13, "збоку"), ("Attack", 16, "збоку"),
+             ("Idle", 1, "зблизька")]
+    sun = bpy.data.objects.new("Сонце", bpy.data.lights.new("Сонце", "SUN"))
+    sun.rotation_euler = (math.radians(50), 0, math.radians(30))
+    sun.data.energy = 3.0
+    scene.collection.objects.link(sun)
+    world = bpy.data.worlds.new("Небо")
+    world.color = (0.4, 0.45, 0.5)
+    scene.world = world
+    for name, frame, view in shots:
+        at, rot = views[view]
+        cam.location = at
+        cam.rotation_euler = [math.radians(a) for a in rot]
+        if view == "зблизька":
+            scene.render.engine = "BLENDER_EEVEE"
+        else:
+            scene.render.engine = "BLENDER_WORKBENCH"
+            scene.display.shading.color_type = "TEXTURE"
+            scene.display.shading.light = "STUDIO"
         rig.animation_data.action = bpy.data.actions[name]
         scene.frame_set(frame)
-        scene.render.filepath = os.path.join(folder, "%s-%02d.png"
-                                             % (name, frame))
+        scene.render.filepath = os.path.join(folder, "%s-%02d-%s.png"
+                                             % (name, frame, view))
         bpy.ops.render.render(write_still=True)
     rig.animation_data.action = bpy.data.actions["Idle"]
     scene.frame_set(1)
-    bpy.data.objects.remove(cam)
+    for obj in (cam, sun):
+        bpy.data.objects.remove(obj)
 
 
 def main():

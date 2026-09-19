@@ -69,7 +69,9 @@ const STATE_GAP := 4.0
 const BUFF_EDGE := Color(0.36, 0.78, 0.34)
 const DEBUFF_EDGE := Color(0.86, 0.26, 0.2)
 const STAT_TITLES := {"strength": "сила", "agility": "спритність",
-		"stamina": "витривалість", "intellect": "інтелект", "sense": "чуття"}
+		"stamina": "витривалість", "intellect": "інтелект", "sense": "чуття",
+		"move_speed": "швидкість", "physical_attack": "фіз. атака",
+		"physical_defence": "фіз. захист"}
 
 var _my_states: Control
 var _target_states: Control
@@ -940,13 +942,14 @@ signal wants_store_stack(at: int, name: String)
 signal wants_withdraw_thing(at: int, thing_at: int)
 signal wants_withdraw_stack(at: int, name: String)
 signal wants_guild(at: int)
+signal wants_bless(at: int)
 signal wants_learn_skill(at: int, key: String)
 signal wants_raise_skill(at: int, key: String)
 
 ## Розподілити одне вільне очко в стат (П-147).
 signal wants_spend_stat(field: String)
 
-const TALK_INNER := Vector2(240, 172)
+const TALK_INNER := Vector2(240, 212)
 ## Прилавок: та сама комірка, що в торбі, по чотири в ряд.
 const SHOP_COLUMNS := 4
 const SHOP_ROWS := 6
@@ -957,6 +960,7 @@ var _talk_title: Label
 var _talk_trade: Button
 var _talk_warehouse: Button
 var _talk_guild: Button
+var _talk_bless: Button
 var _talk_with := -1
 
 ## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
@@ -1027,6 +1031,16 @@ func _build_talk() -> void:
 				wants_guild.emit(_talk_with))
 	page.add_child(_talk_guild)
 
+	_talk_bless = Button.new()
+	_talk_bless.text = "Благословення"
+	_talk_bless.position = Vector2(0, 160)
+	_talk_bless.size = Vector2(TALK_INNER.x, 32)
+	_talk_bless.custom_minimum_size = _talk_bless.size
+	_talk_bless.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_bless.emit(_talk_with))
+	page.add_child(_talk_bless)
+
 
 ## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
 const MAP_SIDE := 480.0
@@ -1062,6 +1076,8 @@ func _toggle_map() -> void:
 		# на ходу (крок 1.2), і карта має показувати теперішні.
 		if _world != null and _world.data != null:
 			_map_view.map = _world.data.map
+		if _world != null:
+			_map_view.dungeons = _world.dungeons
 		# На світі версії 2 аркуш більший за вікно в дванадцять разів:
 		# відкрити його на середині світу означало б щоразу шукати себе
 		# вручну. Тому відкривається на гравцеві.
@@ -1150,7 +1166,8 @@ func aim_resident(title: String, trades: bool) -> void:
 
 
 func show_talk(at: int, title: String, trades: bool,
-		warehouse_keeper: bool = false, guild_master: bool = false) -> void:
+		warehouse_keeper: bool = false, guild_master: bool = false,
+		priest: bool = false) -> void:
 	if _talk_box == null:
 		return
 	_talk_with = at
@@ -1158,6 +1175,15 @@ func show_talk(at: int, title: String, trades: bool,
 	_talk_trade.visible = trades
 	_talk_warehouse.visible = warehouse_keeper
 	_talk_guild.visible = guild_master
+	_talk_bless.visible = priest
+	# Видимі кнопки — підряд згори: у кожного мешканця своя одна-дві, і
+	# на сталих місцях кнопка священика висіла б під трьома порожніми.
+	var row := 0
+	for button: Button in [_talk_trade, _talk_warehouse, _talk_guild,
+			_talk_bless]:
+		if button.visible:
+			button.position.y = 40 + row * 40
+			row += 1
 	_talk_box.visible = true
 	_talk_box._keep_on_screen()
 
@@ -2209,7 +2235,9 @@ func _move_floats(delta: float) -> void:
 			_floats.erase(item)
 			continue
 		var gone: float = 1.0 - item["left"] / FLOAT_TIME
-		var head: Vector3 = item["who"].global_position + Vector3(0, 1.6, 0)
+		var who: Node3D = item["who"]
+		var head: Vector3 = who.global_position + Vector3(0,
+				who.call("head_y") if who.has_method("head_y") else 1.6, 0)
 		if camera.is_position_behind(head):
 			label.visible = false
 			continue

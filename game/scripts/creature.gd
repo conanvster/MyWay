@@ -152,6 +152,7 @@ func _ready() -> void:
 	var body := get_node_or_null("Mesh")
 	if body is CreatureModel:
 		body.build()
+	seat_model()
 	refresh_stats()
 	if hp == 0:
 		hp = stats.max_hp()
@@ -328,7 +329,7 @@ func show_tag(text: String, tint: Color) -> void:
 		add_child(tag)
 	# Над головою: зріст моделі плюс трохи. У фігурок і моделей висота
 	# однакова за домовленістю (П-105), тож одного числа досить.
-	tag.position = Vector3(0.0, body_height() + TAG_HEIGHT, 0.0)
+	tag.position = Vector3(0.0, head_y() + TAG_HEIGHT, 0.0)
 	tag.text = text
 	tag.modulate = tint
 
@@ -340,9 +341,37 @@ func show_tag(text: String, tint: Color) -> void:
 ## розумів, кого вибрав, стрілка була задрібна.
 func mark_as_target(on: bool) -> void:
 	if on:
-		SelectMark.put(self, 0.8, body_height() + TAG_HEIGHT)
+		SelectMark.put(self, 0.8, head_y() + TAG_HEIGHT)
 	else:
 		SelectMark.clear(self)
+
+
+## На скільки ноги нижче за сам вузол. Вузол тіла — це середина капсули
+## зіткнення (так її ставить `CharacterBody3D`), а ноги моделі — у її
+## власному початку; без зсуву кожна істота висіла над землею на пів
+## капсули: людина на 1,00 м (проба `probes/feet.gd`, слово замовника
+## 19.09.2026: «аватар висить над поверхнею»). Капсула в монстрів
+## масштабується зростом (`mob.gd:_apply_look`), тож і зсув з нею.
+func foot_drop() -> float:
+	var holder := get_node_or_null("Collision") as CollisionShape3D
+	if holder == null or not (holder.shape is CapsuleShape3D):
+		return 0.0
+	var capsule := holder.shape as CapsuleShape3D
+	return capsule.height * 0.5 * holder.scale.y - holder.position.y
+
+
+## Верх голови відносно вузла — для підпису й позначки цілі.
+func head_y() -> float:
+	return body_height() - foot_drop()
+
+
+## Поставити модель ногами на низ капсули. Суто вигляд: фізика, сервер і
+## все, що міряє від вузла (перевірка місця П-202, камера), не міняються.
+## Кликати щоразу, як модель замінено або змінено зріст.
+func seat_model() -> void:
+	var body := model()
+	if body != null:
+		body.position.y = -foot_drop()
 
 
 ## Наскільки істота висока. Потрібно, щоб підпис не вліз у голову.
@@ -373,7 +402,8 @@ func lay_down() -> void:
 		mesh.show_move("Death01")
 		return
 	mesh.rotation = Vector3(PI / 2.0, 0.0, 0.0)
-	mesh.position = Vector3(0.0, -0.5, 0.0)
+	# Лежить на боці: вісь фігурки — на висоті її товщини над землею.
+	mesh.position = Vector3(0.0, 0.15 - foot_drop(), 0.0)
 
 
 ## Зворотне до `lay_down`. Теж суто вигляд, теж викликає клієнт.
@@ -387,7 +417,7 @@ func stand_up() -> void:
 		mesh.show_move("Idle")
 		return
 	mesh.rotation = Vector3.ZERO
-	mesh.position = Vector3.ZERO
+	mesh.position = Vector3(0.0, -foot_drop(), 0.0)
 
 
 ## Розвернутись у бік напрямку. Кут той самий, що й у камери: -Z вузла

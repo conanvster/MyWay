@@ -45,8 +45,15 @@ var me := Vector3.ZERO
 ## Куди гравець дивиться: поворот навколо вертикалі, як `rotation.y`.
 var me_facing := 0.0
 var has_me := false
+## Відкриті підземелля (`world.gd:dungeons`). Гравець у котромусь — карта
+## показує тільки його (слово замовника 19.09.2026: «коли перенесло у
+## підземелля, карта змінюється та показує тільки підземелля»).
+var dungeons: Dungeons = null
 
 var _font: Font
+## Намальований план підземелля: ключ «номер|зерно» -> Texture2D.
+## План детермінований, тож малюється раз на підземелля, а не щокадру.
+var _plans: Dictionary = {}
 
 
 func _ready() -> void:
@@ -119,6 +126,10 @@ func _draw() -> void:
 	if map.is_empty():
 		draw_string(_font, Vector2(12, 24), "карти немає: дані не прийшли",
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, EDGE)
+		return
+	var inside := _dungeon_here()
+	if inside >= 0:
+		_draw_dungeon(inside)
 		return
 	_ensure_view()
 	if not _sheet().is_empty():
@@ -303,7 +314,8 @@ func _draw_sheet() -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if _sheet().is_empty():
+	# Підземелля влазить у вікно цілим — тягати й наближати нема чого.
+	if _sheet().is_empty() or _dungeon_here() >= 0:
 		return
 	if event is InputEventMouseButton:
 		var press := event as InputEventMouseButton
@@ -354,3 +366,84 @@ func center_on_me() -> void:
 	_look = Vector2(me.x, me.z)
 	_clamp_look()
 	queue_redraw()
+
+
+# ── Підземелля (П-190) ─────────────────────────────────────────────
+#
+# Не аркуш, а сам план: та сама сітка, з якої збудовано стіни, тож карта
+# не може розійтися з тим, що довкола. Камінь — темний, прохід —
+# світлий, і що глибше підлога, то темніший прохід: так видно, куди хід
+# спускається. Вихід позначено; палату боса — ні, її знаходять самі.
+
+const ROCK := Color(0.07, 0.065, 0.06)
+const PASSAGE := Color(0.78, 0.7, 0.55)
+const DEEP := Color(0.42, 0.36, 0.28)
+const EXIT := Color(0.55, 0.85, 1.0)
+## Скільки точок картинки на клітинку: план 64…150 клітинок, а вікно
+## 480 точок — без цього розтягнута картинка вийшла б розмитою.
+const PLAN_PIXELS := 4
+const PLAN_MARGIN := 16.0
+
+
+## У котрому підземеллі гравець, або -1.
+func _dungeon_here() -> int:
+	if not has_me or dungeons == null or not is_instance_valid(dungeons):
+		return -1
+	return dungeons.index_at(me.x, me.z)
+
+
+func _plan_texture(at: int, plan: DungeonPlan, with_seed: int) -> Texture2D:
+	var key := "%d|%d" % [at, with_seed]
+	if _plans.has(key):
+		return _plans[key]
+	var low := INF
+	var high := -INF
+	for i in plan.open.size():
+		if plan.open[i] == 1:
+			low = minf(low, plan.floor_y[i])
+			high = maxf(high, plan.floor_y[i])
+	var span := maxf(high - low, 0.01)
+	var picture := Image.create(plan.size, plan.size, false,
+			Image.FORMAT_RGB8)
+	for z in plan.size:
+		for x in plan.size:
+			var tone := ROCK
+			if plan.is_open(x, z):
+				tone = DEEP.lerp(PASSAGE, (plan.height(x, z) - low) / span)
+			picture.set_pixel(x, z, tone)
+	picture.resize(plan.size * PLAN_PIXELS, plan.size * PLAN_PIXELS,
+			Image.INTERPOLATE_NEAREST)
+	var made := ImageTexture.create_from_image(picture)
+	# Інших підземель у вікні не буває — старі не тримаємо.
+	_plans.clear()
+	_plans[key] = made
+	return made
+
+
+func _draw_dungeon(at: int) -> void:
+	var entry: Dictionary = dungeons.open[at]
+	var plan: DungeonPlan = entry["plan"]
+	var spot := Dungeons.spot_for(at)
+	var side := plan.size * DungeonPlan.CELL
+	var k := (minf(size.x, size.y) - PLAN_MARGIN * 2.0) / side
+	var corner := (size - Vector2(side, side) * k) * 0.5
+	var to_map := func(x: float, z: float) -> Vector2:
+		return corner + (Vector2(x - spot.x, z - spot.z)
+				+ Vector2(side, side) * 0.5) * k
+
+	draw_rect(Rect2(Vector2.ZERO, size), ROCK)
+	var picture := _plan_texture(at, plan, int(entry["seed"]))
+	draw_texture_rect(picture, Rect2(corner, Vector2(side, side) * k), false)
+
+	var exit: Portal = entry["exit"]
+	if is_instance_valid(exit):
+		var p: Vector3 = exit.global_position
+		var dot: Vector2 = to_map.call(p.x, p.z)
+		draw_arc(dot, 7.0, 0.0, TAU, 24, EXIT, 2.0)
+		draw_string(_font, dot + Vector2(10, 4), "вихід",
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 12, EXIT)
+
+	draw_string(_font, Vector2(8, 16), "%s · ворота %s"
+			% [plan.title, entry["grade"]],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TOWN)
+	_draw_me(to_map.call(me.x, me.z))

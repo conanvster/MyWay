@@ -264,12 +264,13 @@ func _dress_for(at: int, me: Node) -> void:
 		_lantern.name = "Ліхтар"
 		_lantern.light_color = Color(1.0, 0.9, 0.75)
 		_lantern.light_energy = 1.2
-		_lantern.omni_range = 10.0
+		_lantern.omni_range = 14.0
 		_lantern.position = Vector3(0.0, 2.2, 0.0)
 		me.add_child(_lantern)
 	elif at < 0 and _lantern != null and is_instance_valid(_lantern):
 		_lantern.queue_free()
 		_lantern = null
+	_show_only(at)
 	if at == _in_dungeon:
 		return
 	_in_dungeon = at
@@ -287,6 +288,22 @@ func _dress_for(at: int, me: Node) -> void:
 				_world.dungeons.book.style_of(plan))
 	else:
 		sky.environment = _world_air
+
+
+## Малювати лише те, де гравець: у підземеллі — тільки його, у світі —
+## тільки світ. Слово замовника 19.09.2026: камера, що провалилась за
+## стіну, бачила інші підземелля й написи світу в чорній порожнечі. На
+## зіткнення це не впливає — `visible` вимикає лише малювання. Кличеться
+## щоразу, а не на зміні `at`: підземелля, відкрите іншим гравцем, будується
+## видимим посеред гри.
+func _show_only(at: int) -> void:
+	for other: int in _world.dungeons.open:
+		var view: Node3D = _world.dungeons.open[other]["view"]
+		if is_instance_valid(view):
+			view.visible = other == at
+	var land := _world.get_node_or_null("Landscape") as Node3D
+	if land != null:
+		land.visible = at < 0
 
 
 func smooth(delta: float) -> void:

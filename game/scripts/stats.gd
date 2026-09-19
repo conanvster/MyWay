@@ -43,6 +43,14 @@ var cast_speed_bonus := 0.0
 ## Баф «концентрація уваги» (П-111): піднімає стійкість до перервання
 ## касту. 0.0 — без бафа, 0.5 — на половину більша концентрація.
 var concentration_bonus := 0.0
+## Множники ПОХІДНИХ величин — не статів. Бафи священика (слово
+## замовника 19.09.2026) названі відсотками від швидкості, фізичної
+## атаки й фізичного захисту, а не від Спритності, Сили й Витривалості:
+## +15% Сили дало б +11% атаки (атака 3 + 0,4·Сила). Пишуть сюди лише
+## стани (`States.applied_to`), 1,0 — нічого не висить.
+var move_factor := 1.0
+var attack_factor := 1.0
+var defence_factor := 1.0
 
 
 ## ── швидкості: логарифмічні (П-86, погоджено 02.09.2026) ──────────────
@@ -68,7 +76,7 @@ static func growth(stat: int) -> float:
 
 
 func move_speed() -> float:
-	return 5.0 + SPEED_K * growth(agility)
+	return (5.0 + SPEED_K * growth(agility)) * move_factor
 
 
 ## Темп ЗВИЧАЙНИХ ударів — це швидкість фізичної атаки, і вона від стата
@@ -110,7 +118,7 @@ func max_mp() -> int:
 
 
 func physical_attack() -> float:
-	return 3.0 + strength * 0.4
+	return (3.0 + strength * 0.4) * attack_factor
 
 
 ## Магічна атака. Дзеркало фізичної: та від Сили, ця від Інтелекту.
@@ -122,7 +130,7 @@ func magical_attack() -> float:
 
 
 func physical_defence() -> float:
-	return stamina * 1.5
+	return stamina * 1.5 * defence_factor
 
 
 ## Магічний захист — у Витривалості, а не в Чутті (П-37, правка 1).

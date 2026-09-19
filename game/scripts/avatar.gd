@@ -64,6 +64,7 @@ func apply_sex(sex: String) -> void:
 	skin.height = 1.75
 	add_child(skin)
 	skin.build()
+	seat_model()
 	# Розворот обличчя (Superhero змонтований у +Z, рушій рахує вперед
 	# як -Z) тепер робить сам build() — SkinnedModel.REVERSED_MOUNTS,
 	# спільний список на всі змонтовані задом наперед моделі, не лише

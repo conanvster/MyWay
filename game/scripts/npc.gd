@@ -12,6 +12,7 @@ extends StaticBody3D
 ## `world.gd` означало б, що перейменування в даних тихо вимкне вікно.
 const WAREHOUSE := "завідувач складу"
 const GUILD := "гільдмайстер"
+const PRIEST := "священик"
 
 @export var who := "мешканець"
 @export var craft := ""
@@ -86,3 +87,8 @@ func keeps() -> bool:
 ## Чи вчить скілів за руни (П-145).
 func teaches() -> bool:
 	return craft == GUILD
+
+
+## Чи дає бафи (`data/blessings.json`, слово замовника 19.09.2026).
+func blesses() -> bool:
+	return craft == PRIEST

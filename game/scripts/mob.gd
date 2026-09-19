@@ -146,6 +146,7 @@ func _apply_look() -> void:
 	if shape != null:
 		var size := float(look.get("зріст", 1.0))
 		shape.scale = Vector3(size, size, size)
+	seat_model()
 
 
 func add_threat(id: int, amount: float) -> void:

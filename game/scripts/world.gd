@@ -1261,7 +1261,42 @@ func ask_talk(at: int) -> void:
 	if who == null:
 		return
 	rpc_id(id, "client_talk", at, who.title(), who.trades(),
-			who.keeps(), who.teaches())
+			who.keeps(), who.teaches(), who.blesses())
+
+
+const BLESSINGS_PATH := "res://data/blessings.json"
+
+
+## Бафи священика (слово замовника 19.09.2026). Файл читаємо на кожне
+## прохання: прохання рідкісні, а числа так правляться без перезапуску.
+## Зіпсований файл — кажемо гравцеві й у журнал (P3), а не мовчимо.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_bless(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.blesses():
+		return
+	var a: Node = creatures.get(id)
+	if not a.is_alive():
+		return
+	var raw := FileAccess.get_file_as_string(BLESSINGS_PATH)
+	var parsed: Variant = JSON.parse_string(raw)
+	if not parsed is Dictionary or not parsed.get("бафи") is Array:
+		print("[священик] ‼ %s не прочитався" % BLESSINGS_PATH)
+		link.notice(id, "‼ бафи священика не прочитались")
+		return
+	var need := int(parsed.get("з рівня", 1))
+	if a.level < need:
+		link.notice(id, "%s благословляє з %d рівня" % [who.title(), need])
+		return
+	var given: Array = []
+	for one: Variant in parsed["бафи"]:
+		if one is Dictionary:
+			a.add_state(State.from_data(one))
+			given.append(str(one.get("назва", "стан")))
+	link.notice(id, "%s: %s" % [who.title(), ", ".join(given)])
 
 
 ## Показати прилавок. Асортимент шлемо цілком: він короткий і не
@@ -1682,6 +1717,8 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_withdraw_stack", at, name))
 		hud.wants_guild.connect(func(at: int) -> void:
 				rpc_id(1, "ask_guild", at))
+		hud.wants_bless.connect(func(at: int) -> void:
+				rpc_id(1, "ask_bless", at))
 		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_learn_skill", at, key))
 		hud.wants_raise_skill.connect(func(at: int, key: String) -> void:
@@ -1902,9 +1939,11 @@ func client_cast_end(id: int, done: bool) -> void:
 ## Мешканець відповів: вікно розмови (П-132).
 @rpc("authority", "call_remote", "reliable")
 func client_talk(at: int, title: String, trades: bool,
-		warehouse_keeper: bool = false, guild_master: bool = false) -> void:
+		warehouse_keeper: bool = false, guild_master: bool = false,
+		priest: bool = false) -> void:
 	if hud != null:
-		hud.show_talk(at, title, trades, warehouse_keeper, guild_master)
+		hud.show_talk(at, title, trades, warehouse_keeper, guild_master,
+				priest)
 
 
 ## Прилавок: що продають і за скільки. `buyback` — у відсотках, щоб у

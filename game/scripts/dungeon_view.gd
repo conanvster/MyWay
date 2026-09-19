@@ -140,8 +140,10 @@ func _fields() -> void:
 			_wet[k] = _bilinear(tun, i * SUB, j * SUB)
 	_distance()
 
-	var wall_h := float(style.get("висота_стін", 2.0))
-	var rise := float(style.get("підйом", 1.3))
+	# Числа стилю — для клітинки в 1 м; масштаб підземелля (П-190,
+	# 19.09.2026) росте разом із кроком клітинки, і вгору теж.
+	var wall_h := float(style.get("висота_стін", 2.0)) * DungeonPlan.CELL
+	var rise := float(style.get("підйом", 1.3)) * DungeonPlan.CELL
 	var span := float(style.get("проліт", 1.5))
 	var rough := float(style.get("шорсткість", 0.0))
 	var channel := float(style.get("русло", 0.0)) if plan.water else 0.0

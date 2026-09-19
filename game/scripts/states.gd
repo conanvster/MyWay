@@ -78,6 +78,11 @@ func applied_to(base: Stats) -> Stats:
 	out.cast_speed_bonus = base.cast_speed_bonus + _bonus("cast_speed_bonus")
 	out.concentration_bonus = base.concentration_bonus \
 			+ _bonus("concentration_bonus")
+	# Похідні величини — множенням, як і стати (П-108): +20% і дебаф −20%
+	# на швидкість гасять одне одного.
+	out.move_factor = factor_for("move_speed")
+	out.attack_factor = factor_for("physical_attack")
+	out.defence_factor = factor_for("physical_defence")
 	return out
 
 

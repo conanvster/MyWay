@@ -164,6 +164,22 @@ def pose(rig, frame, bone, rot=(0, 0, 0), loc=(0, 0, 0)):
     b.keyframe_insert("location", frame=frame)
 
 
+def curves(act):
+    """Криві анімації дії. У Blender 5 дії шаруваті (шари → смуги →
+    канали), `act.fcurves` є лише в старих; беремо, що є."""
+    if hasattr(act, "fcurves"):
+        try:
+            return list(act.fcurves)
+        except (AttributeError, RuntimeError):
+            pass
+    out = []
+    for layer in getattr(act, "layers", []):
+        for strip in layer.strips:
+            for bag in getattr(strip, "channelbags", []):
+                out.extend(bag.fcurves)
+    return out
+
+
 def action(rig, name, frames, keys):
     """keys: {кадр: {кістка: (обертання°, зсув)}}; не названа кістка в
     ключовому кадрі стоїть рівно."""

@@ -141,6 +141,20 @@ func use_item(me: int, name: String) -> bool:
 		_link.notice(me, "%s ні на що не годиться" % name)
 		return false
 
+	# Зілля лікування (слово замовника 19.09.2026: «зілля піднімає
+	# 500 хп») — здоров'я, не більше за максимум.
+	if deed.has("здоров'я"):
+		var top: int = a.stats.max_hp()
+		var heal: int = mini(int(deed["здоров'я"]), top - a.hp)
+		if heal <= 0:
+			_link.notice(me, "здоров'я й так повне")
+			return false
+		a.take_item(name)
+		a.hp += heal
+		_link.to_watchers(me, &"client_hp", [me, a.hp])
+		_link.notice(me, "%s: здоров'я +%d" % [name, heal])
+		return true
+
 	var full: int = a.stats.max_mp()
 	var back := 0
 	if deed.has("мана"):

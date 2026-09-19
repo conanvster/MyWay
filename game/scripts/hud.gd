@@ -880,6 +880,8 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 		# не прийде, і комірка лишиться мертвою назавжди.
 		for link in press.pressed.get_connections():
 			press.pressed.disconnect(link["callable"])
+		# Перетягування на панель — лише для того, що можна вжити (нижче).
+		press.set_drag_forwarding(Callable(), Callable(), Callable())
 		if i >= rows.size():
 			icon.clear_item()
 			count.text = ""
@@ -912,10 +914,27 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 			var useful: bool = bool(row.get("придатна", false))
 			press.tooltip_text = "%s ×%d\n%s" % [name,
 					int(row.get("скільки", 0)),
-					"натисни, щоб ужити" if useful else "просто лежить"]
+					"натисни, щоб ужити; тягни на панель, щоб пити в бою"
+							if useful else "просто лежить"]
 			press.disabled = not useful
 			if useful:
 				press.pressed.connect(func() -> void: wants_use.emit(name))
+				# Тягнеться те саме, що й скіл із вікна «Скіли», — панель
+				# (`bar_cell.gd`) приймає будь-яку «дію» (19.09.2026).
+				press.set_drag_forwarding(func(_at: Vector2) -> Variant:
+						return _bag_drag(press, name), Callable(), Callable())
+
+
+## Що несе перетягування речі з торби на панель.
+func _bag_drag(from: Control, name: String) -> Dictionary:
+	var ghost := TextureRect.new()
+	ghost.texture = ItemIcon.of(name)
+	ghost.size = Vector2(40, 40)
+	ghost.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ghost.stretch_mode = TextureRect.STRETCH_SCALE
+	if from.get_viewport() != null and from.get_viewport().gui_is_dragging():
+		from.set_drag_preview(ghost)
+	return {"дія": Actions.ITEM_PREFIX + name, "звідки": -1}
 
 
 ## Розмова з мешканцем і торгівля (П-132).

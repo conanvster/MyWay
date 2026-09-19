@@ -132,6 +132,7 @@ func _ready() -> void:
 	var land: Node = get_node_or_null("Landscape")
 	if land != null:
 		land.build(data.map, not Net.is_server)
+		_stock_merchants(land)
 
 	if Net.is_server:
 		store = Store.new()
@@ -630,14 +631,28 @@ func set_slot(slot: int, action: String) -> void:
 	var a: Node = creatures.get(id)
 	if a == null or slot < 0 or slot >= a.bar.size():
 		return
-	var allowed: bool = action in BASIC_SLOTS
-	if not allowed and action.begins_with(Actions.SKILL_PREFIX):
-		allowed = a.knows(action.substr(Actions.SKILL_PREFIX.length()))
+	var allowed := bar_allows(a, action)
 	if not allowed:
 		link.notice(id, "цього на панель не покласти")
 		return
 	a.bar[slot] = action
 	rpc_id(id, "client_bar", PackedStringArray(a.bar))
+
+
+## Чи можна покласти дію на панель: базова, вивчений скіл або річ, яку
+## можна вжити.
+func bar_allows(a: Node, action: String) -> bool:
+	var allowed: bool = action in BASIC_SLOTS
+	if not allowed and action.begins_with(Actions.SKILL_PREFIX):
+		allowed = a.knows(action.substr(Actions.SKILL_PREFIX.length()))
+	# Річ, яку можна вжити (зілля, кристал): на панель — щоб пити в бою,
+	# не відкриваючи торби (слово замовника 19.09.2026). Наявність не
+	# вимагається: комірка лишається, коли зілля скінчилось, і вживання
+	# саме скаже «немає».
+	if not allowed and action.begins_with(Actions.ITEM_PREFIX):
+		allowed = not data.items.base_of(action.substr(
+				Actions.ITEM_PREFIX.length())).get("дія", {}).is_empty()
+	return allowed
 
 
 ## «Повернутися в місто» з вікна смерті.
@@ -1545,6 +1560,19 @@ func ask_take_off(slot: String) -> void:
 	link.notice(id, "знято: %s" % slot)
 	_after_bag(id, a)
 	_tell_look(id, a)
+
+
+## Крамар без свого переліку «товар» у мапі продає загальний асортимент
+## (`items.json → торгівля → асортимент крамаря`). Мапа світу 2
+## генерується й руками не правиться, і товару в її крамарів немає зовсім
+## — без цього там не було де купити навіть зілля. І сервер, і клієнт:
+## клієнтові це каже, чи показувати «Торгувати».
+func _stock_merchants(land: Node) -> void:
+	var stock: Array = data.items.trade.get("асортимент крамаря", [])
+	for child in land.get_children():
+		if child is NPC and child.craft.begins_with("крамар") \
+				and child.goods.is_empty():
+			child.goods = stock
 
 
 ## Вигляд гравця для чужих очей (19.09.2026, слово замовника: «моделі

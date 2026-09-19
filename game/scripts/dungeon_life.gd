@@ -166,8 +166,9 @@ func penalty_states() -> Array[State]:
 		if left <= 0.0:
 			continue
 		for one: Dictionary in _life.get("штраф", []):
-			out.append(State.new(PENALTY_NAME + " · святиня %d" % int(p["shrine"])
-					+ " · " + str(one.get("стат", "")),
+			var called := "%s · святиня %d · %s" % [PENALTY_NAME,
+					int(p["shrine"]), str(one.get("стат", ""))]
+			out.append(State.new(called,
 					str(one.get("стат", "")), float(one.get("множник", 1.0)),
 					left))
 	return out

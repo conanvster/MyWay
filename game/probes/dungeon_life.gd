@@ -171,10 +171,10 @@ func _go() -> void:
 	life.tick(LifeStep.BIG)
 	beast.states.tick(life.days_penalty() * DAY + 1.0)
 	beast.refresh_stats()
-	_yes("через %.0f днів штрафи спали: чинних %d, атака ×%.2f, здоров'я %d / %d"
+	_yes("через %.0f днів штрафи спали: чинних %d, атака ×%.2f, "
 			% [life.days_penalty(), life.penalties.size(),
-			   beast.stats.physical_attack() / plain_attack, beast.hp,
-			   beast.stats.max_hp()],
+			   beast.stats.physical_attack() / plain_attack]
+			+ "здоров'я %d / %d" % [beast.hp, beast.stats.max_hp()],
 			life.penalties.is_empty() and absf(
 			beast.stats.physical_attack() / plain_attack - 1.0) < 0.01
 			and beast.hp <= plain_hp)

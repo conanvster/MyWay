@@ -143,6 +143,16 @@ SPECIES = {
                                       ("наплічники", (0.3, 0.3, 0.34))],
                               weapon="алебарда", moves="зброя",
                               eyes=(1.0, 0.6, 0.1)),
+    # Наги (Л+З): верх людини на зміїному хвості.
+    "наг": dict(skin=("колір", "наг"), naga=("луска-зелена", 2.4),
+                outfit=[("пасок", (0.55, 0.45, 0.2))], weapon="спис",
+                moves="зброя", eyes=(0.9, 0.8, 0.1)),
+    "нагиня-чаклунка": dict(sex="жінка", skin=("колір", "наг"),
+                            naga=("луска-піщана", 2.4),
+                            outfit=[("сорочка", (0.2, 0.45, 0.4)),
+                                    ("намисто", (0.9, 0.75, 0.3))],
+                            weapon="посох", crown=True, moves="чари",
+                            eyes=(0.3, 1.0, 0.8)),
     # Скелети (конвеєр «К»): тіла немає — кістки з простих фігур уздовж
     # кісток скелета людини (слово «усе своє», не набір KayKit).
     "скелет": dict(bones=True, moves="мрець", eyes=(0.4, 0.8, 1.0)),
@@ -196,15 +206,50 @@ def fur_material(name, picture, scale=6.0):
     return mat
 
 
-def reskin(body, skin):
+def reskin(body, skin, sex="чоловік"):
     kind, what = skin
     if kind == "колір":
-        races.reskin(body, what, "чоловік")
+        races.reskin(body, what, sex)
         return body.data.materials[0]
     mat = fur_material("Шкіра", what, 6.0 if kind == "хутро" else 8.0)
     body.data.materials.clear()
     body.data.materials.append(mat)
     return mat
+
+
+LEGS = {"thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r",
+        "ball_l", "ball_r", "ball_leaf_l", "ball_leaf_r"}
+
+
+def drop_legs(body):
+    """Нага: ніг немає — від таза хвіст."""
+    bones = races.dominant(body)
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    gone = [v for v in bm.verts if bones.get(v.index) in LEGS]
+    bmesh.ops.delete(bm, geom=gone, context="VERTS")
+    bm.to_mesh(body.data)
+    bm.free()
+
+
+def snake_tail(picture, length):
+    """Хвіст наги від таза вниз до землі й назад по землі, звужується.
+    Прив'язаний до таза: повертається з тулубом, сам не звивається."""
+    p = base.part
+    mat = fur_material("Хвіст", picture, 4.0)
+    out = []
+    steps = 26  # щільно, щоб хвіст не був намистом (перший огляд)
+    for i in range(steps):
+        t = i / (steps - 1)
+        r = 0.15 * (1.0 - 0.8 * t)
+        if t < 0.3:
+            k = t / 0.3
+            at = (0, 0.05 + 0.25 * k, 0.9 - (0.9 - r) * k)
+        else:
+            k = (t - 0.3) / 0.7
+            at = (0, 0.3 + (length - 0.3) * k, r)
+        out.append(p("sphere", "pelvis", at, (r, 0.16, r * 1.15), mat))
+    return out
 
 
 def drop_head(body):
@@ -782,13 +827,17 @@ def build(name, shots=None):
             made += shield()
         return finish(name, rig, made, s, shots)
     races.inflate(body, s.get("bulk", 0.0))
-    fur = reskin(body, s["skin"])
+    fur = reskin(body, s["skin"], s.get("sex", "чоловік"))
+    if s.get("naga"):
+        drop_legs(body)
     made = outfit(body, s.get("outfit", []))
     if s.get("head"):
         drop_head(body)
         made += animal_head(s["head"], fur, s)
     if s.get("tail"):
         made += tail(s["tail"][0], s["tail"][1], fur)
+    if s.get("naga"):
+        made += snake_tail(*s["naga"])
     if s.get("claws"):
         made += claws()
     if s.get("fangs") and not s.get("head"):

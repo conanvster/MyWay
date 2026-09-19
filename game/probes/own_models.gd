@@ -100,6 +100,27 @@ func _check(path: String) -> void:
 	for eyes: MeshInstance3D in skin.find_children("Eyes*", "MeshInstance3D",
 			true, false):
 		nose = eyes.global_transform * eyes.mesh.get_aabb().get_center()
+	# Звірі й змії (19.09.2026): у скелеті є кістка «head» — перед там,
+	# де вона відносно середини скелета. Пошук морди по сітці ламався на
+	# зміях: низьке довге тіло, розтягнуте до 1,6 м заввишки.
+	if not humanoid:
+		for sk: Skeleton3D in skin.find_children("*", "Skeleton3D", true,
+				false):
+			var at := sk.find_bone("head")
+			if at < 0:
+				continue
+			var middle := Vector3.ZERO
+			for b in sk.get_bone_count():
+				middle += (sk.global_transform
+						* sk.get_bone_global_pose(b)).origin
+			middle /= sk.get_bone_count()
+			var off: Vector3 = (sk.global_transform
+					* sk.get_bone_global_pose(at)).origin \
+					- Vector3(middle.x, 0.0, middle.z)
+			# Двонога заготовка: голова рівно над серединою — тоді лишається
+			# пошук морди по сітці.
+			if absf(off.z) > 0.05:
+				nose = off
 	var standing := absf(low) < 0.03
 	var ahead := nose.z < 0.0
 	if not standing:

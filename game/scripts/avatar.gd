@@ -104,6 +104,19 @@ func become_local() -> void:
 	$CameraRig/Camera3D.current = true
 
 
+## Шар «гравці» (6): монстри на нього натикаються (`mob.gd:MOB_LAYER`),
+## а гравець натикається на монстрів — маска в сцені. Мертвий гравець
+## монстрам не заважає: шар живий, доки живий гравець. Оживлення
+## (`combat.revive`) шар вертає саме, через `server_step`.
+const PLAYER_LAYER := 6
+
+
+func server_step(delta: float) -> void:
+	if get_collision_layer_value(PLAYER_LAYER) != is_alive():
+		set_collision_layer_value(PLAYER_LAYER, is_alive())
+	super(delta)
+
+
 func die() -> void:
 	super()
 	# Гравцеві дається час на оживлення, монстрові — ні (П-70).

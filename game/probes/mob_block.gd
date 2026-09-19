@@ -1,6 +1,6 @@
 extends SceneTree
-## Монстри не заходять одне в одного (слово замовника 19.09.2026), а
-## гравця це не зачіпає, і труп на дорозі не стоїть.
+## Монстри не заходять одне в одного, гравець — у монстра, монстр — у
+## гравця (слово замовника 19.09.2026); мертві на дорозі не стоять.
 ##
 ## Ганяти так:
 ##     godot --headless --path game --script res://probes/mob_block.gd
@@ -34,14 +34,42 @@ func _go() -> void:
 	root.add_child(hero)
 	await process_frame
 	hero.place_at(Vector3(0, 1, 4), 0.0)
-	var through := await _run(hero, Vector2(0, -1), [still])
-	_yes("гравець крізь монстра проходить: найближче %.2f м" % through,
-			through < 0.3)
+	for i in 30:
+		await physics_frame
+		hero.server_step(1.0 / 60.0)
+	var into := await _run(hero, Vector2(0, -1), [still])
+	_yes("гравець на монстра: найближче %.2f м" % into, into > 0.9)
+
+	# Монстра, що стоїть, прибрати з дороги — інакше бігун упреться в
+	# нього, а не в гравця (перший прогін: «3,01 м» — до гравця).
+	still.place_at(Vector3(0, 1, 12), 0.0)
+	hero.place_at(Vector3(-4, 1, 0), 0.0)
+	runner.place_at(Vector3(4, 1, 0), 0.0)
+	for i in 10:
+		await physics_frame
+		hero.server_step(1.0 / 60.0)
+	var at_hero := await _run(runner, Vector2(-1, 0), [hero], [still])
+	_yes("монстр на гравця: найближче %.2f м" % at_hero, at_hero > 0.9)
+
+	hero.die()
+	runner.place_at(Vector3(-8, 1, 0), 0.0)
+	var over_hero := await _run(runner, Vector2(1, 0), [hero], [hero])
+	_yes("крізь мертвого гравця монстр проходить: найближче %.2f м"
+			% over_hero, over_hero < 0.3)
+
+	# Оживлення (`combat.revive` лише ставить здоров'я) — шар вертається
+	# на першому ж кроці.
+	hero.hp = 10
+	hero.corpse_left = 0.0
+	hero.server_step(1.0 / 60.0)
+	_yes("оживлений гравець знову заважає монстрам",
+			hero.get_collision_layer_value(hero.PLAYER_LAYER))
 
 	still.die()
-	runner.place_at(Vector3(4, 1, 0), 0.0)
+	runner.place_at(Vector3(4, 1, 12), 0.0)
 	var over := await _run(runner, Vector2(-1, 0), [still])
-	_yes("труп на дорозі не стоїть: найближче %.2f м" % over, over < 0.3)
+	_yes("крізь мертвого монстра живий проходить: найближче %.2f м" % over,
+			over < 0.3)
 
 	print("  підсумок: %s" % ("усе гаразд" if _bad == 0
 			else "‼ вад: %d" % _bad))
@@ -61,12 +89,17 @@ func _mob(at: Vector3) -> Node3D:
 
 
 ## Бігти в напрямку 3 с; найменша відстань по горизонталі до `others`.
-func _run(who: Node3D, dir: Vector2, others: Array) -> float:
+## `stepping` — хто ще живе своїм кроком (гравцеві шар оновлює саме
+## `server_step`).
+func _run(who: Node3D, dir: Vector2, others: Array,
+		stepping: Array = []) -> float:
 	var closest := INF
 	for i in 180:
 		who.wanted = dir
 		await physics_frame
 		who.server_step(1.0 / 60.0)
+		for o: Node3D in stepping:
+			o.server_step(1.0 / 60.0)
 		for o: Node3D in others:
 			var d := Vector2(who.global_position.x - o.global_position.x,
 					who.global_position.z - o.global_position.z).length()

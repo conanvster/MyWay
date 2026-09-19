@@ -57,6 +57,10 @@ var runes: Runes
 var dungeons: Dungeons
 ## Строк підземель і штраф світу, з базою (Ф7). Лише на сервері.
 var life: DungeonLife
+## Клієнт (Ф8): номер святині -> {"until": мс за `Time.get_ticks_msec`,
+## "grade"}. Сервер шле, скільки СЕКУНД лишилось, а клієнт відлічує
+## від своєї миті отримання — годинники машин звіряти не треба.
+var dungeon_days: Dictionary = {}
 var view: ClientView
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
@@ -775,6 +779,8 @@ func activate_shrine(id: int, at: int) -> void:
 	link.to_all(&"client_shrine", [at, Shrine.Stage.АКТИВОВАНА])
 	if life != null:
 		life.activated(at, shrine.grade)
+		link.to_all(&"client_dungeon_days", [at, life.days_left(at)
+				* DungeonLife.DAY, shrine.grade])
 	link.notice(id, "святиня активована: %s відкрито портал на %.0f днів"
 			% [shrine.grade, life.days_open() if life != null else 0.0])
 	_after_bag(id, a)
@@ -796,6 +802,9 @@ func _tell_shrines(peer: int) -> void:
 		if shrine.stage == Shrine.Stage.ПІД_ОХОРОНОЮ:
 			continue      # це і є стан за замовчуванням у клієнта
 		link.to_one(peer, &"client_shrine", [i, shrine.stage])
+		if life != null and life.records.has(i):
+			link.to_one(peer, &"client_dungeon_days",
+					[i, life.days_left(i) * DungeonLife.DAY, shrine.grade])
 
 
 ## Стан святині: зачищено її чи ще ні (П-153).
@@ -956,6 +965,7 @@ func close_dungeon(at: int) -> void:
 		land.shrines()[at].set_stage(Shrine.Stage.ПІД_ОХОРОНОЮ)
 		_shrine_sent[at] = Shrine.Stage.ПІД_ОХОРОНОЮ
 		link.to_all(&"client_shrine", [at, Shrine.Stage.ПІД_ОХОРОНОЮ])
+	link.to_all(&"client_dungeon_days", [at, -1.0, ""])
 	for id: int in creatures:
 		if id < 0:
 			penalize(creatures[id])
@@ -987,6 +997,25 @@ func _tell_dungeons(peer: int) -> void:
 		var entry: Dictionary = dungeons.open[at]
 		link.to_one(peer, &"client_dungeon", [at, entry["template"],
 				entry["seed"], entry["grade"]])
+
+
+## Скільки лишилось підземеллю за святинею `at` (Ф8). Від'ємне —
+## строку більше немає: підземелля закрилось.
+@rpc("authority", "call_remote", "reliable")
+func client_dungeon_days(at: int, seconds: float, grade: String) -> void:
+	if seconds < 0.0:
+		dungeon_days.erase(at)
+		return
+	dungeon_days[at] = {"until": Time.get_ticks_msec() + int(seconds * 1000.0),
+			"grade": grade}
+
+
+## Скільки днів лишилось за святинею, у клієнта; -1 — не відкрита.
+func days_left(at: int) -> float:
+	if not dungeon_days.has(at):
+		return -1.0
+	return maxf(0.0, (int(dungeon_days[at]["until"])
+			- Time.get_ticks_msec()) / 1000.0 / DungeonLife.DAY)
 
 
 ## Сервер закрив підземелля (Ф7) — прибрати його й у себе.

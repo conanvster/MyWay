@@ -172,6 +172,39 @@ func _go() -> void:
 			and world.dungeons.open.has(2)
 			and world.dungeons.open[2]["seed"] == 77)
 
+	print("\n— лічильник днів і список на карті (Ф8) —")
+	world.client_dungeon_days(2, 29.5 * DAY, "E")
+	_yes("клієнт відлічує: %.2f дня" % world.days_left(2),
+			absf(world.days_left(2) - 29.5) < 0.01)
+	var words := {1.2: "1 день", 2.5: "2 дні", 5.0: "5 днів",
+			11.0: "11 днів", 21.3: "21 день", 29.9: "29 днів",
+			0.2: "5 год"}
+	var wrong: Array[String] = []
+	for d: float in words:
+		if ClientView._days_text(d) != words[d]:
+			wrong.append("%s → %s" % [d, ClientView._days_text(d)])
+	_yes("відмінки днів правильні%s" % (": " + ", ".join(wrong)
+			if not wrong.is_empty() else ""), wrong.is_empty())
+	var holy: Shrine = land.shrines()[2]
+	holy.show_days(ClientView._days_text(world.days_left(2)))
+	var tag: Label3D = holy.get_node_or_null("Дні")
+	_yes("над святинею напис «%s»" % (tag.text if tag != null else "—"),
+			tag != null and tag.visible and tag.text == "29 днів")
+	var sheet := WorldMap.new()
+	sheet.size = Vector2(480, 480)
+	sheet.map = world.data.map
+	sheet.world = world
+	sheet.dungeons = world.dungeons
+	add_child(sheet)
+	sheet.show_me(Vector3(0, 0, 0), 0.0)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_yes("карта з переліком відкритих малюється без помилок", true)
+	world.client_dungeon_days(2, -1.0, "")
+	holy.show_days("")
+	_yes("закриття прибирає лічильник", world.days_left(2) < 0.0
+			and not tag.visible)
+
 	print("  підсумок: %d з %d" % [_ok, _ok + _bad])
 	get_tree().quit(1 if _bad > 0 else 0)
 

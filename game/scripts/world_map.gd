@@ -49,6 +49,8 @@ var has_me := false
 ## показує тільки його (слово замовника 19.09.2026: «коли перенесло у
 ## підземелля, карта змінюється та показує тільки підземелля»).
 var dungeons: Dungeons = null
+## Світ гри — звідти відкриті підземелля й дні до кінця строку (Ф8).
+var world: Node = null
 
 var _font: Font
 ## Намальований план підземелля: ключ «номер|зерно» -> Texture2D.
@@ -176,6 +178,7 @@ func _draw() -> void:
 
 	draw_rect(Rect2(land_from, land_to - land_from), EDGE, false, 1.0)
 
+	_draw_open_dungeons()
 	# Гравець — останнім, щоб його не перекрило нічим.
 	if has_me:
 		_draw_me(_spot(me.x, me.z))
@@ -305,6 +308,7 @@ func _draw_sheet() -> void:
 						str(place.get("назва", "")),
 						HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TOWN)
 
+	_draw_open_dungeons()
 	if has_me:
 		_draw_me(_spot(me.x, me.z))
 
@@ -447,3 +451,40 @@ func _draw_dungeon(at: int) -> void:
 			% [plan.title, entry["grade"]],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TOWN)
 	_draw_me(to_map.call(me.x, me.z))
+
+
+# ── Відкриті підземелля на карті світу (П-153, Ф8) ─────────────────
+#
+# «Окремо — список відкритих підземель з грейдами»: не нове вікно, а
+# та сама карта — кільце кольору грейду там, де святиня з відкритим
+# порталом, і перелік у куті: грейд, назва (якщо вже заходили), скільки
+# лишилось. Вигляд — пропозиція виконавця.
+
+func _draw_open_dungeons() -> void:
+	if world == null or not is_instance_valid(world) \
+			or world.dungeon_days.is_empty():
+		return
+	var spots: Array = map.get("святині", [])
+	var lines: Array[String] = []
+	var tones: Array[Color] = []
+	for at: int in world.dungeon_days:
+		var grade := str(world.dungeon_days[at]["grade"])
+		var tone := ItemIcon.grade_color(grade)
+		if at >= 0 and at < spots.size():
+			var de: Array = spots[at].get("де", [0, 0, 0])
+			var dot := _spot(float(de[0]), float(de[2]))
+			draw_arc(dot, 8.0, 0.0, TAU, 24, tone, 2.5)
+			draw_circle(dot, 3.0, tone)
+		var title := "ще не відкрите"
+		if dungeons != null and dungeons.open.has(at):
+			title = dungeons.open[at]["plan"].title
+		lines.append("%s · %s · %s" % [grade, title,
+				ClientView._days_text(world.days_left(at))])
+		tones.append(tone)
+	var y := 18.0
+	draw_string(_font, Vector2(8, y), "Відкриті підземелля",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TOWN)
+	for i in lines.size():
+		y += 15.0
+		draw_string(_font, Vector2(8, y), lines[i],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tones[i])

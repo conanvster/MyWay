@@ -183,6 +183,10 @@ func _watch_shrines(delta: float) -> void:
 	if _world.hud == null:
 		return
 	var all: Array = land.shrines()
+	# Лічильник днів над відкритими (Ф8) — раз на огляд, не щокадру.
+	for i in all.size():
+		var left: float = _world.days_left(i)
+		all[i].show_days("" if left < 0.0 else _days_text(left))
 	var near := -1
 	for i in all.size():
 		var shrine: Shrine = all[i]
@@ -205,6 +209,20 @@ func _watch_shrines(delta: float) -> void:
 	_world.hud.ask_confirm(
 			"Активувати святиню ключем грейду %s?" % shrine.grade,
 			func() -> void: _link.to_server(&"ask_activate", [near]))
+
+
+## «29 днів», «1 день», «5 год» — останню добу рахуємо годинами, інакше
+## «0 днів» висіло б цілу добу.
+static func _days_text(days: float) -> String:
+	if days < 1.0:
+		return "%d год" % ceili(days * 24.0)
+	var n := floori(days)
+	var word := "днів"
+	if n % 10 == 1 and n % 100 != 11:
+		word = "день"
+	elif n % 10 in [2, 3, 4] and not (n % 100 in [12, 13, 14]):
+		word = "дні"
+	return "%d %s" % [n, word]
 
 
 var _portal_clock := 0.0

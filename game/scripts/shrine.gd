@@ -171,6 +171,31 @@ func _show_stage() -> void:
 		gate.queue_free()
 
 
+## Лічильник днів до кінця строку над святинею (П-153, Ф8). Порожній
+## текст — сховати. Той самий `Label3D`, що й імена (сталий розмір на
+## екрані), тільки кольору грейду.
+func show_days(text: String) -> void:
+	var tag: Label3D = get_node_or_null("Дні")
+	if text == "":
+		if tag != null:
+			tag.visible = false
+		return
+	if tag == null:
+		tag = Label3D.new()
+		tag.name = "Дні"
+		tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		tag.font_size = 44
+		tag.outline_size = 12
+		tag.outline_modulate = Color(0, 0, 0, 0.85)
+		tag.fixed_size = true
+		tag.pixel_size = 0.0009
+		tag.modulate = grade_color().lightened(0.35)
+		tag.position = Vector3(0.0, 4.2, 0.0)
+		add_child(tag)
+	tag.visible = true
+	tag.text = text
+
+
 ## Портал біля цієї святині, якщо вже запалений.
 func portal() -> Portal:
 	return get_node_or_null("Портал") as Portal

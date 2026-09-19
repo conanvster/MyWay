@@ -1078,6 +1078,7 @@ func _toggle_map() -> void:
 			_map_view.map = _world.data.map
 		if _world != null:
 			_map_view.dungeons = _world.dungeons
+			_map_view.world = _world
 		# На світі версії 2 аркуш більший за вікно в дванадцять разів:
 		# відкрити його на середині світу означало б щоразу шукати себе
 		# вручну. Тому відкривається на гравцеві.

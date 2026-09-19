@@ -149,9 +149,20 @@ static func band(mobs: Dictionary, grade: String) -> Array[int]:
 ## біля входу) — мої, не слово замовника; зведені в один шаблон
 ## «складність», щоб правити одним числом.
 func populate(plan: DungeonPlan, grade: String, mobs: Dictionary,
-		rng: RandomNumberGenerator) -> Array[Dictionary]:
+		rng: RandomNumberGenerator, level: int = 0) -> Array[Dictionary]:
 	var slots: Array[Dictionary] = []
-	var kinds := band(mobs, grade)
+	# Глибина — на пів сходинки смуги за рівень (як і шаблон, П-191):
+	# рівень 0 — своя смуга, 1 — своя з наступною, 2 — наступна, …
+	# Досі всі рівні брали смугу воріт, і замовник 19.09.2026 закрив
+	# підземелля, де «монстри що на першому що на другому рівні були
+	# однакові».
+	var grades: Array = ItemBook.GRADES
+	var low := mini(grades.find(grade) + level / 2, grades.size() - 1)
+	var kinds := band(mobs, grades[low])
+	if level % 2 == 1 and low + 1 < grades.size():
+		for kind in band(mobs, grades[low + 1]):
+			if not kind in kinds:
+				kinds.append(kind)
 	if kinds.is_empty():
 		print("[підземелля] ‼ ні для %s, ні нижче немає монстрів із ключем"
 				% grade)
@@ -161,18 +172,20 @@ func populate(plan: DungeonPlan, grade: String, mobs: Dictionary,
 	for kind in kinds:
 		if str(mobs[str(kind)].get("назва", "")) in liked:
 			fit.append(kind)
-	if fit.is_empty():
+	# Один «свій» вид на всю смугу — це рівень із самих кажанів: тоді
+	# стиль лише додає своїх, а зграї беруться з усієї смуги.
+	if fit.size() < 2:
 		fit = kinds
 	var strongest := _strongest(mobs, kinds)
 	# Бос — найсильніший вид НАСТУПНОЇ смуги (П-192, слово замовника
 	# 19.09.2026: «бос із наступної смуги»); за воротами E — з тих, з
-	# кого падає ключ D. Наступної смуги немає — лишається своя.
+	# кого падає ключ D. Наступної — від смуги цього рівня. Наступної
+	# смуги немає — лишається своя.
 	var boss := strongest
-	var grades: Array = ItemBook.GRADES
-	var up := grades.find(grade) + 1
-	if up > 0 and up < grades.size():
+	var up := low + 1 + (level % 2)
+	if up < grades.size():
 		var next := band(mobs, grades[up])
-		if not next.is_empty() and next != kinds:
+		if not next.is_empty() and not _strongest(mobs, next) in kinds:
 			boss = _strongest(mobs, next)
 
 	var tier := plan.tier

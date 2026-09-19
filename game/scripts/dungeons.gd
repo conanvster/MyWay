@@ -178,7 +178,8 @@ func zones_for(at: int, mobs: Dictionary, with_boss: bool = true) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(entry["seed"]) + 1
 	var made: Array = []
-	for slot: Dictionary in book.populate(plan, entry["grade"], mobs, rng):
+	for slot: Dictionary in book.populate(plan, entry["grade"], mobs, rng,
+			level_of(at)):
 		if slot["boss"] and not with_boss:
 			continue
 		var zone := MobZone.new()

@@ -40,6 +40,13 @@ const REVERSED_MOUNTS := {
 	"res://models/monsters/Puglin.glb": true,
 }
 
+## Власні моделі замовника з Blender (19.09.2026, `art/monsters/`,
+## `tools/blender/`). Blender ставить перед моделі на −Y, і після
+## експорту вона дивиться на +Z — задом до руху, як і більшість наборів
+## вище. Щоб кожну нову модель не дописувати в перелік, уся тека
+## розвертається сама.
+const OWN_DIR := "res://models/own/"
+
 var path := ""
 var height := 1.0
 var tint := Color(1, 1, 1)
@@ -73,7 +80,7 @@ func build() -> void:
 	var body: Node3D = scene.instantiate()
 	body.name = "Тіло"
 	add_child(body)
-	if REVERSED_MOUNTS.get(path, false):
+	if REVERSED_MOUNTS.get(path, false) or path.begins_with(OWN_DIR):
 		body.rotation.y = PI
 	# Моделі з наборів приходять кожна у своєму масштабі: свиня виходила
 	# завбільшки з будинок, а імп — із долоню. Тому «зріст» означає

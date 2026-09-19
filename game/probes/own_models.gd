@@ -24,11 +24,14 @@ func _go() -> void:
 	await process_frame
 	print("\n— власні моделі (%s) —" % DIR)
 	var found := 0
-	for name in DirAccess.get_files_at(DIR):
-		if not name.ends_with(".glb"):
-			continue
-		found += 1
-		await _check(DIR + name)
+	# Людиноподібні монстри — `.gltf` зі спільними текстурами в
+	# `humanoids/` (19.09.2026).
+	for folder in [DIR, DIR + "humanoids/"]:
+		for name in DirAccess.get_files_at(folder):
+			if not (name.ends_with(".glb") or name.ends_with(".gltf")):
+				continue
+			found += 1
+			await _check(folder + name)
 	if found == 0:
 		print("  моделей немає — поклади .glb у game/models/own/")
 	print("  підсумок: %s" % ("усе гаразд" if _bad == 0
@@ -60,6 +63,16 @@ func _check(path: String) -> void:
 	var high := -INF
 	var nose := Vector3.ZERO
 	var far := -1.0
+	var humanoid := path.contains("/humanoids/")
+	# Смуга голови людиноподібних — від кістки голови на скелеті, а не від
+	# висоти моделі: крила драконіда-вартового вищі за голову.
+	var head_y := NAN
+	var k := 1.0
+	for sk: Skeleton3D in skin.find_children("*", "Skeleton3D", true, false):
+		var at := sk.find_bone("Head")
+		if at >= 0:
+			head_y = (sk.global_transform * sk.get_bone_global_rest(at)).origin.y
+			k = sk.global_transform.basis.get_scale().y
 	for mesh: MeshInstance3D in skin.find_children("*", "MeshInstance3D",
 			true, false):
 		var box: AABB = mesh.global_transform * mesh.mesh.get_aabb()
@@ -70,12 +83,23 @@ func _check(path: String) -> void:
 		var faces := mesh.mesh.get_faces()
 		for v: Vector3 in faces:
 			var w := mesh.global_transform * v
-			if w.y < low + (high - low) * 0.82:
+			# Людиноподібні (19.09.2026): крила, роги, корона й зброя теж
+			# угорі — морду шукаємо у вузькій смузі по центру голови.
+			if humanoid and not is_nan(head_y):
+				if absf(w.x) > 0.035 * k or w.y < head_y - 0.02 * k \
+						or w.y > head_y + 0.12 * k:
+					continue
+			elif w.y < low + (high - low) * 0.82:
 				continue
 			var off := Vector2(w.x, w.z).length()
 			if off > far:
 				far = off
 				nose = w
+	# Людська голова (зомбі, вампіри): потилиця майже так само далеко від
+	# осі, як ніс, — тож беремо очі, вони лишаються окремим вузлом «Eyes».
+	for eyes: MeshInstance3D in skin.find_children("Eyes*", "MeshInstance3D",
+			true, false):
+		nose = eyes.global_transform * eyes.mesh.get_aabb().get_center()
 	var standing := absf(low) < 0.03
 	var ahead := nose.z < 0.0
 	if not standing:

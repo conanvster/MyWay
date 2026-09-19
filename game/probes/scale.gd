@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Скільки землі витягує рушій: ціна побудови й памʼять за стороною світу.
 ##
 ## Питання, на яке ця проба відповідає: у якому масштабі можна класти
@@ -6,7 +6,7 @@ extends SceneTree
 ## на око — принцип P2.
 ##
 ## Ганяти так:
-##     godot --headless --path game --script res://probes/scale.gd
+##     godot --headless --path game res://scenes/scale.tscn
 
 const MAIN := preload("res://scenes/main.tscn")
 
@@ -17,7 +17,7 @@ const CASES := [
 ]
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
@@ -30,7 +30,7 @@ func _rss_mib() -> float:
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	print("\n— ціна землі за стороною —")
 	print("  %-8s %-6s %-9s %-8s %-9s %s"
 			% ["сторона", "крок", "точок", "мс", "памʼять", "трикутників"])
@@ -42,12 +42,12 @@ func _go() -> void:
 		# гра замовника (19.09.2026: проба під'єдналась до живого
 		# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 		# і `Net.join()` нічого не робить.
-		var net: Node = root.get_node_or_null("Net")
+		var net: Node = get_tree().root.get_node_or_null("Net")
 		if net != null:
 			net.joined = true
 		var world: Node3D = MAIN.instantiate()
-		root.add_child(world)
-		await process_frame
+		get_tree().root.add_child(world)
+		await get_tree().process_frame
 		var land: Node = world.get_node("Landscape")
 		var data := {
 			"земля": {"сторона": side, "крок": step, "колір": "#5c8a42",
@@ -57,7 +57,7 @@ func _go() -> void:
 		var started := Time.get_ticks_usec()
 		land.build(data)
 		var spent := (Time.get_ticks_usec() - started) / 1000.0
-		await process_frame
+		await get_tree().process_frame
 		var points := int(side / step) + 1
 		var body: Node = land.get_node_or_null("Земля")
 		var tris := 0
@@ -70,7 +70,7 @@ func _go() -> void:
 		print("  %-8d %-6d %-9d %-8.0f %-9.0f %d"
 				% [side, step, points * points, spent, _rss_mib(), tris])
 		world.queue_free()
-		await process_frame
-		await process_frame
+		await get_tree().process_frame
+		await get_tree().process_frame
 	print("  памʼять до першої побудови: %.0f МіБ" % before)
-	quit()
+	get_tree().quit()

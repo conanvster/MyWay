@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Проба до кроку 6: рельєф, море, туман, і чи потрібне підвантаження.
 ##
 ## Ганяти так:
@@ -8,31 +8,31 @@ const MAIN := preload("res://scenes/main.tscn")
 const AVATAR := preload("res://scenes/avatar.tscn")
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var data := GameData.new()
 	data.load_all()
 	# Світ-клієнт сам стукає на 127.0.0.1, а там може саме йти
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var land: Node = world.get_node("Landscape")
 
 	# Скільки коштує збудувати світ — це й є відповідь на П-63.
 	var started := Time.get_ticks_msec()
 	land.build(data.map)
 	var spent := Time.get_ticks_msec() - started
-	await process_frame
+	await get_tree().process_frame
 
 	print("\n— рельєф —")
 	print("  побудовано за %d мс, вузлів у краєвиді %d"
@@ -76,8 +76,8 @@ func _go() -> void:
 			% [land.sea_level(), sea.get("дихання", 0),
 			   float(sea.get("шкода за секунду", 0)) * 100.0])
 	var hero: Node3D = AVATAR.instantiate()
-	root.add_child(hero)
-	await process_frame
+	get_tree().root.add_child(hero)
+	await get_tree().process_frame
 	hero.breath = float(sea.get("дихання", 25.0))
 	var seconds := 0.0
 	var gasped := 0.0
@@ -107,4 +107,4 @@ func _go() -> void:
 				   stats.vision_radius() * spare])
 	hero.queue_free()
 	world.queue_free()
-	quit()
+	get_tree().quit()

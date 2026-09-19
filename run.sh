@@ -90,9 +90,9 @@ case "${1:-}" in
     --run)  exec godot --path "$proj" "${vsync[@]}" -- "${@:2}" ;;
     --світ1) exec godot --path "$proj" "${vsync[@]}" -- --світ1 "${@:2}" ;;
     --світ2) exec godot --path "$proj" "${vsync[@]}" -- --світ2 "${@:2}" ;;
-    --світ2-згори) exec godot --path "$proj" --script res://probes/world2_view.gd ;;
+    --світ2-згори) exec godot --path "$proj" res://scenes/world2_view.tscn ;;
     --світ2-карта) exec godot --path "$proj" --script res://probes/world2_map.gd ;;
-    --світ2-місця) exec godot --path "$proj" --script res://probes/world2_spots.gd ;;
+    --світ2-місця) exec godot --path "$proj" res://scenes/world2_spots.tscn ;;
     --демо-світ2) exec godot --path "$proj" "${vsync[@]}" -- --демо --світ2 ;;
     --демо) exec godot --path "$proj" "${vsync[@]}" -- --демо "${@:2}" ;;
     --демо-вікна) exec godot --path "$proj" "${vsync[@]}" -- --демо --вікна ;;

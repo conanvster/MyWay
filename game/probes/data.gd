@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Проба до кроку 1.2: числа в даних, зони в редакторі.
 ##
 ## Ганяти так:
@@ -13,17 +13,17 @@ const MAIN := preload("res://scenes/main.tscn")
 const MOB := preload("res://scenes/mob.tscn")
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	await _zones()
 	_data()
 	_tuning()
 	_broken_file()
-	quit()
+	get_tree().quit()
 
 
 ## Зони: скільки, якої форми, і чи точки лежать усередині.
@@ -36,12 +36,12 @@ func _zones() -> void:
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var zones := world.find_children("*", "MobZone", true, false)
 	print("  знайдено зон: %d (сцена без world.gd — див. про Net вище)"
 			% zones.size())
@@ -94,7 +94,7 @@ func _tuning() -> void:
 	var data := GameData.new()
 	data.load_all()
 	var m: Node3D = MOB.instantiate()
-	root.add_child(m)
+	get_tree().root.add_child(m)
 	m.setup(Vector3.ZERO, 1, true, data.for_kind(1))
 	print("  із файлу: поклик %.0f, повідець %.0f, сила %d"
 			% [m.help_range, m.leash, m.stats.strength])

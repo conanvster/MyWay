@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Світ версії 2 з землі: кілька місць, по знімку на кожне.
 ##
 ## Питання, на які відповідає: чи межа зон читається переходом, а не
@@ -32,16 +32,16 @@ const SPOTS := [
 ]
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var text := FileAccess.get_file_as_string(MAP2)
 	if text.is_empty():
 		print("‼ немає %s — спершу `python3 tools/svit2.py`" % MAP2)
-		quit(1)
+		get_tree().quit(1)
 		return
 	# Кадри міряємо без вертикальної синхронізації: «60» з нею нічого не
 	# каже — шістдесят буде й тоді, коли карта ледве встигає.
@@ -51,17 +51,17 @@ func _go() -> void:
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var land: Node = world.get_node("Landscape")
 	# З підвантаженням, як у справжнього клієнта: інакше проба тягне у
 	# памʼять усі рослини світу, а видно однаково лише ті, що поруч.
 	land.build(JSON.parse_string(text), true)
-	await process_frame
+	await get_tree().process_frame
 
 	# Сонце — те, що в `main.tscn` («Light», з тінями), як і в грі. Своє
 	# проба більше не додає: з двома сонцями знімки 11.09.2026 виходили
@@ -69,7 +69,7 @@ func _go() -> void:
 	# хибно судили б про колір землі.
 	var eye := Camera3D.new()
 	eye.far = 900.0
-	root.add_child(eye)
+	get_tree().root.add_child(eye)
 	eye.make_current()
 
 	# Лісова стежка (слово замовника 11.09.2026: «серед лісу із
@@ -113,12 +113,12 @@ func _go() -> void:
 			eye.rotation_degrees = Vector3(float(spot[3]), float(spot[2]), 0)
 		land.stream_to(eye.position)
 		for i in 20:
-			await process_frame
+			await get_tree().process_frame
 		var draws := 0.0
 		var tris := 0.0
 		var started := Time.get_ticks_usec()
 		for i in 60:
-			await process_frame
+			await get_tree().process_frame
 			draws += Performance.get_monitor(
 					Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 			tris += Performance.get_monitor(
@@ -132,14 +132,14 @@ func _go() -> void:
 				% [name_of, ground, fps, draws / 60.0]
 				+ "трикутників %.0f тис. · трави %d клітинок, %d купок"
 				% [tris / 60.0 / 1000.0, grass.x, grass.y])
-		Shot.take(root)
+		Shot.take(get_tree().root)
 		# Ім'я знімка з роздільністю в секунду: між двома має пройти
 		# більше секунди, інакше другий затре перший.
 		var wait := Time.get_ticks_msec() + 1100
 		while Time.get_ticks_msec() < wait:
-			await process_frame
+			await get_tree().process_frame
 	print("[місця] знімки зроблено")
-	quit()
+	get_tree().quit()
 
 
 ## Точка дороги в межах 1,5 км від столиці, біля якої найбільше живих

@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Світ версії 2: чи збігається побудована земля з намальованою картою.
 ##
 ## Питання, на які проба відповідає числами, а не картинкою:
@@ -7,7 +7,7 @@ extends SceneTree
 ## стоять на сухому · чи можна ходити схилами · чи не тоне ліс.
 ##
 ## Ганяти так:
-##     godot --headless --path game --script res://probes/world2.gd
+##     godot --headless --path game res://scenes/world2.tscn
 
 const MAIN := preload("res://scenes/main.tscn")
 const MAP2 := "res://data/map2.json"
@@ -19,7 +19,7 @@ const CLIMB_LIMIT := 45.0
 var _bad := 0
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
@@ -37,11 +37,11 @@ func _rss_mib() -> float:
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var text := FileAccess.get_file_as_string(MAP2)
 	if text.is_empty():
 		print("‼ немає %s — спершу `python3 tools/svit2.py`" % MAP2)
-		quit(1)
+		get_tree().quit(1)
 		return
 	var map: Dictionary = JSON.parse_string(text)
 	var earth: Dictionary = map["земля"]
@@ -61,19 +61,19 @@ func _go() -> void:
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var land: Node = world.get_node("Landscape")
 
 	var before := _rss_mib()
 	var started := Time.get_ticks_msec()
 	land.build(map)
 	var spent := Time.get_ticks_msec() - started
-	await process_frame
+	await get_tree().process_frame
 
 	print("\n— побудова —")
 	print("  сторона %.0f м, сітка %d×%d, крок %.1f м" % [side, grid, grid, step])
@@ -82,7 +82,7 @@ func _go() -> void:
 	var body: Node = land.get_node_or_null("Земля")
 	if body == null:
 		_fail("вузла «Земля» немає взагалі")
-		quit(1)
+		get_tree().quit(1)
 		return
 	# Меші землі лежать по клаптях, тож шукаємо вглиб, а не в лоб.
 	var tris := 0
@@ -329,7 +329,7 @@ func _go() -> void:
 		print("  ✓ світ версії 2 збігається з картою")
 	else:
 		print("  ‼ зауважень: %d" % _bad)
-	quit(1 if _bad else 0)
+	get_tree().quit(1 if _bad else 0)
 
 
 func _near_town(map: Dictionary, x: float, z: float) -> bool:

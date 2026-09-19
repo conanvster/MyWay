@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Скіл «повернутися в місто»: чи витягує звідусіль і чи садить на землю.
 ##
 ## Причина, з якої скіл узагалі з'явився (слово замовника 05.09.2026):
@@ -7,7 +7,7 @@ extends SceneTree
 ## «після нього персонаж СТОЇТЬ НА ЗЕМЛІ в місті», з будь-якої дірки.
 ##
 ## Ганяти так:
-##     godot --headless --path game --script res://probes/home.gd
+##     godot --headless --path game res://scenes/home.tscn
 
 const AVATAR := preload("res://scenes/avatar.tscn")
 const MAIN := preload("res://scenes/main.tscn")
@@ -30,7 +30,7 @@ class Recorder extends Messenger:
 		sent.append({"peer": who, "method": String(method), "args": args})
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
@@ -40,7 +40,7 @@ func _fail(text: String) -> void:
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var data := GameData.new()
 	data.load_all()
 
@@ -48,7 +48,7 @@ func _go() -> void:
 	var skill: Skill = data.skills.get_skill(KEY)
 	if skill == null:
 		_fail("скіла «%s» у data/skills.json немає" % KEY)
-		quit(1)
+		get_tree().quit(1)
 		return
 	print("  «%s»: ціль %s, каст %.0f поінтів, відкат %.0f, мана %d"
 			% [skill.name, skill.target, skill.cast_points,
@@ -73,15 +73,15 @@ func _go() -> void:
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var land: Node = world.get_node("Landscape")
 	land.build(map)
-	await process_frame
+	await get_tree().process_frame
 
 	var towns: Array = map.get("міста", [])
 	var centre: Array = towns[0].get("центр", [0, 0, 0]) if not towns.is_empty() \
@@ -95,7 +95,7 @@ func _go() -> void:
 
 	var hero: Node3D = AVATAR.instantiate()
 	world.add_child(hero)
-	await process_frame
+	await get_tree().process_frame
 	var creatures := {1: hero}
 	var vision := Vision.new(creatures)
 	vision.watch(1)
@@ -168,4 +168,4 @@ func _go() -> void:
 		print("  ✓ скіл вертає в місто з будь-якої дірки й садить на землю")
 	else:
 		print("  ‼ зауважень: %d" % _bad)
-	quit(1 if _bad else 0)
+	get_tree().quit(1 if _bad else 0)

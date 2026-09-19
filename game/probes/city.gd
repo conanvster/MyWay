@@ -1,4 +1,4 @@
-extends SceneTree
+extends Node
 ## Проба до мапи: місто, мешканці, ліс, гори.
 ##
 ## Ганяти так:
@@ -7,27 +7,27 @@ extends SceneTree
 const MAIN := preload("res://scenes/main.tscn")
 
 
-func _init() -> void:
+func _ready() -> void:
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	var data := GameData.new()
 	data.load_all()
 	# Світ-клієнт сам стукає на 127.0.0.1, а там може саме йти
 	# гра замовника (19.09.2026: проба під'єдналась до живого
 	# сервера світу 2 й перезапускалась по колу). «Уже в мережі» —
 	# і `Net.join()` нічого не робить.
-	var net: Node = root.get_node_or_null("Net")
+	var net: Node = get_tree().root.get_node_or_null("Net")
 	if net != null:
 		net.joined = true
 	var world: Node3D = MAIN.instantiate()
-	root.add_child(world)
-	await process_frame
+	get_tree().root.add_child(world)
+	await get_tree().process_frame
 	var land: Node = world.get_node("Landscape")
 	land.build(data.map)
-	await process_frame
+	await get_tree().process_frame
 
 	print("\n— що збудовано —")
 	var counted := {}
@@ -78,4 +78,4 @@ func _go() -> void:
 			print("    будинок у %s — за %.1f" % [child.global_position, far])
 	print("  жоден не ближче за 6,0: %s" % not inside)
 	world.queue_free()
-	quit()
+	get_tree().quit()

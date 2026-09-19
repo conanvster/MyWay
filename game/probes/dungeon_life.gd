@@ -205,8 +205,77 @@ func _go() -> void:
 	_yes("закриття прибирає лічильник", world.days_left(2) < 0.0
 			and not tag.visible)
 
+	var url := ""
+	var args := OS.get_cmdline_user_args()
+	if args.has("--база") and args.find("--база") + 1 < args.size():
+		url = args[args.find("--база") + 1]
+	if url != "":
+		await _through_db(url, world)
+
 	print("  підсумок: %d з %d" % [_ok, _ok + _bad])
 	get_tree().quit(1 if _bad > 0 else 0)
+
+
+## Наскрізь через справжню базу — на окремому «світі» `проба.json`, щоб
+## не зачепити жодного справжнього запису. Наприкінці все прибирається.
+func _through_db(url: String, world: Node) -> void:
+	print("\n— через базу %s (світ «проба.json») —" % url)
+	const KEY := "проба.json"
+	var store := Store.new()
+	add_child(store)
+	store.setup(url)
+	var clean := [false]
+	store.drop(DungeonLife.DUNGEONS, "world=eq.%s" % KEY.uri_encode(),
+			func(_ok: bool, _rows: Array) -> void: clean[0] = true)
+	store.drop(DungeonLife.PENALTIES, "world=eq.%s" % KEY.uri_encode())
+	while not clean[0]:
+		await get_tree().process_frame
+
+	var first := DungeonLife.new()
+	add_child(first)
+	first.setup(store, world.dungeons.book.life, KEY)
+	first.activated(7, "D")
+	first.built(7, "костниця", 4242)
+	first.activated(8, "E")
+	await get_tree().create_timer(1.0).timeout
+
+	var second := DungeonLife.new()
+	add_child(second)
+	second.setup(store, world.dungeons.book.life, KEY)
+	var alive: Array = []
+	var gone: Array = []
+	second.restore(func(at: int, r: Dictionary) -> void: alive.append([at, r]),
+			func(at: int) -> void: gone.append(at))
+	await get_tree().create_timer(1.0).timeout
+	var r7: Dictionary = second.records.get(7, {})
+	_yes("після «перезапуску» прочитано обидва: %d, живих %d"
+			% [second.records.size(), alive.size()],
+			second.records.size() == 2 and alive.size() == 2)
+	_yes("шаблон і зерно вціліли: «%s», %d, грейд %s"
+			% [r7.get("template", ""), r7.get("seed", 0), r7.get("grade", "")],
+			r7.get("template", "") == "костниця" and r7.get("seed", 0) == 4242
+			and r7.get("grade", "") == "D")
+	_yes("строк вцілів до секунди", r7.get("closes", 0)
+			== first.records[7]["closes"])
+
+	second.expire(8)
+	await get_tree().create_timer(1.0).timeout
+	var third := DungeonLife.new()
+	add_child(third)
+	third.setup(store, world.dungeons.book.life, KEY)
+	third.restore(func(_at: int, _r: Dictionary) -> void: pass,
+			func(_at: int) -> void: pass)
+	await get_tree().create_timer(1.0).timeout
+	_yes("закрите не вертається, штраф вертається: записів %d, штрафів %d"
+			% [third.records.size(), third.penalties.size()],
+			not third.records.has(8) and third.penalties.size() == 1)
+
+	var done := [0]
+	for table: String in [DungeonLife.DUNGEONS, DungeonLife.PENALTIES]:
+		store.drop(table, "world=eq.%s" % KEY.uri_encode(),
+				func(ok: bool, _rows: Array) -> void: done[0] += 1 if ok else 0)
+	await get_tree().create_timer(1.0).timeout
+	_yes("прибрано за собою", done[0] == 2)
 
 
 class LifeStep:

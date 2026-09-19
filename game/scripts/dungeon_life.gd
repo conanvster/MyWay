@@ -140,8 +140,13 @@ func expire(at: int) -> void:
 	var until := now() + int(days_penalty() * DAY)
 	penalties.append({"shrine": at, "until": until})
 	if _store != null and _store.works():
-		_store.drop(DUNGEONS, "world=eq.%s&shrine=eq.%d"
-				% [_world_key.uri_encode(), at])
+		# Запис, ще в дорозі, воскресив би видалене, якби дійшов після
+		# видалення. Тоді видаляємо, щойно він дійде.
+		_again.erase(at)
+		if _busy.has(at):
+			_drop_after[at] = true
+		else:
+			_drop_row(at)
 		_store.put(PENALTIES, {"world": _world_key, "shrine": at,
 				"until": until})
 
@@ -165,11 +170,40 @@ func penalty_states() -> Array[State]:
 	return out
 
 
+## Записи однієї святині — строго по черзі. Активація й перший вхід
+## шлють два запити майже разом, і відповідь на старіший могла прийти
+## останньою й затерти шаблон порожнім (спіймано пробою через справжню
+## базу 19.09.2026). Поки запис у дорозі, наступний чекає й піде вже з
+## найсвіжішим станом.
+var _busy: Dictionary = {}
+var _again: Dictionary = {}
+var _drop_after: Dictionary = {}
+
+
+func _drop_row(at: int) -> void:
+	_store.drop(DUNGEONS, "world=eq.%s&shrine=eq.%d"
+			% [_world_key.uri_encode(), at])
+
+
 func _save(at: int) -> void:
 	if _store == null or not _store.works():
 		return
+	if _busy.has(at):
+		_again[at] = true
+		return
+	if not records.has(at):
+		return
+	_busy[at] = true
 	var r: Dictionary = records[at]
 	_store.put(DUNGEONS, {"world": _world_key, "shrine": at,
 			"grade": r["grade"], "template": r["template"],
 			"seed": r["seed"], "opened_at": r["opened"],
-			"closes_at": r["closes"]})
+			"closes_at": r["closes"]},
+			func(_ok: bool, _rows: Array) -> void:
+				_busy.erase(at)
+				if _drop_after.has(at):
+					_drop_after.erase(at)
+					_drop_row(at)
+				elif _again.has(at):
+					_again.erase(at)
+					_save(at))

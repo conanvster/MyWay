@@ -51,6 +51,8 @@ var concentration_bonus := 0.0
 var move_factor := 1.0
 var attack_factor := 1.0
 var defence_factor := 1.0
+## Штраф світу (П-213): «в три рази більше хп».
+var hp_factor := 1.0
 
 
 ## ── швидкості: логарифмічні (П-86, погоджено 02.09.2026) ──────────────
@@ -110,7 +112,7 @@ func cast_time() -> float:
 
 
 func max_hp() -> int:
-	return 40 + stamina * 6
+	return roundi((40 + stamina * 6) * hp_factor)
 
 
 func max_mp() -> int:

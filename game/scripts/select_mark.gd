@@ -13,6 +13,9 @@ extends RefCounted
 
 const NAME := "ПоміткаВибору"
 const TONE := Color(1.0, 0.84, 0.18)
+## Монстр під штрафом світу (П-213): «при виділенні підсвічуються
+## фіолетовим».
+const CURSED := Color(0.72, 0.3, 1.0)
 
 
 static func put(on: Node3D, radius: float, height: float) -> void:
@@ -75,3 +78,19 @@ static func clear(on: Node) -> void:
 	if old != null:
 		on.remove_child(old)
 		old.queue_free()
+
+
+## Перефарбувати наявну помітку, не будуючи її заново: стани цілі
+## приходять уже після вибору, і пульсація не має збиватись.
+static func tint(on: Node, tone: Color) -> void:
+	if on == null or not is_instance_valid(on):
+		return
+	var holder := on.get_node_or_null(NAME)
+	if holder == null:
+		return
+	var ring := holder.get_node_or_null("Коло") as MeshInstance3D
+	if ring != null and ring.material_override is StandardMaterial3D:
+		(ring.material_override as StandardMaterial3D).albedo_color = tone
+	var arrow := holder.get_node_or_null("Стрілка") as Label3D
+	if arrow != null:
+		arrow.modulate = tone

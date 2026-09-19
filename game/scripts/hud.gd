@@ -71,7 +71,7 @@ const DEBUFF_EDGE := Color(0.86, 0.26, 0.2)
 const STAT_TITLES := {"strength": "сила", "agility": "спритність",
 		"stamina": "витривалість", "intellect": "інтелект", "sense": "чуття",
 		"move_speed": "швидкість", "physical_attack": "фіз. атака",
-		"physical_defence": "фіз. захист"}
+		"physical_defence": "фіз. захист", "max_hp": "здоров'я"}
 
 var _my_states: Control
 var _target_states: Control

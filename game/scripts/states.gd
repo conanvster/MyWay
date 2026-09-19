@@ -83,6 +83,7 @@ func applied_to(base: Stats) -> Stats:
 	out.move_factor = factor_for("move_speed")
 	out.attack_factor = factor_for("physical_attack")
 	out.defence_factor = factor_for("physical_defence")
+	out.hp_factor = factor_for("max_hp")
 	return out
 
 

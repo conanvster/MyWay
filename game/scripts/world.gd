@@ -985,8 +985,14 @@ func close_dungeon(at: int) -> void:
 func penalize(m: Node) -> void:
 	if life == null:
 		return
+	var was: int = m.stats.max_hp()
 	for state: State in life.penalty_states():
 		m.add_state(state)
+	# Здоров'я — тією самою часткою від нового максимуму: цілий монстр
+	# лишається цілим (утричі товщим), поранений — так само пораненим.
+	var now: int = m.stats.max_hp()
+	if now != was and was > 0:
+		m.hp = roundi(float(m.hp) * now / was)
 
 
 ## Розповісти новому гравцеві, які підземелля вже відкриті: сервер шле
@@ -2034,6 +2040,16 @@ func client_self(hp: int, max_hp: int, mp: int, max_mp: int,
 func client_states(mine: Array, target: int, theirs: Array) -> void:
 	if hud != null:
 		hud.set_states(mine, target, theirs)
+	# Під штрафом світу вибраний монстр підсвічується фіолетовим (слово
+	# замовника 19.09.2026, П-213). Стани цілі приходять саме сюди.
+	var who: Node = creatures.get(target)
+	if who != null:
+		var cursed := false
+		for row: Array in theirs:
+			if str(row[0]).begins_with(DungeonLife.PENALTY_NAME):
+				cursed = true
+		SelectMark.tint(who, SelectMark.CURSED if cursed
+				else SelectMark.TONE)
 
 
 ## Хтось почав читати скіл: у нього над головою смуга.

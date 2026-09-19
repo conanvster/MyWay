@@ -97,6 +97,8 @@ func _go() -> void:
 	beast.setup(Vector3(3, 0, 3), 1, false, world.data.for_kind(1))
 	await get_tree().process_frame
 	var plain_attack: float = beast.stats.physical_attack()
+	var plain_defence: float = beast.stats.physical_defence()
+	var plain_hp: int = beast.stats.max_hp()
 	# Свій баф появи в монстра може бути — штраф рахуємо понад нього.
 	var own: int = beast.states.count()
 
@@ -137,31 +139,45 @@ func _go() -> void:
 	_yes("запис прибрано, штраф один", life.records.is_empty()
 			and life.penalties.size() == 1)
 	var hit: float = beast.stats.physical_attack() / plain_attack
-	_yes("монстр світу під штрафом: атака ×%.2f, станів %d"
-			% [hit, beast.states.count()],
-			absf(hit - 1.1) < 0.02 and beast.states.count() == own + 2)
+	var guard: float = beast.stats.physical_defence() / plain_defence
+	var thick: float = float(beast.stats.max_hp()) / plain_hp
+	_yes("монстр світу під штрафом: здоров'я ×%.2f, атака ×%.2f, захист ×%.2f"
+			% [thick, hit, guard],
+			absf(thick - 3.0) < 0.02 and absf(hit - 1.5) < 0.02
+			and absf(guard - 1.5) < 0.02 and beast.states.count() == own + 3)
+	_yes("цілий монстр лишився цілим: %d / %d"
+			% [beast.hp, beast.stats.max_hp()],
+			beast.hp == beast.stats.max_hp())
 	world.penalize(beast)
 	_yes("повторний виклик штраф не подвоює (станів %d)"
-			% beast.states.count(), beast.states.count() == own + 2)
+			% beast.states.count(), beast.states.count() == own + 3)
+
+	SelectMark.put(beast, 0.8, 2.0)
+	world.client_states([], -9001, world.states_row(beast))
+	var arrow: Label3D = beast.get_node("%s/Стрілка" % SelectMark.NAME)
+	_yes("вибраний під штрафом — фіолетовий", arrow.modulate
+			== SelectMark.CURSED)
 
 	await _open_and_enter(world, me, 1)
 	_shift[0] += life.days_open() * DAY + 1.0
 	for at: int in life.tick(LifeStep.BIG):
 		world.close_dungeon(at)
 	hit = beast.stats.physical_attack() / plain_attack
-	_yes("два штрафи складаються: атака ×%.2f, станів %d"
-			% [hit, beast.states.count()],
-			absf(hit - 1.21) < 0.03 and beast.states.count() == own + 4)
+	_yes("два штрафи складаються (П-108): атака ×%.2f, здоров'я ×%.2f"
+			% [hit, float(beast.stats.max_hp()) / plain_hp],
+			absf(hit - 2.25) < 0.03 and beast.states.count() == own + 6)
 
 	_shift[0] += life.days_penalty() * DAY + 1.0
 	life.tick(LifeStep.BIG)
 	beast.states.tick(life.days_penalty() * DAY + 1.0)
 	beast.refresh_stats()
-	_yes("через %.0f днів штрафи спали: чинних %d, атака ×%.2f"
+	_yes("через %.0f днів штрафи спали: чинних %d, атака ×%.2f, здоров'я %d / %d"
 			% [life.days_penalty(), life.penalties.size(),
-			   beast.stats.physical_attack() / plain_attack],
+			   beast.stats.physical_attack() / plain_attack, beast.hp,
+			   beast.stats.max_hp()],
 			life.penalties.is_empty() and absf(
-			beast.stats.physical_attack() / plain_attack - 1.0) < 0.01)
+			beast.stats.physical_attack() / plain_attack - 1.0) < 0.01
+			and beast.hp <= plain_hp)
 
 	world._restore_dungeon(2, {"template": "старий-льох", "seed": 77,
 			"grade": land.shrines()[2].grade})

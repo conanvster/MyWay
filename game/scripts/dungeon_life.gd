@@ -26,6 +26,9 @@ const PENALTIES := "world_penalties"
 ## нічого не важать.
 const LOOK_EVERY := 10.0
 const DAY := 86400.0
+## З цього починається ім'я кожного стану штрафу — по ньому клієнт
+## упізнає монстра під штрафом (фіолетова помітка, П-213).
+const PENALTY_NAME := "штраф світу"
 
 ## Номер святині -> {"grade", "template", "seed", "opened", "closes"}.
 var records: Dictionary = {}
@@ -163,7 +166,7 @@ func penalty_states() -> Array[State]:
 		if left <= 0.0:
 			continue
 		for one: Dictionary in _life.get("штраф", []):
-			out.append(State.new("штраф світу · святиня %d" % int(p["shrine"])
+			out.append(State.new(PENALTY_NAME + " · святиня %d" % int(p["shrine"])
 					+ " · " + str(one.get("стат", "")),
 					str(one.get("стат", "")), float(one.get("множник", 1.0)),
 					left))

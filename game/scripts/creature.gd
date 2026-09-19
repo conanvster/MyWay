@@ -177,6 +177,9 @@ func refresh_stats() -> void:
 	dressed.cast_speed_bonus = base_stats.cast_speed_bonus
 	dressed.concentration_bonus = base_stats.concentration_bonus
 	stats = states.applied_to(dressed)
+	# Стан, що піднімав здоров'я (штраф світу, П-213), спав — здоров'я
+	# не може лишитись вищим за новий максимум.
+	hp = mini(hp, stats.max_hp())
 
 
 ## Скільки цього стата дає вдягнене. Стати речей названі українською —

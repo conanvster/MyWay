@@ -99,6 +99,11 @@ func make(name: String, rolled: Array = []) -> Item:
 ## українська мова, а не властивість коду.
 func _roll(grade: String, gender: String = "ч") -> Array:
 	var out: Array = []
+	# Розмах афікса росте з грейдом речі (З-6): доки крок дорівнював
+	# нулю, «міцний» давав ті самі 1–3 витривалості і на E-куртці, і на
+	# SS-панцирі, тобто на верхніх грейдах афікс нічого не важив.
+	var step := float(affixes.get("крок за грейд", 0.0))
+	var scale := 1.0 + step * maxf(0.0, float(GRADES.find(grade)))
 	for where: String in ["спереду", "ззаду"]:
 		for affix: Dictionary in affixes.get(where, []):
 			if not _grade_allows(grade, str(affix.get("з грейду", "E"))):
@@ -111,7 +116,8 @@ func _roll(grade: String, gender: String = "ч") -> Array:
 				"назва": name.get(gender, name.values()[0]) \
 						if name is Dictionary else name,
 				"стат": affix["стат"],
-				"скільки": randi_range(int(affix["від"]), int(affix["до"])),
+				"скільки": maxi(1, roundi(randi_range(int(affix["від"]),
+						int(affix["до"])) * scale)),
 			})
 			break        # з кожного боку не більше одного
 	return out

@@ -126,6 +126,7 @@ func setup(world: Node) -> void:
 	_build_skills()
 	_build_things()
 	_build_talk()
+	_build_ports()
 	_build_shop()
 	_build_warehouse()
 	_build_guild()
@@ -1012,6 +1013,10 @@ signal wants_withdraw_thing(at: int, thing_at: int)
 signal wants_withdraw_stack(at: int, name: String)
 signal wants_guild(at: int)
 signal wants_bless(at: int)
+## Майстер магії (20.09.2026): спершу спитати перелік міст, тоді назвати
+## одне з них. Ціну клієнт не рахує — її дає сервер.
+signal wants_ports(at: int)
+signal wants_port(at: int, town: String)
 signal wants_learn_skill(at: int, key: String)
 signal wants_raise_skill(at: int, key: String)
 
@@ -1030,6 +1035,7 @@ var _talk_trade: Button
 var _talk_warehouse: Button
 var _talk_guild: Button
 var _talk_bless: Button
+var _talk_mage: Button
 var _talk_with := -1
 
 ## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
@@ -1109,6 +1115,16 @@ func _build_talk() -> void:
 			if _talk_with >= 0:
 				wants_bless.emit(_talk_with))
 	page.add_child(_talk_bless)
+
+	_talk_mage = Button.new()
+	_talk_mage.text = "Перенести в інше місто"
+	_talk_mage.position = Vector2(0, 160)
+	_talk_mage.size = Vector2(TALK_INNER.x, 32)
+	_talk_mage.custom_minimum_size = _talk_mage.size
+	_talk_mage.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_ports.emit(_talk_with))
+	page.add_child(_talk_mage)
 
 
 ## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
@@ -1298,7 +1314,7 @@ func aim_resident(title: String, trades: bool) -> void:
 
 func show_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
-		priest: bool = false) -> void:
+		priest: bool = false, mage: bool = false) -> void:
 	if _talk_box == null:
 		return
 	_talk_with = at
@@ -1307,16 +1323,93 @@ func show_talk(at: int, title: String, trades: bool,
 	_talk_warehouse.visible = warehouse_keeper
 	_talk_guild.visible = guild_master
 	_talk_bless.visible = priest
+	_talk_mage.visible = mage
 	# Видимі кнопки — підряд згори: у кожного мешканця своя одна-дві, і
 	# на сталих місцях кнопка священика висіла б під трьома порожніми.
 	var row := 0
 	for button: Button in [_talk_trade, _talk_warehouse, _talk_guild,
-			_talk_bless]:
+			_talk_bless, _talk_mage]:
 		if button.visible:
 			button.position.y = 40 + row * 40
 			row += 1
 	_talk_box.visible = true
 	_talk_box._keep_on_screen()
+
+
+## Куди перенести (майстер магії, слово замовника 20.09.2026).
+##
+## Окреме вікно, а не рядок кнопок у розмові: міст п'ять, у кожного своя
+## ціна, і ціну треба бачити ДО натиску — інакше «перенеси» означає
+## «забери скільки схочеш».
+const PORTS_INNER := Vector2(300, 260)
+const PORT_ROW := 34.0
+
+var _ports_box: WindowBox
+var _ports_title: Label
+var _ports_money: Label
+var _ports_rows: Array = []
+var _ports_with := -1
+
+
+func _build_ports() -> void:
+	_ports_box = WindowBox.new()
+	_ports_box.name = "ВікноПереносу"
+	_ports_box.setup("Куди перенести", PORTS_INNER)
+	_ports_box.set_anchors_preset(Control.PRESET_CENTER)
+	_ports_box.position = -_ports_box.size * 0.5
+	_root.add_child(_ports_box)
+	var page: Control = _ports_box.body
+
+	_ports_title = _text(15, page)
+	_ports_title.text = "—"
+	_ports_money = _text(13, page)
+	_ports_money.position = Vector2(0, 20)
+	_ports_money.text = ""
+
+	# Рядків стільки, скільки міст у світі; зайві ховаються. Створювати
+	# їх щоразу заново означало б відв'язувати старі натиски.
+	for i in 8:
+		var press := Button.new()
+		press.position = Vector2(0, 44 + i * PORT_ROW)
+		press.size = Vector2(PORTS_INNER.x, 30)
+		press.custom_minimum_size = press.size
+		press.visible = false
+		page.add_child(press)
+		_ports_rows.append(press)
+
+
+## `towns` — те, що порахував сервер: назва, скільки метрів, ціна.
+func show_ports(at: int, title: String, towns: Array,
+		money: int) -> void:
+	if _ports_box == null:
+		return
+	_ports_with = at
+	_ports_title.text = title
+	_ports_money.text = "у тебе %d" % money
+	for i in _ports_rows.size():
+		var press: Button = _ports_rows[i]
+		for link in press.pressed.get_connections():
+			press.pressed.disconnect(link["callable"])
+		if i >= towns.size():
+			press.visible = false
+			continue
+		var town: Dictionary = towns[i]
+		var name: String = str(town.get("назва", "?"))
+		var price := int(town.get("ціна", 0))
+		press.visible = true
+		press.text = "%s — %d" % [name, price]
+		press.tooltip_text = "%.1f км · %d монет" % [
+				float(town.get("далеко", 0.0)) / 1000.0, price]
+		# Не вистачає — кнопка мертва, але ціну видно: мовчки ховати
+		# місто означало б брехати, що туди не носять.
+		press.disabled = money < price
+		if not press.disabled:
+			press.pressed.connect(func() -> void:
+					if _ports_with >= 0:
+						wants_port.emit(_ports_with, name)
+					_ports_box.visible = false)
+	_ports_box.visible = true
+	_ports_box._keep_on_screen()
 
 
 func _build_shop() -> void:

@@ -13,6 +13,7 @@ extends StaticBody3D
 const WAREHOUSE := "завідувач складу"
 const GUILD := "гільдмайстер"
 const PRIEST := "священик"
+const MAGE := "майстер магії"
 
 @export var who := "мешканець"
 @export var craft := ""
@@ -92,3 +93,10 @@ func teaches() -> bool:
 ## Чи дає бафи (`data/blessings.json`, слово замовника 19.09.2026).
 func blesses() -> bool:
 	return craft == PRIEST
+
+
+## Чи переносить у інше місто (`data/teleports.json`, слово замовника
+## 20.09.2026). Стоїть у кожному місті окремим рядком, не через
+## чергу ремесел: у місті з чотирма мешканцями він випадав би через раз.
+func ports() -> bool:
+	return craft == MAGE

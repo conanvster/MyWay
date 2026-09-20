@@ -1660,7 +1660,7 @@ func ask_talk(at: int) -> void:
 	if who == null:
 		return
 	rpc_id(id, "client_talk", at, who.title(), who.trades(),
-			who.keeps(), who.teaches(), who.blesses())
+			who.keeps(), who.teaches(), who.blesses(), who.ports())
 
 
 const BLESSINGS_PATH := "res://data/blessings.json"
@@ -1696,6 +1696,113 @@ func ask_bless(at: int) -> void:
 			a.add_state(State.from_data(one))
 			given.append(str(one.get("назва", "стан")))
 	link.notice(id, "%s: %s" % [who.title(), ", ".join(given)])
+
+
+const TELEPORTS_PATH := "res://data/teleports.json"
+## Ближче за це до середини міста — вважаємо, що ти вже в ньому, і в
+## перелік воно не йде: пропонувати перенести туди, де стоїш, безглуздо.
+const SAME_TOWN := 120.0
+
+
+## Числа майстра магії. Читаємо файл на кожне прохання — прохання
+## рідкісні, а ціни так правляться без перезапуску (як у священика).
+## Зіпсований файл озвучуємо, а не ковтаємо (P3).
+func _teleport_rules(id: int) -> Dictionary:
+	var raw := FileAccess.get_file_as_string(TELEPORTS_PATH)
+	var parsed: Variant = JSON.parse_string(raw)
+	if not parsed is Dictionary:
+		print("[магія] ‼ %s не прочитався" % TELEPORTS_PATH)
+		link.notice(id, "‼ ціни майстра магії не прочитались")
+		return {}
+	return parsed
+
+
+## Куди він може перенести і почому. Рахує СЕРВЕР: клієнт ціну не
+## вигадує (P1), він лише показує те, що прийшло.
+func _towns_for(a: Node, rules: Dictionary) -> Array:
+	var here := Vector2(a.global_position.x, a.global_position.z)
+	var per_km := float(rules.get("ціна за км", 250.0))
+	var least := int(rules.get("найменша ціна", 300))
+	var out: Array = []
+	for town: Dictionary in data.map.get("міста", []):
+		var at: Array = town.get("центр", [0, 0, 0])
+		var spot := Vector2(float(at[0]), float(at[2]))
+		var far := here.distance_to(spot)
+		if far < SAME_TOWN:
+			continue
+		out.append({"назва": str(town.get("назва", "місто")),
+				"далеко": far,
+				"ціна": maxi(least, int(round(far / 1000.0 * per_km)))})
+	return out
+
+
+## Майстер магії: перелік міст із цінами (слово замовника 20.09.2026).
+@rpc("any_peer", "call_remote", "reliable")
+func ask_ports(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.ports():
+		return
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var rules := _teleport_rules(id)
+	if rules.is_empty():
+		return
+	var need := int(rules.get("з рівня", 1))
+	if a.level < need:
+		link.notice(id, "%s береться з %d рівня" % [who.title(), need])
+		return
+	var towns := _towns_for(a, rules)
+	if towns.is_empty():
+		link.notice(id, "%s: звідси нікуди переносити" % who.title())
+		return
+	rpc_id(id, "client_ports", at, who.title(), towns,
+			Shop.money_of(a))
+
+
+## Перенести. Ціну беремо ЩЕ РАЗ тут, а не ту, що надіслав клієнт:
+## інакше «телепорт за 1 монету» робиться однією правкою пакета (P1).
+@rpc("any_peer", "call_remote", "reliable")
+func ask_port(at: int, town_name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.ports():
+		return
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var rules := _teleport_rules(id)
+	if rules.is_empty():
+		return
+	if a.level < int(rules.get("з рівня", 1)):
+		return
+	var want: Dictionary = {}
+	for one: Dictionary in _towns_for(a, rules):
+		if str(one["назва"]) == town_name:
+			want = one
+	if want.is_empty():
+		link.notice(id, "%s: туди звідси не переносять" % who.title())
+		return
+	var price := int(want["ціна"])
+	if Shop.money_of(a) < price:
+		link.notice(id, "%s бере %d, а в тебе %d"
+				% [who.title(), price, Shop.money_of(a)])
+		return
+	var spot := Vector2.ZERO
+	for town: Dictionary in data.map.get("міста", []):
+		if str(town.get("назва", "")) == town_name:
+			var at_town: Array = town["центр"]
+			spot = Vector2(float(at_town[0]), float(at_town[2]))
+	Shop.take_money(a, price)
+	combat.send_to(id, spot, "магія")
+	send_things(id)
+	link.notice(id, "%s переніс у %s за %d" % [who.title(), town_name,
+			price])
 
 
 ## Показати прилавок. Асортимент шлемо цілком: він короткий і не
@@ -2120,6 +2227,10 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_guild", at))
 		hud.wants_bless.connect(func(at: int) -> void:
 				rpc_id(1, "ask_bless", at))
+		hud.wants_ports.connect(func(at: int) -> void:
+				rpc_id(1, "ask_ports", at))
+		hud.wants_port.connect(func(at: int, town: String) -> void:
+				rpc_id(1, "ask_port", at, town))
 		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_learn_skill", at, key))
 		hud.wants_raise_skill.connect(func(at: int, key: String) -> void:
@@ -2351,10 +2462,18 @@ func client_cast_end(id: int, done: bool) -> void:
 @rpc("authority", "call_remote", "reliable")
 func client_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
-		priest: bool = false) -> void:
+		priest: bool = false, mage: bool = false) -> void:
 	if hud != null:
 		hud.show_talk(at, title, trades, warehouse_keeper, guild_master,
-				priest)
+				priest, mage)
+
+
+## Майстер магії: куди й почому (20.09.2026).
+@rpc("authority", "call_remote", "reliable")
+func client_ports(at: int, title: String, towns: Array,
+		money: int) -> void:
+	if hud != null:
+		hud.show_ports(at, title, towns, money)
 
 
 ## Прилавок: що продають і за скільки. `buyback` — у відсотках, щоб у

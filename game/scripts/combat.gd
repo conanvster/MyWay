@@ -143,13 +143,20 @@ func revive(id: int) -> bool:
 ## 6 м запасу над землею, як і при вході (`world.gd`) та спавні монстрів
 ## (`spawner.gd`): падає сам і сідає на видиму поверхню, а не в ґрунт.
 func send_home(id: int) -> void:
+	send_to(id, home_spot, "дім")
+
+
+## Поставити в будь-яке місце на землі: те саме, що `send_home`, тільки
+## точку дає той, хто кличе (майстер магії, 20.09.2026). Одна дорога на
+## обидва випадки — інакше запас над землею розійшовся б першою правкою.
+func send_to(id: int, spot: Vector2, why: String = "перенос") -> void:
 	var c: Node = _creatures.get(id)
 	if c == null:
 		return
-	var high: float = ground_height.call(home_spot.x, home_spot.y)
-	c.place_at(Vector3(home_spot.x, high + 6.0, home_spot.y), 0.0)
-	print("[дім] %d поставлено в місто (%.0f, %.0f) на висоті %.2f"
-			% [id, home_spot.x, home_spot.y, c.global_position.y])
+	var high: float = ground_height.call(spot.x, spot.y)
+	c.place_at(Vector3(spot.x, high + 6.0, spot.y), 0.0)
+	print("[%s] %d поставлено в (%.0f, %.0f) на висоті %.2f"
+			% [why, id, spot.x, spot.y, c.global_position.y])
 	# Окремим повідомленням, бо переставляння має бути стрибком:
 	# інакше труп проїде через усю мапу (вада 3 з PLAN.md).
 	_link.to_watchers(id, &"client_place", [id, c.global_position, c.facing])

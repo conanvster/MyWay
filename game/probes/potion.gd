@@ -95,6 +95,23 @@ func _go() -> void:
 	world.actions.use_item(1, POTION)
 	_yes("великий запас: +%d (рівно 500)" % (me.hp - 100), me.hp == 600)
 
+	# Слово замовника 20.09.2026: «якщо я виставляю зілля в панель, то
+	# вони не закінчуються». Тому шлях ПАНЕЛІ — натискання йде в чергу,
+	# чергу розбирає `pump` — перевіряємо окремо від вікна речей: у
+	# вікні воно працювало завжди.
+	me.items = {POTION: 3}
+	me.hp = 10
+	var посуд: Array = []
+	for _крок in 5:
+		world.actions.enqueue(1, Actions.ITEM_PREFIX + POTION)
+		world.actions.pump(1)
+		me.hp = 10           # знову поранений, інакше зілля не п'ється
+		посуд.append(int(me.items.get(POTION, 0)))
+	print("    після п'яти натискань панелі лишилось: %s" % [посуд])
+	_yes("панеллю зілля витрачається до нуля", посуд[2] == 0)
+	_yes("порожня комірка не наливає з повітря",
+			int(me.items.get(POTION, 0)) == 0)
+
 	_yes("на панель можна: зілля", world.bar_allows(me,
 			Actions.ITEM_PREFIX + POTION))
 	_yes("на панель не можна: річ без дії (меч)", not world.bar_allows(me,

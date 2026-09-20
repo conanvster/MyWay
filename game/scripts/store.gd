@@ -74,7 +74,7 @@ func load_character(name: String) -> void:
 ## Записати персонажа. PostgREST уміє «додати або оновити» одним запитом,
 ## якщо попросити `resolution=merge-duplicates` — так не треба знати
 ## наперед, чи персонаж уже є.
-func save_character(name: String, row: Dictionary) -> void:
+func save_character(name: String, row: Dictionary, dropped: int = 0) -> void:
 	if not works():
 		saved.emit(name, false)
 		return
@@ -82,19 +82,52 @@ func save_character(name: String, row: Dictionary) -> void:
 	add_child(request)
 	request.request_completed.connect(
 			func(result: int, code: int, _headers: PackedStringArray,
-					_body: PackedByteArray) -> void:
+					body: PackedByteArray) -> void:
 				request.queue_free()
 				var ok: bool = result == HTTPRequest.RESULT_SUCCESS \
 						and code >= 200 and code < 300
-				if not ok:
-					push_error("[база] запис %s: код %d" % [name, code])
-					print("[база] ‼ запис %s не вдався, код %d" % [name, code])
-				saved.emit(name, ok))
+				if ok:
+					saved.emit(name, true)
+					return
+				# 400 буває з однієї частої причини: у грі з'явилось нове
+				# поле персонажа, а міграцію в базу ще не поставили. Тоді
+				# база відкидає ВЕСЬ рядок, і персонаж не зберігається
+				# зовсім — не лише нове поле. Тож знімаємо те поле, яке
+				# база назвала, і пробуємо ще раз: краще зберегти майже
+				# все й голосно сказати, ніж утратити все мовчки.
+				var missing := _unknown_column(body)
+				if code == 400 and missing != "" and row.has(missing) \
+						and dropped < 8:
+					print("[база] ‼ у таблиці немає стовпця «%s» — постав "
+							% missing
+							+ "міграцію з db/; зберігаю без нього")
+					var trimmed: Dictionary = row.duplicate(true)
+					trimmed.erase(missing)
+					save_character(name, trimmed, dropped + 1)
+					return
+				push_error("[база] запис %s: код %d" % [name, code])
+				print("[база] ‼ запис %s не вдався, код %d" % [name, code])
+				saved.emit(name, false))
 	var headers := PackedStringArray([
 			"Content-Type: application/json",
 			"Prefer: resolution=merge-duplicates"])
 	request.request("%s/%s" % [base_url, _table], headers,
 			HTTPClient.METHOD_POST, JSON.stringify(row))
+
+
+## Ім'я стовпця з відповіді PostgREST на 400. Вона каже словами:
+## «Could not find the 'profession' column of 'characters' in the schema
+## cache». Беремо ім'я саме звідти, а не тримаємо свій перелік нових
+## полів: наступного разу поле буде інше, а місце те саме.
+static func _unknown_column(body: PackedByteArray) -> String:
+	var text := body.get_string_from_utf8()
+	var found := RegEx.create_from_string(
+			"Could not find the '([^']+)' column").search(text)
+	if found != null:
+		return found.get_string(1)
+	found = RegEx.create_from_string(
+			"column \"?([a-z_]+)\"? of relation").search(text)
+	return found.get_string(1) if found != null else ""
 
 
 ## Виклик функції в базі: `POST /rpc/ім_я`. Так ходять акаунти (крок 5) —

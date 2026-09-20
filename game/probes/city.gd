@@ -55,6 +55,30 @@ func _go() -> void:
 				% [who.title(), who.global_position, who.collision_layer,
 				   who.tint.to_html(false)])
 	print("  промінь миші шукає шари: %d (2 істоти + 4 мешканці)" % (2 | 4))
+
+	# Двоє в одній точці (спіймано 20.09.2026: у столиці коваль і майстер
+	# магії стояли один в одному). Міряємо по ДАНИХ, а не по сцені: у
+	# сцені видно лише те місто, де стоїть проба.
+	print("\n— чи не стоять мешканці один в одному —")
+	var closest := INF
+	var pair := ""
+	for town: Dictionary in (data.map.get("міста", [])
+			+ data.map.get("села", [])):
+		var folk: Array = town.get("мешканці", [])
+		for i in folk.size():
+			for j in range(i + 1, folk.size()):
+				var a: Array = folk[i]["де"]
+				var b: Array = folk[j]["де"]
+				var d: float = Vector2(float(a[0]) - float(b[0]),
+						float(a[2]) - float(b[2])).length()
+				if d < closest:
+					closest = d
+					pair = "%s: %s і %s" % [town.get("назва", "?"),
+							folk[i]["хто"], folk[j]["хто"]]
+	print("  найтісніша пара в усьому світі: %.1f м (%s)"
+			% [closest, pair])
+	print("  %s" % ("‼ ближче за 3 м — вони накладаються"
+			if closest < 3.0 else "просвіт усюди більший за 3 м"))
 	print("  усі на шарі 4: %s" % dwellers.all(
 			func(x): return x.collision_layer == 4))
 

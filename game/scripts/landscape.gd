@@ -1883,30 +1883,60 @@ func _guard_for(guard: Dictionary, grade: String,
 
 
 func _shrine_guard(shrine: Shrine, guard: Dictionary) -> void:
-	var zone := MobZone.new()
-	zone.name = "Охорона"
-	zone.kind = int(guard.get("вид", 1))
-	zone.count = int(guard.get("скільки", 3))
-	# Чекає на гравця чи полює — тепер число в даних, а не стале «ні».
-	zone.aggressive = bool(guard.get("аґресивна", false))
-	zone.respawn_after = float(guard.get("вертається через", 180.0))
-	zone.respawn_spread = float(guard.get("розкид респавну", 20.0))
-	shrine.add_child(zone)
-
+	# Охорона стоїть КУПКАМИ по колу, і в кожній купці свій главар
+	# (слово замовника 20.09.2026: «в грейдах E, D, C — був один главарь
+	# того виду який кидається на перехожих та викликає на допомогу»).
+	#
+	# Главар і помічники — того самого ВИДУ: поклик на поміч чують лише
+	# свої того самого виду (`creature.gd`), тож різні види в купці
+	# зробили б заклик німим.
+	#
+	# Купки навмисно далеко одна від одної: поклик має піднімати СВОЮ
+	# купку, а не всі одразу («не пересікаються» — слово замовника).
+	# Відстань між сусідніми купками перевіряє проба `guard`.
+	var kind := int(guard.get("вид", 1))
+	var groups := maxi(1, int(guard.get("купок", guard.get("кілець", 4))))
+	var chiefs := int(guard.get("главарів", 0))
+	var helpers := int(guard.get("помічників", 0))
+	if chiefs <= 0 and helpers <= 0:
+		# Старий вигляд даних: просто «скільки» на все кільце.
+		helpers = maxi(1, int(guard.get("скільки", 3)))
+		groups = 1
 	var far := float(guard.get("відстань", 14.0))
 	var spread := float(guard.get("розкид", 4.0))
-	# Скільки куп у кільці. Одна купа — це вже не кільце, а натовп з
-	# одного боку; більше куп — рівніше кільце довкола святині.
-	var rings := maxi(1, int(guard.get("кілець", 4)))
-	for i in rings:
-		var turn := TAU * float(i) / float(rings)
-		var shape := CollisionShape3D.new()
-		var ball := CylinderShape3D.new()
-		ball.radius = spread
-		ball.height = 4.0
-		shape.shape = ball
-		shape.position = Vector3(cos(turn) * far, 0.0, sin(turn) * far)
-		zone.add_child(shape)
+	var back := float(guard.get("вертається через", 180.0))
+	for i in groups:
+		var turn := TAU * float(i) / float(groups)
+		var at := Vector3(cos(turn) * far, 0.0, sin(turn) * far)
+		if chiefs > 0:
+			# Главар сидить у самій середині купки: тоді помічники
+			# завжди в межах його поклику, а сусідня купка — ні.
+			_guard_zone(shrine, "Главар%d" % (i + 1), kind, chiefs,
+					true, at, spread * 0.35, back)
+		if helpers > 0:
+			_guard_zone(shrine, "Охорона%d" % (i + 1), kind, helpers,
+					false, at, spread, back)
+
+
+## Одна купка: `MobZone` дитиною святині, щоб `world.gd:_zones()`
+## підібрав її сам, і одна форма — щоб монстри стали саме тут.
+func _guard_zone(shrine: Shrine, name: String, kind: int, count: int,
+		angry: bool, at: Vector3, radius: float, back: float) -> void:
+	var zone := MobZone.new()
+	zone.name = name
+	zone.kind = kind
+	zone.count = count
+	zone.aggressive = angry
+	zone.respawn_after = back
+	zone.respawn_spread = 20.0
+	shrine.add_child(zone)
+	var shape := CollisionShape3D.new()
+	var ball := CylinderShape3D.new()
+	ball.radius = maxf(0.5, radius)
+	ball.height = 4.0
+	shape.shape = ball
+	shape.position = at
+	zone.add_child(shape)
 
 
 ## Усі святині в тому самому порядку, що й у даних. Порядок важить:

@@ -76,42 +76,68 @@ func _layers() -> void:
 
 
 func _ring() -> void:
-	print("\n— з чисел виходить кільце —")
+	print("\n— купки з главарями —")
 	var land := _land()
 	var shrine := Shrine.new()
-	shrine.grade = "SS"
+	shrine.grade = "C"
 	land.add_child(shrine)
-	land._shrine_guard(shrine, {"вид": 1, "скільки": 8, "відстань": 28.0,
-			"розкид": 7.0, "кілець": 8, "аґресивна": true,
-			"вертається через": 300.0})
-	var zone: Node = shrine.get_node_or_null("Охорона")
-	_yes("зона охорони з'явилась", zone != null)
-	if zone == null:
-		land.queue_free()
-		return
-	_yes("монстрів у зоні 8", zone.count == 8)
-	_yes("зона аґресивна", zone.aggressive)
-	_yes("вертається через 300 с", is_equal_approx(zone.respawn_after,
-			300.0))
-	var куп := 0
-	var найдалі := 0.0
-	var найближче := INF
-	for shape: CollisionShape3D in zone.find_children("*",
-			"CollisionShape3D", false, false):
-		куп += 1
-		var far: float = Vector2(shape.position.x, shape.position.z).length()
-		найдалі = maxf(найдалі, far)
-		найближче = minf(найближче, far)
-	print("    куп %d, від осі %.1f…%.1f м, радіус купи %.1f"
-			% [куп, найближче, найдалі, 7.0])
-	_yes("куп рівно стільки, скільки «кілець» (8)", куп == 8)
-	_yes("усі купи на однаковій відстані — це кільце, а не натовп",
-			absf(найдалі - найближче) < 0.01)
-	_yes("кільце саме на 28 м", absf(найдалі - 28.0) < 0.01)
-	# Впритул до святині ніхто не стоїть: купа радіуса 7 на 28 м лишає
-	# 21 м чистого кола довкола каменя.
-	_yes("біля самої святині чисто (%.0f м)" % (найдалі - 7.0),
-			найдалі - 7.0 > 10.0)
+	land._shrine_guard(shrine, {"вид": 1, "купок": 8, "главарів": 1,
+			"помічників": 2, "відстань": 28.0, "розкид": 3.0,
+			"вертається через": 200.0})
+	var zones: Array = shrine.find_children("*", "MobZone", false, false)
+	var chiefs: Array = []
+	var helpers: Array = []
+	for zone: Node in zones:
+		if zone.name.begins_with("Главар"):
+			chiefs.append(zone)
+		else:
+			helpers.append(zone)
+	print("    зон %d: главарів %d, купок помічників %d"
+			% [zones.size(), chiefs.size(), helpers.size()])
+	_yes("купок стільки, скільки замовлено (8)", chiefs.size() == 8)
+	_yes("у кожній купці свій главар", chiefs.size() == helpers.size())
+	var всього := 0
+	for zone: Node in zones:
+		всього += zone.count
+	_yes("усього монстрів 8×(1+2) = 24", всього == 24)
+	var злих := 0
+	for zone: Node in chiefs:
+		if zone.aggressive:
+			злих += 1
+	var спокійних := 0
+	for zone: Node in helpers:
+		if not zone.aggressive:
+			спокійних += 1
+	_yes("главарі кидаються самі", злих == 8)
+	_yes("помічники чекають на поклик", спокійних == 8)
+
+	# Головне число: між сусідніми купками має бути БІЛЬШЕ, ніж поклик
+	# на поміч, інакше один главар підіймає всю святиню.
+	var точки: Array = []
+	for zone: Node in helpers:
+		for shape: CollisionShape3D in zone.find_children("*",
+				"CollisionShape3D", false, false):
+			точки.append(Vector2(shape.position.x, shape.position.z))
+	точки.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+			return a.angle() < b.angle())
+	var найближчі := INF
+	for i in точки.size():
+		var a: Vector2 = точки[i]
+		var b: Vector2 = точки[(i + 1) % точки.size()]
+		найближчі = minf(найближчі, a.distance_to(b))
+	var spread := 3.0
+	var чисто := найближчі - spread * 2.0
+	var data := GameData.new()
+	data.load_all()
+	var поклик := float(data.for_kind(1).get("поклик", 12.0))
+	print("    між сусідніми купками %.1f м, чистого %.1f, поклик %.0f м"
+			% [найближчі, чисто, поклик])
+	_yes("купки не перетинаються: чистого більше за поклик",
+			чисто > поклик)
+	var далеко := 0.0
+	for точка: Vector2 in точки:
+		далеко = maxf(далеко, точка.length())
+	_yes("кільце саме на 28 м", absf(далеко - 28.0) < 0.01)
 	land.queue_free()
 
 
@@ -132,20 +158,44 @@ func _data() -> void:
 			print("    ‼ %s: виду %s немає в mobs.json" % [grade, kind])
 	_yes("вид сторожа кожного грейду існує", усі)
 	# Числа мають рости з грейдом — інакше SS охороняє менше за E.
+	# Рахуємо ЗАГАЛЬНУ кількість: купок × (главар + помічники).
 	var ряд: Array = ["E", "D", "C", "B", "A", "S", "SS"]
+	var разом := func(g: String) -> int:
+		var row: Dictionary = за[g]
+		return int(row.get("купок", 1)) * (int(row.get("главарів", 0))
+				+ int(row.get("помічників", 0)))
 	var росте := true
 	for i in ряд.size() - 1:
-		var a: int = int(за[ряд[i]].get("скільки", 0))
-		var b: int = int(за[ряд[i + 1]].get("скільки", 0))
-		if b < a:
+		if разом.call(ряд[i + 1]) < разом.call(ряд[i]):
 			росте = false
 	_yes("монстрів не меншає з грейдом", росте)
 	var скільки: Array = []
 	for grade: String in ряд:
-		скільки.append("%s:%d/%.0fм" % [grade,
-				int(за[grade].get("скільки", 0)),
-				float(за[grade].get("відстань", 0.0))])
+		var row: Dictionary = за[grade]
+		скільки.append("%s:%d×(%d+%d)=%d/%.0fм" % [grade,
+				int(row.get("купок", 1)), int(row.get("главарів", 0)),
+				int(row.get("помічників", 0)), разом.call(grade),
+				float(row.get("відстань", 0.0))])
 	print("    %s" % " ".join(PackedStringArray(скільки)))
+
+	# Поклик главаря не має діставати до сусідньої купки в жодному
+	# грейді — «не пересікаються» (слово замовника).
+	var перетини: Array = []
+	for grade: String in ряд:
+		var row: Dictionary = за[grade]
+		var куп: int = maxi(1, int(row.get("купок", 1)))
+		var far: float = float(row.get("відстань", 14.0))
+		var spread3: float = float(row.get("розкид", 4.0))
+		var поклик3 := float(mobs[str(int(row.get("вид", 1)))].get(
+				"поклик", 12.0))
+		var сусід := 2.0 * far * sin(PI / float(куп))
+		if куп > 1 and сусід - spread3 * 2.0 <= поклик3:
+			перетини.append("%s (%.1f м проти поклику %.0f)"
+					% [grade, сусід - spread3 * 2.0, поклик3])
+	if not перетини.is_empty():
+		print("    ‼ %s" % " ".join(PackedStringArray(перетини)))
+	_yes("у жодному грейді купки не перетинаються поклику",
+			перетини.is_empty())
 
 	var грейди := {}
 	for shrine: Dictionary in data.map.get("святині", []):
@@ -153,3 +203,22 @@ func _data() -> void:
 		грейди[g] = int(грейди.get(g, 0)) + 1
 	print("    святинь у світі: %s" % [грейди])
 	_yes("святині є всіх семи грейдів", грейди.size() == 7)
+	var замовлено := {"E": 2, "D": 4, "C": 6, "B": 8, "A": 8, "S": 4,
+			"SS": 1}
+	var збіг := true
+	for g: String in замовлено:
+		if int(грейди.get(g, 0)) != int(замовлено[g]):
+			збіг = false
+			print("    ‼ %s: %d замість %d" % [g, int(грейди.get(g, 0)),
+					int(замовлено[g])])
+	_yes("підземель кожного грейду стільки, скільки замовлено", збіг)
+
+	# Кожна купка мусить лишати чисте коло довкола каменя: інакше
+	# охорона стоїть упритул і бити її доводиться з самої святині.
+	var тісно: Array = []
+	for grade: String in за:
+		var far: float = float(за[grade].get("відстань", 14.0))
+		var spread2: float = float(за[grade].get("розкид", 4.0))
+		if far - spread2 < 8.0:
+			тісно.append(grade)
+	_yes("біля самої святині скрізь чисто (≥8 м)", тісно.is_empty())

@@ -732,11 +732,19 @@ func _tick_shrines(delta: float) -> void:
 		# закриття підземелля (`close_dungeon`, Ф7).
 		if shrine.stage == Shrine.Stage.АКТИВОВАНА:
 			continue
-		var zone: Node = shrine.get_node_or_null("Охорона")
-		if zone == null:
+		# Купок охорони кілька (главар і помічники в кожній,
+		# 20.09.2026), тож живих рахуємо по ВСІХ зонах святині — інакше
+		# «зачищено» вмикалось би від однієї вибитої купки, і портал
+		# відкривався б повз решту охорони.
+		var zones: Array = shrine.find_children("*", "MobZone", false,
+				false)
+		if zones.is_empty():
 			continue
+		var alive := 0
+		for zone: Node in zones:
+			alive += spawner.alive_in(zone)
 		var stage: int = Shrine.Stage.ПІД_ОХОРОНОЮ \
-				if spawner.alive_in(zone) > 0 else Shrine.Stage.ЗАЧИЩЕНА
+				if alive > 0 else Shrine.Stage.ЗАЧИЩЕНА
 		if int(_shrine_sent.get(i, -1)) == stage:
 			continue
 		_shrine_sent[i] = stage

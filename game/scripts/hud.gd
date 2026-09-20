@@ -130,6 +130,7 @@ func setup(world: Node) -> void:
 	_build_warehouse()
 	_build_guild()
 	_build_map()
+	_build_eye()
 	# Останнім: підтвердження має лежати ПОВЕРХ вікна, з якого його
 	# викликали, інакше «Так» довелось би шукати під прилавком.
 	_build_confirm()
@@ -825,6 +826,22 @@ func set_things(things: Array, stacks: Array) -> void:
 		return
 	_things = things
 	_stacks = stacks
+	# Артефакт зник із торби (продали, віддали) — мінікарта згортається
+	# сама: показувати її без речі означало б давати дурно те, за що
+	# платять. З'явився вперше — розгортається, щоб було видно, що річ
+	# робить.
+	var had := _has_eye
+	_has_eye = false
+	for row: Dictionary in stacks:
+		if str(row.get("назва", "")) == EYE_ITEM:
+			_has_eye = true
+	if _eye_box != null:
+		if not _has_eye:
+			_eye_box.visible = false
+		elif not had:
+			_eye_box.visible = true
+			_feed_eye()
+			_eye_box._keep_on_screen()
 	_fill_body(things)
 	_fill_bag(things, stacks)
 	# Вікно торгівлі показує ту саму торбу. Продав річ — і вона зникає
@@ -894,6 +911,11 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 		# не прийде, і комірка лишиться мертвою назавжди.
 		for link in press.pressed.get_connections():
 			press.pressed.disconnect(link["callable"])
+		# Те саме для подвійного кліку (око бога): без цього комірка,
+		# у якій артефакт лежав, розгортала б мінікарту й тоді, коли в
+		# ній уже інша річ.
+		for link in press.gui_input.get_connections():
+			press.gui_input.disconnect(link["callable"])
 		# Перетягування на панель — лише для того, що можна вжити (нижче).
 		press.set_drag_forwarding(Callable(), Callable(), Callable())
 		if i >= rows.size():
@@ -923,6 +945,20 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 			else:
 				press.pressed.connect(func() -> void:
 						wants_wear.emit(at, ""))
+		elif name == EYE_ITEM:
+			# Артефакт не вживається й не вдягається: комірка лишається
+			# живою тільки заради подвійного кліку, тож `pressed` до неї
+			# не чіпляємо, а слухаємо саму мишу.
+			count.text = "×%d" % int(row.get("скільки", 0))
+			press.disabled = false
+			press.tooltip_text = ("%s ×%d\nдвічі клацни — розгорнути "
+					+ "мінікарту\nдругий такий нічого не додає") % [
+					name, int(row.get("скільки", 0))]
+			press.gui_input.connect(func(event: InputEvent) -> void:
+					if event is InputEventMouseButton \
+							and event.button_index == MOUSE_BUTTON_LEFT \
+							and event.double_click:
+						_toggle_eye())
 		else:
 			count.text = "×%d" % int(row.get("скільки", 0))
 			var useful: bool = bool(row.get("придатна", false))
@@ -1098,6 +1134,67 @@ func _build_map() -> void:
 	_map_view.size = Vector2(MAP_SIDE, MAP_SIDE)
 	_map_view.custom_minimum_size = _map_view.size
 	_map_box.body.add_child(_map_view)
+
+
+## Око бога (слово замовника 20.09.2026) — рідкісний артефакт у торбі
+## дає мініатюрну карту околиці.
+##
+## Чому окреме вікно, а не режим «Карти»: замовник просив саме
+## мініатюру, яку можна лишити відкритою і посунути куди зручно, поки
+## велика карта закрита. Оболонка та сама (`WindowBox`), тож тягання й
+## хрестик — уже є; хрестик і є «згорнути в інвентар».
+##
+## Клієнт сам нічого не вирішує (П-01): чи є артефакт, каже торба, що
+## прийшла від сервера, — `set_things`.
+const EYE_ITEM := "артефакт ока бога"
+const EYE_SIDE := 260.0
+## Скільки метрів світу вміщається в мініатюру.
+const EYE_METRES := 420.0
+
+var _eye_box: WindowBox
+var _eye_view: WorldMap
+var _has_eye := false
+
+
+func _build_eye() -> void:
+	_eye_box = WindowBox.new()
+	_eye_box.name = "ВікноОка"
+	_eye_box.setup("Око бога", Vector2(EYE_SIDE, EYE_SIDE))
+	_eye_box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_eye_box.position = Vector2(-_eye_box.size.x - 16.0, 16.0)
+	_root.add_child(_eye_box)
+
+	_eye_view = WorldMap.new()
+	_eye_view.name = "Мінікарта"
+	_eye_view.size = Vector2(EYE_SIDE, EYE_SIDE)
+	_eye_view.custom_minimum_size = _eye_view.size
+	_eye_view.follow_me = true
+	_eye_box.body.add_child(_eye_view)
+
+
+## Розгорнути чи згорнути мінікарту. Без артефакта в торбі не робить
+## нічого — і це не мовчазний відказ: кнопки, яка це викликає, тоді
+## просто немає, а подвійний клік по речі без самої речі неможливий.
+func _toggle_eye() -> void:
+	if _eye_box == null or not _has_eye:
+		return
+	_eye_box.visible = not _eye_box.visible
+	if _eye_box.visible:
+		_feed_eye()
+		_eye_box._keep_on_screen()
+
+
+func _feed_eye() -> void:
+	# `"data" in _world`, а не просто `_world != null`: проба підсовує
+	# HUD-ові звичайний вузол замість світу, і звертання до чужого поля
+	# сипало б помилкою на кожному показі.
+	if _world != null and "data" in _world and _world.data != null:
+		_eye_view.map = _world.data.map
+		_eye_view.dungeons = _world.dungeons
+		_eye_view.world = _world
+	_eye_view.look_close(EYE_METRES)
+	_eye_view.center_on_me()
+	_eye_view.queue_redraw()
 
 
 func _toggle_map() -> void:
@@ -2279,6 +2376,8 @@ func _process(delta: float) -> void:
 			# Червона крапка на карті — з тієї самої позиції, що й
 			# координати в куті. Тільки коли карта відкрита: закрита
 			# вона перемальовувалась би даремно.
+			if _eye_box != null and _eye_box.visible:
+				_eye_view.show_me(me.global_position, me.rotation.y)
 			if _map_box != null and _map_box.visible:
 				# Кут — той, на який персонаж повернутий на екрані
 				# (`rotation.y` плавно доганяє те, що каже сервер).

@@ -124,6 +124,7 @@ func _draw() -> void:
 		"витратне": _crystal(side, off, fill)
 		"ресурс": _lump(side, off, fill)
 		"гроші": _coins(side, off, fill)
+		"артефакт": _eye(side, off, fill)
 		_: _lump(side, off, fill)
 
 
@@ -219,6 +220,21 @@ func _ring(s: float, o: Vector2, fill: Color) -> void:
 	_figure(PackedVector2Array([
 			_at(s, o, 0.50, 0.10), _at(s, o, 0.64, 0.24),
 			_at(s, o, 0.50, 0.38), _at(s, o, 0.36, 0.24)]), fill)
+
+
+## Око бога (20.09.2026): мигдалеве повіко, зіниця й промені. Грудкою
+## ресурсу, як усе невідоме доти, артефакт у торбі не читався.
+func _eye(s: float, o: Vector2, fill: Color) -> void:
+	_figure(PackedVector2Array([
+			_at(s, o, 0.10, 0.50), _at(s, o, 0.50, 0.24),
+			_at(s, o, 0.90, 0.50), _at(s, o, 0.50, 0.76)]), fill)
+	var middle: Vector2 = _at(s, o, 0.50, 0.50)
+	draw_circle(middle, s * 0.15, _tint)
+	draw_circle(middle, s * 0.06, Color(0.05, 0.05, 0.07))
+	for k in 4:
+		var a: float = PI * 0.25 + float(k) * PI * 0.5
+		draw_line(middle + Vector2(cos(a), sin(a)) * s * 0.26,
+				middle + Vector2(cos(a), sin(a)) * s * 0.42, _tint, LINE)
 
 
 func _rune(s: float, o: Vector2, fill: Color) -> void:

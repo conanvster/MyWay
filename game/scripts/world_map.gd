@@ -45,6 +45,10 @@ var me := Vector3.ZERO
 ## Куди гравець дивиться: поворот навколо вертикалі, як `rotation.y`.
 var me_facing := 0.0
 var has_me := false
+## Мінікарта ока бога (20.09.2026): погляд завжди на гравцеві. Тягати
+## таку карту нема чого — вона однаково поїде назад наступного кадру,
+## тож перетягування тут вимкнене, а колесо лишається.
+var follow_me := false
 ## Відкриті підземелля (`world.gd:dungeons`). Гравець у котромусь — карта
 ## показує тільки його (слово замовника 19.09.2026: «коли перенесло у
 ## підземелля, карта змінюється та показує тільки підземелля»).
@@ -216,6 +220,21 @@ func show_me(at: Vector3, look: float = 0.0) -> void:
 	me = at
 	me_facing = look
 	has_me = true
+	if follow_me and not _sheet().is_empty():
+		_ensure_view()
+		_look = Vector2(me.x, me.z)
+		_clamp_look()
+	queue_redraw()
+
+
+## Наблизити так, щоб у вікно влізла смуга світу завширшки `metres`.
+## Мінікарта саме про це: не весь аркуш, а околиця навколо гравця.
+func look_close(metres: float) -> void:
+	if _sheet().is_empty():
+		return
+	_ensure_view()
+	_zoom = clampf(minf(size.x, size.y) / maxf(metres, 1.0), _fit(), 1.0)
+	_clamp_look()
 	queue_redraw()
 
 
@@ -312,7 +331,10 @@ func _draw_sheet() -> void:
 	if has_me:
 		_draw_me(_spot(me.x, me.z))
 
-	var hint := "×%.1f · колесо — наблизити · тягни — рухати" % (k / _fit())
+	# На мінікарті тягати нема чого — підказка про це там була б брехнею.
+	var hint := "×%.1f · колесо — наблизити" % (k / _fit())
+	if not follow_me:
+		hint += " · тягни — рухати"
 	draw_string(_font, Vector2(8, size.y - 8), hint,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 11, EDGE)
 
@@ -329,7 +351,7 @@ func _gui_input(event: InputEvent) -> void:
 		elif press.button_index == MOUSE_BUTTON_WHEEL_DOWN and press.pressed:
 			_zoom_at(press.position, 1.0 / ZOOM_STEP)
 			accept_event()
-		elif press.button_index == MOUSE_BUTTON_LEFT:
+		elif press.button_index == MOUSE_BUTTON_LEFT and not follow_me:
 			_dragging = press.pressed
 			accept_event()
 	elif event is InputEventMouseMotion and _dragging:

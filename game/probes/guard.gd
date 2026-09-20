@@ -35,6 +35,15 @@ func _go() -> void:
 	get_tree().quit(1 if _bad > 0 else 0)
 
 
+## Драбина грейдів — з тих самих даних, що й у гри.
+func _ladder() -> Dictionary:
+	var raw := FileAccess.get_file_as_string("res://data/items.json")
+	var parsed: Variant = JSON.parse_string(raw)
+	if not parsed is Dictionary:
+		return {}
+	return parsed.get("грейди", {}).get("до рівня", {})
+
+
 func _land() -> Node:
 	var land: Node = LAND.new()
 	add_child(land)
@@ -212,6 +221,30 @@ func _data() -> void:
 			print("    ‼ %s: %d замість %d" % [g, int(грейди.get(g, 0)),
 					int(замовлено[g])])
 	_yes("підземель кожного грейду стільки, скільки замовлено", збіг)
+
+	# Слово замовника 20.09.2026: «перенеси святині згідно з грейдом» —
+	# отже кожна має стояти там, де монстри саме її смуги, а не просто
+	# мати правильну літеру.
+	var сходи: Dictionary = data.items.bases.is_empty() \
+			if false else _ladder()
+	var не_на_місці: Array = []
+	for shrine: Dictionary in data.map.get("святині", []):
+		var g := str(shrine.get("грейд", "?"))
+		if not shrine.has("рівень поруч") or not сходи.has(g):
+			continue
+		var L := int(shrine["рівень поруч"])
+		var низ := 1
+		for інший: String in сходи:
+			if інший == g:
+				break
+			низ = int(сходи[інший]) + 1
+		if L < низ or L > int(сходи[g]):
+			не_на_місці.append("%s серед %d рівня (смуга %d…%d)"
+					% [g, L, низ, int(сходи[g])])
+	if not не_на_місці.is_empty():
+		print("    ‼ %s" % " · ".join(PackedStringArray(не_на_місці)))
+	_yes("кожна святиня стоїть серед монстрів СВОЄЇ смуги",
+			не_на_місці.is_empty())
 
 	# Кожна купка мусить лишати чисте коло довкола каменя: інакше
 	# охорона стоїть упритул і бити її доводиться з самої святині.

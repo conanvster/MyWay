@@ -51,6 +51,10 @@ def geometry(s):
         bones.append(("leg.%s%d" % (side, n), (sign * w, y, h_body),
                       (sign * (w + L * 0.45), y + L * 0.05 * (n - 1.5),
                        L * 0.02), "body"))
+    # Голова окремою кісткою (переду в скорпіона немає — це перед
+    # тулуба): по ній проба `own_models` бачить, куди він дивиться.
+    bones.append(("head", (0, -L * 0.36, h_body), (0, -L * 0.56, h_body),
+                  "body"))
     for side in ("L", "R"):
         sign = 1 if side == "L" else -1
         bones.append(("arm.%s" % side, (sign * w * 0.7, -L * 0.45, h_body),
@@ -87,7 +91,7 @@ def body(rig, s, g):
         parts.append(p("sphere", "body", (0, y, hb - hb * 0.25),
                        (w * 0.9, L * 0.15, hb * 0.35), belly))
     for sign in (1, -1):
-        parts.append(p("sphere", "body", (sign * w * 0.3, -L * 0.42,
+        parts.append(p("sphere", "head", (sign * w * 0.3, -L * 0.42,
                                           hb + hb * 0.4),
                        (L * 0.03,) * 3, eye))
     for side, n in LEGS:
@@ -104,10 +108,17 @@ def body(rig, s, g):
         c = claw.head_local.lerp(claw.tail_local, 0.45)
         parts.append(p("sphere", claw.name, tuple(c),
                        (L * 0.1 * k, L * 0.16 * k, L * 0.07 * k), shell))
-        for off in (1, -1):
-            tip = claw.tail_local + Vector((off * L * 0.035 * k, -L * 0.04,
-                                            0))
-            parts.append(rod(c, tip, L * 0.03 * k, shell, claw.name))
+        # Клішня: два пальці розходяться біля долоні й майже сходяться
+        # вістрями — між ними щілина. Обидва з однієї точки зливались в
+        # одну грудку (другий огляд).
+        ahead = (claw.tail_local - claw.head_local).normalized()
+        side_v = Vector((-ahead.y, ahead.x, 0)).normalized()
+        palm = c + ahead * (L * 0.06 * k)
+        for off, spread, reach in ((1, 0.085, 0.10), (-1, 0.045, 0.03)):
+            root = palm + side_v * (off * L * spread * k)
+            tip = (claw.tail_local + ahead * (L * reach * k)
+                   + side_v * (off * L * 0.012 * k))
+            parts.append(rod(root, tip, L * 0.024 * k, shell, claw.name))
     pts = g["tail"]
     # Сегменти хвоста — товсті циліндри між суглобами й кулі в суглобах:
     # самі кулі розсипались на окремі цятки (перший огляд).
@@ -156,7 +167,27 @@ def legs_key(phase):
     return out
 
 
-def actions(rig, s):
+def tail_aim(g, aim, straight=1.0):
+    """Ключ для хвоста: випрямити ланцюг на `straight` (0 — як у спокої,
+    1 — у пряму лінію) і навести всю дугу під кут `aim`° у площині YZ
+    (0° — назад уздовж +Y, 180° — уперед над головою).
+
+    Чому не «покрутити кожну кістку на стільки ж»: хвіст закручений, і
+    однаковий кут крутить дугу цілком — жало тоді йде НАЗАД і в землю
+    (заміряно: z = −0,16 м при ударі). Тут кут кожної кістки рахується
+    з її власного нахилу в спокої: r₀ наводить, решта розгинає."""
+    pts = g["tail"]
+    ang = [math.degrees(math.atan2(pts[i + 1].z - pts[i].z,
+                                   pts[i + 1].y - pts[i].y))
+           for i in range(5)]
+    out = {"tail0": ((aim - ang[0], 0, 0), (0, 0, 0))}
+    for i in range(1, 5):
+        out["tail%d" % i] = (((ang[i - 1] - ang[i]) * straight, 0, 0),
+                             (0, 0, 0))
+    return out
+
+
+def actions(rig, s, g):
     rest = {}
 
     def with_(base_k, **more):
@@ -184,14 +215,19 @@ def actions(rig, s):
         return k
     h.action(rig, "Walk", 16, {1: walk(True), 9: walk(False),
                                16: walk(True)})
-    h.action(rig, "Attack", 18, {
-        1: rest,
-        6: with_(rest, tail0=(-15, 0, 0), tail1=(-15, 0, 0),
-                 tail2=(-10, 0, 0), arm_L=(0, 0, 20), arm_R=(0, 0, -20)),
-        10: with_(rest, tail0=(20, 0, 0), tail1=(25, 0, 0), tail2=(25, 0, 0),
-                  tail3=(20, 0, 0), claw_L=(0, 0, -15), claw_R=(0, 0, 15)),
-        18: rest,
-    })
+    # Замах — хвіст ще крутіше над спиною; удар — ланцюг розгинається
+    # і б'є вперед над головою; назад — через той самий замах, бо навпростець
+    # хвіст складається навпіл і жало проходить крізь тулуб.
+    # Кути наводить `tail_aim`, влучання й землю перевіряє `check_sting`.
+    coil = tail_aim(g, 108.0, 0.25)
+    wind = dict(coil)
+    wind.update({"arm.L": ((0, 0, 20), (0, 0, 0)),
+                 "arm.R": ((0, 0, -20), (0, 0, 0))})
+    hit = tail_aim(g, 168.0, 0.85)
+    hit.update({"claw.L": ((0, 0, -15), (0, 0, 0)),
+                "claw.R": ((0, 0, 15), (0, 0, 0))})
+    h.action(rig, "Attack", 18, {1: rest, 6: wind, 10: hit, 14: coil,
+                                 18: rest})
     h.action(rig, "Death", 30, {
         1: rest,
         30: {"body": ((0, 175, 0), (0, 0, 0))},
@@ -224,6 +260,29 @@ def check_legs(rig, g):
     return ", ".join(report)
 
 
+def check_sting(rig, g):
+    """Жало в ударі: має вийти ПЕРЕД головою й лишитись над землею.
+    Перша спроба била назад і в землю — звідси перевірка числом."""
+    scene = bpy.context.scene
+    rig.animation_data.action = bpy.data.actions["Attack"]
+    nose = (rig.matrix_world @ rig.pose.bones["body"].tail).y
+    low, reach = None, None
+    for f in range(1, 19):
+        scene.frame_set(f)
+        tip = rig.matrix_world @ rig.pose.bones["tail4"].tail
+        low = tip.z if low is None else min(low, tip.z)
+        reach = tip.y if reach is None else min(reach, tip.y)
+    if low < 0.0:
+        WARN.append("жало йде під землю: %+.3f м" % low)
+    if reach > nose:
+        WARN.append("жало не дістає поперед голови: %+.3f проти %+.3f м"
+                    % (reach, nose))
+    rig.animation_data.action = bpy.data.actions["Idle"]
+    scene.frame_set(1)
+    return "найнижче %+.3f, найдалі вперед %+.3f (голова %+.3f)" % (
+        low, reach, nose)
+
+
 def build(name, shots=None):
     s = SPECIES[name]
     base.clear()
@@ -231,13 +290,15 @@ def build(name, shots=None):
     g = geometry(s)
     rig = h.armature(g["bones"])
     body(rig, s, g)
-    actions(rig, s)
+    actions(rig, s, g)
     legs = check_legs(rig, g)
+    sting = check_sting(rig, g)
     if shots:
         h.previews(rig, shots, zoom=max(1.0, s["L"] * 2.2 / 0.6))
     out = os.path.join(OUT, name + ".blend")
     bpy.ops.wm.save_as_mainfile(filepath=out)
-    print("[скорпіон] %s → %s · ноги: %s" % (name, out, legs))
+    print("[скорпіон] %s → %s · ноги: %s · жало: %s"
+          % (name, out, legs, sting))
     for line in WARN:
         print("[скорпіон] ‼ %s: %s" % (name, line))
 

@@ -153,6 +153,13 @@ SPECIES = {
                                     ("намисто", (0.9, 0.75, 0.3))],
                             weapon="посох", crown=True, moves="чари",
                             eyes=(0.3, 1.0, 0.8)),
+    # Скорпіонолюд (Л+С): торс людини на тілі скорпіона.
+    "скорпіонолюд": dict(skin=("луска", "луска-темна"),
+                         scorpid=("луска-темна", 1.5),
+                         outfit=[("пасок", (0.3, 0.22, 0.1)),
+                                 ("наплічники", (0.25, 0.2, 0.22))],
+                         weapon="меч", moves="зброя",
+                         eyes=(1.0, 0.35, 0.05)),
     # Скелети (конвеєр «К»): тіла немає — кістки з простих фігур уздовж
     # кісток скелета людини (слово «усе своє», не набір KayKit).
     "скелет": dict(bones=True, moves="мрець", eyes=(0.4, 0.8, 1.0)),
@@ -249,6 +256,57 @@ def snake_tail(picture, length):
             k = (t - 0.3) / 0.7
             at = (0, 0.3 + (length - 0.3) * k, r)
         out.append(p("sphere", "pelvis", at, (r, 0.16, r * 1.15), mat))
+    return out
+
+
+def scorpion_body(picture, length):
+    """Скорпіонолюд: від таза — тіло скорпіона, вісім ніг до землі й
+    хвіст дугою над спиною з жалом. Усе на кістці `pelvis`, як хвіст
+    наги: повертається з тулубом, само не ворушиться.
+
+    Перед моделі — −Y (як у людини), тож тіло йде назад, у +Y.
+    Ноги дістають рівно до z = 0: інакше проба `own_models` скаже, що
+    модель висить у повітрі."""
+    p = base.part
+    mat = fur_material("Панцир", picture, 5.0)
+    shell_rgb = solid("Панцир-гладкий", (0.16, 0.15, 0.2), 0.35)
+    out = []
+    top = 0.86          # верх панцира — під тазом людини
+    mid = top - 0.26    # вісь тіла
+    segs = 9  # щільно, інакше тулуб — разок великих куль (перший огляд)
+    for i in range(segs):
+        t = i / (segs - 1.0)
+        y = -0.18 + length * t
+        w = 0.30 * (1.0 - 0.55 * t * t)
+        out.append(p("sphere", "pelvis", (0, y, mid - 0.06 * t * t),
+                     (w, length * 0.10, (top - mid) * (1.0 - 0.45 * t * t)),
+                     mat))
+    # Вісім ніг: чотири пари, кожна з коліном вище тулуба.
+    for side in (1, -1):
+        for n in range(4):
+            y = -0.02 + n * length * 0.2
+            hip = Vector((side * 0.22, y, mid))
+            toe = Vector((side * (0.34 + 0.09 * n), y + 0.12 * (n - 1.5),
+                          0.0))
+            knee = hip.lerp(toe, 0.42) + Vector((0, 0, 0.22))
+            out.append(bar(hip, knee, 0.035, shell_rgb, "pelvis"))
+            out.append(bar(knee, toe, 0.028, shell_rgb, "pelvis"))
+    # Хвіст дугою вгору й уперед над спиною — як у скорпіона.
+    pts = []
+    for i in range(6):
+        a = math.radians(-8 + i * 36)
+        pts.append(Vector((0, length * 0.92 + math.cos(a) * 0.55
+                           - 0.14 * i,
+                           mid + math.sin(a) * 0.85 + 0.1 * i)))
+    for i in range(5):
+        r = 0.115 - i * 0.013
+        out.append(bar(pts[i], pts[i + 1], r, shell_rgb, "pelvis"))
+        out.append(p("sphere", "pelvis", tuple(pts[i + 1]),
+                     (r * 1.15,) * 3, shell_rgb))
+    sting = solid("Жало", (0.85, 0.75, 0.4), 0.3)
+    out.append(p("sphere", "pelvis", tuple(pts[5]), (0.1,) * 3, sting))
+    out.append(bar(pts[5], pts[5] + Vector((0, -0.2, -0.1)), 0.03, sting,
+                   "pelvis"))
     return out
 
 
@@ -828,7 +886,7 @@ def build(name, shots=None):
         return finish(name, rig, made, s, shots)
     races.inflate(body, s.get("bulk", 0.0))
     fur = reskin(body, s["skin"], s.get("sex", "чоловік"))
-    if s.get("naga"):
+    if s.get("naga") or s.get("scorpid"):
         drop_legs(body)
     made = outfit(body, s.get("outfit", []))
     if s.get("head"):
@@ -838,6 +896,8 @@ def build(name, shots=None):
         made += tail(s["tail"][0], s["tail"][1], fur)
     if s.get("naga"):
         made += snake_tail(*s["naga"])
+    if s.get("scorpid"):
+        made += scorpion_body(*s["scorpid"])
     if s.get("claws"):
         made += claws()
     if s.get("fangs") and not s.get("head"):

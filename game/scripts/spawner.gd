@@ -94,19 +94,32 @@ func drop_zones(zones: Array) -> void:
 		_slots_of.get_or_add(_slots[i]["zone"], []).append(i)
 
 
+## Номери гнізд, які взагалі варто чіпати цього кадру: у сплячому світі
+## — лише прокинутих зон, інакше всі.
+func _awake_slots() -> Array:
+	if not dormant:
+		return range(_slots.size())
+	var out: Array = []
+	for zone: Variant in _awake:
+		if _awake[zone]:
+			out += _slots_of.get(zone, [])
+	return out
+
+
 func tick(delta: float) -> void:
 	if dormant:
 		_look_in -= delta
 		if _look_in <= 0.0:
 			_look_in = LOOK_EVERY
 			_wake_or_sleep()
-	for i in _slots.size():
+	# Сплячі зони не перебираємо взагалі. Доти цикл щокадру проходив
+	# ВСІ гнізда світу (12 974 після скупчень) лише щоб на кожному
+	# спитати, чи не спить його зона, — і це при десятку прокинутих.
+	for i in _awake_slots():
 		var slot: Dictionary = _slots[i]
 		if slot["id"] != 0 and _creatures.has(slot["id"]):
 			continue
 		var zone: MobZone = slot["zone"]
-		if dormant and not _awake.get(zone, false):
-			continue
 		if slot["in"] <= 0.0:
 			slot["in"] = zone.respawn_after + randf() * zone.respawn_spread
 			slot["id"] = 0
@@ -232,11 +245,16 @@ func _put_to_sleep(zone: MobZone) -> void:
 
 ## Скільки живих монстрів лишилось у цій зоні. Потрібне святиням
 ## (П-153): «зачищено» — це саме нуль живих в її кільці охорони.
+## Скільки живих у зоні. Ходимо ЛИШЕ по гніздах цієї зони (`_slots_of`),
+## а не по всіх: `world.gd:_tick_shrines` питає це раз на секунду для
+## кожної зони кожної святині, а після скупчень (20.09.2026) гнізд стало
+## 12 974 і зон охорони 424 — виходило 5,2 мільйона кроків в ОДНОМУ
+## кадрі раз на секунду. Саме це замовник і бачив: «якщо вибрати йти по
+## прямій, аватар завмирає щосекунди на 1/3 секунди».
 func alive_in(zone: Node) -> int:
 	var alive := 0
-	for slot: Dictionary in _slots:
-		if slot["zone"] != zone:
-			continue
+	for at: int in _slots_of.get(zone, []):
+		var slot: Dictionary = _slots[at]
 		if slot["id"] != 0 and _creatures.has(slot["id"]):
 			alive += 1
 	return alive

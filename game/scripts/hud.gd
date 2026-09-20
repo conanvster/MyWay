@@ -2014,6 +2014,12 @@ func _tabs_from(rows: Array) -> Array:
 	for cat: String in seen:
 		if not out.has(cat):
 			out.append(cat)
+	# Вкладок не більше, ніж є кнопок, і «Професія» серед них завжди: у
+	# грі їх виходить рівно вісім (три спільні, расова, до трьох
+	# професій ланцюга і ця), але вітрина показує геть усе — і тоді
+	# зайве має відпасти з кінця, а не з'їсти останню вкладку.
+	if out.size() >= TABS_MAX:
+		out = out.slice(0, TABS_MAX - 1)
 	out.append(TREE_PROF)
 	return out
 

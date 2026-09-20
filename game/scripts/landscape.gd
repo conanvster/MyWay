@@ -1844,7 +1844,8 @@ func _shrines() -> void:
 		shrine.portal_lift = _on_ground(Vector3(gate.x, 0.0, gate.z)).y \
 				- shrine.position.y
 		if not guard.is_empty():
-			_shrine_guard(shrine, guard)
+			_shrine_guard(shrine, _guard_for(guard, shrine.grade,
+					spot.get("охорона", {})))
 
 
 ## Скупчення монстрів довкола святині — НЕ впритул до неї, а кільцем на
@@ -1856,24 +1857,49 @@ func _shrines() -> void:
 ## Зона стає дитиною святині — тоді `world.gd:_zones()`, який шукає
 ## `MobZone` по всьому дереву, підбирає її сам, і другого списку зон
 ## заводити не треба.
+## Налаштування охорони для однієї святині — три шари, знизу вгору
+## (слово замовника 20.09.2026: «хочу тонкі налаштування охорони,
+## скільки монстрів, як далеко від святині»):
+##
+##   1. загальні числа `охорона святинь`;
+##   2. `за грейдом` — свої для E, D, … SS;
+##   3. `охорона` в самій святині — для однієї окремої.
+##
+## Кожен шар перекриває лише ті ключі, які назвав, тож щоб зробити одну
+## святиню лютішою, досить одного рядка в ній, а не копії всього.
+func _guard_for(guard: Dictionary, grade: String,
+		mine: Dictionary) -> Dictionary:
+	var out := guard.duplicate(true)
+	var by_grade: Dictionary = guard.get("за грейдом", {})
+	for key: String in by_grade.get(grade, {}):
+		out[key] = by_grade[grade][key]
+	for key: String in mine:
+		out[key] = mine[key]
+	# Старий вигляд даних: вид лежав окремою таблицею «вид за грейдом».
+	if not out.has("вид"):
+		var old: Dictionary = guard.get("вид за грейдом", {})
+		out["вид"] = int(old.get(grade, 1))
+	return out
+
+
 func _shrine_guard(shrine: Shrine, guard: Dictionary) -> void:
-	var by_grade: Dictionary = guard.get("вид за грейдом", {})
-	var kind := int(by_grade.get(shrine.grade, 1))
 	var zone := MobZone.new()
 	zone.name = "Охорона"
-	zone.kind = kind
+	zone.kind = int(guard.get("вид", 1))
 	zone.count = int(guard.get("скільки", 3))
-	# Охорона святині чекає на гравця, а не полює: аґресивною її робить
-	# лише слово замовника, якого поки нема.
-	zone.aggressive = false
+	# Чекає на гравця чи полює — тепер число в даних, а не стале «ні».
+	zone.aggressive = bool(guard.get("аґресивна", false))
 	zone.respawn_after = float(guard.get("вертається через", 180.0))
-	zone.respawn_spread = 20.0
+	zone.respawn_spread = float(guard.get("розкид респавну", 20.0))
 	shrine.add_child(zone)
 
 	var far := float(guard.get("відстань", 14.0))
 	var spread := float(guard.get("розкид", 4.0))
-	for i in 4:
-		var turn := TAU * float(i) / 4.0
+	# Скільки куп у кільці. Одна купа — це вже не кільце, а натовп з
+	# одного боку; більше куп — рівніше кільце довкола святині.
+	var rings := maxi(1, int(guard.get("кілець", 4)))
+	for i in rings:
+		var turn := TAU * float(i) / float(rings)
 		var shape := CollisionShape3D.new()
 		var ball := CylinderShape3D.new()
 		ball.radius = spread

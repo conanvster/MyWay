@@ -84,6 +84,10 @@ func applied_to(base: Stats) -> Stats:
 	out.attack_factor = factor_for("physical_attack")
 	out.defence_factor = factor_for("physical_defence")
 	out.hp_factor = factor_for("max_hp")
+	# Швидкість бою й швидкість відкату вмінь — теж множенням, тож
+	# баф ×6 і дебаф ÷6 гасять одне одного, як і решта похідних.
+	out.battle_factor = factor_for("attack_speed")
+	out.cooldown_factor = factor_for("cooldown_speed")
 	return out
 
 

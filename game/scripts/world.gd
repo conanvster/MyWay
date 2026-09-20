@@ -1668,7 +1668,8 @@ func ask_talk(at: int) -> void:
 	if who == null:
 		return
 	rpc_id(id, "client_talk", at, who.title(), who.trades(),
-			who.keeps(), who.teaches(), who.blesses(), who.ports())
+			who.keeps(), who.teaches(), who.blesses(), who.ports(),
+			who.blesses() and not _super_blessing().is_empty())
 
 
 const BLESSINGS_PATH := "res://data/blessings.json"
@@ -1811,6 +1812,46 @@ func ask_port(at: int, town_name: String) -> void:
 	send_things(id)
 	link.notice(id, "%s переніс у %s за %d" % [who.title(), town_name,
 			price])
+
+
+## Супер-баф на проби (слово замовника 20.09.2026). Окремою кнопкою, а
+## не разом зі звичайними: це не механіка гри, а спосіб швидко щось
+## перевірити на ходу. Блок у `blessings.json → супер`; немає блоку —
+## немає й кнопки.
+func _super_blessing() -> Array:
+	var raw := FileAccess.get_file_as_string(BLESSINGS_PATH)
+	var parsed: Variant = JSON.parse_string(raw)
+	if not parsed is Dictionary:
+		return []
+	var block: Variant = parsed.get("супер", {})
+	# Порожньо чи зіпсовано — кнопки просто не буде, і це не помилка.
+	if not block is Dictionary or not block.get("бафи") is Array:
+		return []
+	return block["бафи"]
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_super_bless(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.blesses():
+		return
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var buffs := _super_blessing()
+	if buffs.is_empty():
+		link.notice(id, "‼ супер-баф не прочитався")
+		return
+	var given: Array = []
+	for one: Variant in buffs:
+		if one is Dictionary:
+			a.add_state(State.from_data(one))
+			given.append(str(one.get("назва", "стан")))
+	print("[проба] %d дістав супер-баф: %s" % [id, ", ".join(given)])
+	link.notice(id, "ПРОБА: %s" % ", ".join(given))
 
 
 ## Показати прилавок. Асортимент шлемо цілком: він короткий і не
@@ -2235,6 +2276,8 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_guild", at))
 		hud.wants_bless.connect(func(at: int) -> void:
 				rpc_id(1, "ask_bless", at))
+		hud.wants_super_bless.connect(func(at: int) -> void:
+				rpc_id(1, "ask_super_bless", at))
 		hud.wants_ports.connect(func(at: int) -> void:
 				rpc_id(1, "ask_ports", at))
 		hud.wants_port.connect(func(at: int, town: String) -> void:
@@ -2470,10 +2513,11 @@ func client_cast_end(id: int, done: bool) -> void:
 @rpc("authority", "call_remote", "reliable")
 func client_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
-		priest: bool = false, mage: bool = false) -> void:
+		priest: bool = false, mage: bool = false,
+		super_buff: bool = false) -> void:
 	if hud != null:
 		hud.show_talk(at, title, trades, warehouse_keeper, guild_master,
-				priest, mage)
+				priest, mage, super_buff)
 
 
 ## Майстер магії: куди й почому (20.09.2026).

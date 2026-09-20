@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://probes/superbuff.gd" id="1"]
+
+[node name="SuperBuff" type="Node"]
+script = ExtResource("1")

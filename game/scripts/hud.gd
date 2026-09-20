@@ -1015,6 +1015,8 @@ signal wants_guild(at: int)
 signal wants_bless(at: int)
 ## Майстер магії (20.09.2026): спершу спитати перелік міст, тоді назвати
 ## одне з них. Ціну клієнт не рахує — її дає сервер.
+## Супер-баф на проби (20.09.2026) — окремою кнопкою від звичайних.
+signal wants_super_bless(at: int)
 signal wants_ports(at: int)
 signal wants_port(at: int, town: String)
 signal wants_learn_skill(at: int, key: String)
@@ -1023,7 +1025,7 @@ signal wants_raise_skill(at: int, key: String)
 ## Розподілити одне вільне очко в стат (П-147).
 signal wants_spend_stat(field: String)
 
-const TALK_INNER := Vector2(240, 212)
+const TALK_INNER := Vector2(240, 268)
 ## Прилавок: та сама комірка, що в торбі, по чотири в ряд.
 const SHOP_COLUMNS := 4
 const SHOP_ROWS := 6
@@ -1036,6 +1038,7 @@ var _talk_warehouse: Button
 var _talk_guild: Button
 var _talk_bless: Button
 var _talk_mage: Button
+var _talk_super: Button
 var _talk_with := -1
 
 ## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
@@ -1125,6 +1128,20 @@ func _build_talk() -> void:
 			if _talk_with >= 0:
 				wants_ports.emit(_talk_with))
 	page.add_child(_talk_mage)
+
+	# Кнопка проби. Підписана так, щоб її не можна було сплутати з
+	# механікою гри: замовник просив саме «для тесту».
+	_talk_super = Button.new()
+	_talk_super.text = "ПРОБА: супер-баф"
+	_talk_super.position = Vector2(0, 200)
+	_talk_super.size = Vector2(TALK_INNER.x, 32)
+	_talk_super.custom_minimum_size = _talk_super.size
+	_talk_super.add_theme_color_override("font_color",
+			Color(1.0, 0.82, 0.35))
+	_talk_super.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_super_bless.emit(_talk_with))
+	page.add_child(_talk_super)
 
 
 ## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
@@ -1314,7 +1331,8 @@ func aim_resident(title: String, trades: bool) -> void:
 
 func show_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
-		priest: bool = false, mage: bool = false) -> void:
+		priest: bool = false, mage: bool = false,
+		super_buff: bool = false) -> void:
 	if _talk_box == null:
 		return
 	_talk_with = at
@@ -1324,11 +1342,12 @@ func show_talk(at: int, title: String, trades: bool,
 	_talk_guild.visible = guild_master
 	_talk_bless.visible = priest
 	_talk_mage.visible = mage
+	_talk_super.visible = super_buff
 	# Видимі кнопки — підряд згори: у кожного мешканця своя одна-дві, і
 	# на сталих місцях кнопка священика висіла б під трьома порожніми.
 	var row := 0
 	for button: Button in [_talk_trade, _talk_warehouse, _talk_guild,
-			_talk_bless, _talk_mage]:
+			_talk_bless, _talk_mage, _talk_super]:
 		if button.visible:
 			button.position.y = 40 + row * 40
 			row += 1

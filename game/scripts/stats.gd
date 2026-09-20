@@ -53,6 +53,14 @@ var attack_factor := 1.0
 var defence_factor := 1.0
 ## Штраф світу (П-213): «в три рази більше хп».
 var hp_factor := 1.0
+## Швидкість БОЮ і швидкість ВІДКАТУ вмінь — множники часу навпаки:
+## 6,0 означає «вшестеро швидше», тобто час ділиться на 6. Окремо від
+## `cooldown_cut`, бо той обрізаний 70 % за задумом (П-35), а сюди
+## пишуть саме «у скільки разів швидше» — так замовник і замовляв
+## супер-баф на проби (20.09.2026: «+500% швидкості бою, +300%
+## швидкість відкату вмінь»).
+var battle_factor := 1.0
+var cooldown_factor := 1.0
 
 
 ## ── швидкості: логарифмічні (П-86, погоджено 02.09.2026) ──────────────
@@ -86,13 +94,17 @@ func move_speed() -> float:
 ## той рахується з поінтів скіла й статами не ріжеться взагалі.
 func attack_cooldown() -> float:
 	var base := 1.2 - COOLDOWN_K * growth(agility)
-	return maxf(0.4, base * (1.0 - clampf(cooldown_cut, 0.0, 0.7)))
+	base *= 1.0 - clampf(cooldown_cut, 0.0, 0.7)
+	# Нижня межа лишається, але нижча за звичайну: інакше баф «вшестеро
+	# швидше» упирався б у неї й на око не відрізнявся від «вдвічі».
+	return maxf(0.08, base / maxf(0.05, battle_factor))
 
 
 ## Відкат скіла з його поінтів. Стата тут немає й не буде: ріжуть лише
 ## бафи, дебафи, зброя та екіпіровка через `cooldown_cut`.
 func skill_cooldown(points: float) -> float:
-	return maxf(0.2, points * (1.0 - clampf(cooldown_cut, 0.0, 0.7)))
+	var base := points * (1.0 - clampf(cooldown_cut, 0.0, 0.7))
+	return maxf(0.1, base / maxf(0.05, cooldown_factor))
 
 
 ## Час касту скіла з його поінтів. Оце вже ріже Чуття — через `cast_time`,
@@ -102,7 +114,8 @@ func skill_cast(points: float) -> float:
 
 
 func swing_time() -> float:
-	return maxf(0.15, 0.35 - SWING_K * growth(agility))
+	return maxf(0.05, (0.35 - SWING_K * growth(agility))
+			/ maxf(0.05, battle_factor))
 
 
 ## Час читання заклять. Бафи на швидкість касту скорочують його.

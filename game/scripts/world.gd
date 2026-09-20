@@ -2021,6 +2021,13 @@ func _guild_rows(a: Node) -> Array:
 		var skill: Skill = data.skills.get_skill(key)
 		if skill.category == "":
 			continue
+		# Дерево для всіх рас і статей (П-221): чужу гілку гільдмайстер
+		# не показує взагалі. Фільтр тут, на СЕРВЕРІ, а не у вікні:
+		# інакше клієнт знав би про чужі скіли й міг би попросити їх.
+		if not skill.fits(a.race, a.sex):
+			continue
+		if skill.source != "дерево":
+			continue
 		var known: bool = a.knows(key)
 		var level: int = int(a.learned.get(key, 0))
 		out.append({

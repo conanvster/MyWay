@@ -43,6 +43,14 @@ var levels: Array = []
 var category := ""
 var position := Vector2i.ZERO
 var requires := ""
+## Кому скіл узагалі показується (П-221, 20.09.2026: дерево для всіх
+## рас і статей). Порожньо — усім; інакше перелік рас чи статей, і
+## гільдмайстер такого скіла чужій расі просто не покаже.
+var races: Array = []
+var sexes: Array = []
+## Звідки скіл береться: "дерево" (вчиться в гільдії), "річ" (діє,
+## доки річ удягнена), "амулет" (випав з амулета). Порожньо — дерево.
+var source := "дерево"
 
 
 static func from_data(of_key: String, data: Dictionary) -> Skill:
@@ -67,7 +75,21 @@ static func from_data(of_key: String, data: Dictionary) -> Skill:
 	s.position = Vector2i(int(at[0]), int(at[1])) if at.size() >= 2 \
 			else Vector2i.ZERO
 	s.requires = data.get("передумова", "")
+	s.races = data.get("раси", [])
+	s.sexes = data.get("статі", [])
+	s.source = str(data.get("джерело", "дерево"))
 	return s
+
+
+## Чи годиться цей скіл такому персонажеві. Порожній перелік — годиться
+## всім: більшість скілів спільні, і писати їм усі три раси означало б
+## правити три місця щоразу, як з'явиться четверта.
+func fits(race: String, sex: String) -> bool:
+	if not races.is_empty() and not races.has(race):
+		return false
+	if not sexes.is_empty() and not sexes.has(sex):
+		return false
+	return true
 
 
 func max_level() -> int:

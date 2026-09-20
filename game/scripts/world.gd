@@ -102,6 +102,7 @@ func _ready() -> void:
 	combat = Combat.new(creatures, link)
 	combat.ground_height = ground_at
 	combat.on_kill = _on_kill
+	combat.on_reward = _on_reward
 	# Куди вертає оживлення й скіл «повернутися в місто»: центр першого
 	# міста мапи. У версії 1 і 2 це (0,0) — столиця там навмисно, — але
 	# число тепер із даних, а не зашите в коді.
@@ -119,7 +120,7 @@ func _ready() -> void:
 	spawner = Spawner.new(creatures, self, data)
 	shop = Shop.new(data)
 	warehouse = Warehouse.new()
-	runes = Runes.new(data.skills)
+	runes = Runes.new(data.skills, data.professions)
 	view = ClientView.new(creatures, self, link)
 	dungeons = Dungeons.new()
 	dungeons.name = "Підземелля"
@@ -1022,6 +1023,26 @@ func _beside_shrine(at: int) -> Vector3:
 const CLEAR_AFTER := 60.0
 ## Святиня -> скільки секунд лишилось до закриття зачищеного.
 var _clearing: Dictionary = {}
+
+
+## Убивця отримав своє (кличе `combat._reward`). Тут ведеться рахунок
+## убитих: його просять і квести переходу між професіями, і гілки, що
+## відкриваються полюванням (П-224).
+func _on_reward(me: int, killer: Node, victim: Node) -> void:
+	var species := str(data.for_kind(int(victim.kind)).get("назва", ""))
+	if species == "":
+		return
+	killer.kills[species] = int(killer.kills.get(species, 0)) + 1
+	_check_branches(me, killer)
+
+
+## Чи не відкрилась щойно прихована гілка. Дивимось після кожного
+## вбивства (там і рахунок, і здобич з амулетом) і щоразу, як гравець
+## відчинив гільдію: амулет міг прийти обміном або з крамниці.
+func _check_branches(id: int, a: Node) -> void:
+	for title: String in data.professions.open_ready(a):
+		link.notice(id, "відкрито приховану гілку: %s" % title)
+		print("[професії] %d відкрив гілку «%s»" % [id, title])
 
 
 ## Хтось загинув (кличе `combat._kill`). Цікавить лише бос рівня
@@ -2026,7 +2047,17 @@ func _guild_rows(a: Node) -> Array:
 		# інакше клієнт знав би про чужі скіли й міг би попросити їх.
 		if not skill.fits(a.race, a.sex):
 			continue
-		if skill.source != "дерево":
+		if skill.source != "дерево" and skill.source != "синтез":
+			continue
+		# Професії (П-224): видно лише свій ланцюг. Чужа професія — це
+		# чуже дерево, і клієнт про нього знати не повинен, так само як
+		# про чужу расову гілку.
+		if skill.profession != "" \
+				and not data.professions.line(a.profession).has(
+					skill.profession):
+			continue
+		# Прихована гілка мовчить, доки не відкрита: ні назви, ні чисел.
+		if not data.professions.branch_open(a, skill.branch):
 			continue
 		var known: bool = a.knows(key)
 		var level: int = int(a.learned.get(key, 0))
@@ -2047,8 +2078,66 @@ func _guild_rows(a: Node) -> Array:
 			"передумова": skill.requires,
 			"передумова відома":
 					skill.requires == "" or a.knows(skill.requires),
+			"опис": skill.description,
+			"професія": skill.profession,
+			"гілка": skill.branch,
+			"обовязковий": skill.mandatory,
+			"джерело": skill.source,
+			"синтез": skill.synthesis,
+			"синтез відомий": _synthesis_known(a, skill),
 		})
 	return out
+
+
+## Чи вивчені обидві навички, з яких це вміння зливається.
+func _synthesis_known(a: Node, skill: Skill) -> bool:
+	if skill.synthesis.is_empty():
+		return false
+	for from: String in skill.synthesis:
+		if not a.knows(from):
+			return false
+	return true
+
+
+## Друга половина вікна гільдії (П-224): хто я зараз, що відкрито і куди
+## можна піти далі. Умови квеста рахує сервер — клієнт бачить лише «3 із
+## 20», і підробити прогрес, надіславши свій, не може.
+func _guild_about(a: Node) -> Dictionary:
+	var profs: Professions = data.professions
+	var next: Array = []
+	for key: String in profs.next_after(a.profession):
+		var quest: Dictionary = profs.quest_of(key)
+		next.append({
+			"ключ": key,
+			"назва": profs.name_of(key),
+			"етап": profs.stage_of(key),
+			"з рівня": int(profs.rows[key].get("з рівня", 1)),
+			"опис": str(profs.rows[key].get("опис", "")),
+			"квест": str(quest.get("назва", "")),
+			"де": str(quest.get("де", "")),
+			"умови": profs.quest_progress(a, key),
+			"можна": profs.why_not(a, key) == "",
+			"чому ні": profs.why_not(a, key),
+			"гілка": str(profs.branch_of(key).get("назва", "")),
+			"як відкрити": profs.hint_for(key),
+		})
+	var mine: Array = []
+	for key: String in profs.line(a.profession):
+		mine.append({"ключ": key, "назва": profs.name_of(key),
+				"етап": profs.stage_of(key),
+				"гілка": str(profs.branch_of(key).get("назва", "")),
+				"відкрита": a.opened.has(
+					str(profs.branch_of(key).get("назва", ""))),
+				"як відкрити": profs.hint_for(key)})
+	return {
+		"професія": a.profession,
+		"назва професії": profs.name_of(a.profession) if a.profession != ""
+				else "без професії",
+		"етап": profs.stage_of(a.profession) if a.profession != "" else 1,
+		"мої": mine,
+		"далі": next,
+		"відкриті гілки": a.opened,
+	}
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -2060,7 +2149,56 @@ func ask_guild(at: int) -> void:
 	if who == null or not who.teaches():
 		return
 	var a: Node = creatures.get(id)
-	rpc_id(id, "client_guild", at, _guild_rows(a))
+	# Амулет міг прийти не з монстра, а з крамниці чи від іншого гравця,
+	# тому дивимось на гілки й тут, а не лише після вбивства.
+	_check_branches(id, a)
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
+
+
+## Узяти наступну професію (П-224). Сервер сам перевіряє рівень, батька
+## й усі умови квеста: клієнт надсилає лише «хочу оцю».
+@rpc("any_peer", "call_remote", "reliable")
+func ask_take_profession(at: int, key: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.teaches():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = data.professions.take(a, key)
+	if why != "":
+		link.notice(id, why)
+		rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
+		return
+	link.notice(id, "тепер ти %s" % data.professions.name_of(key))
+	print("[професії] %d став: %s (етап %d)"
+			% [id, key, data.professions.stage_of(key)])
+	_check_branches(id, a)
+	send_stats(id)
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
+
+
+## Синтез двох умінь в одне (П-224).
+@rpc("any_peer", "call_remote", "reliable")
+func ask_synthesize(at: int, key: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.teaches():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = runes.synthesize(a, key)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "злито: %s" % data.skills.get_skill(key).name)
+	# Синтез сам може відчинити приховану гілку — саме так замовник це
+	# й описав, тож дивимось одразу після злиття.
+	_check_branches(id, a)
+	send_stats(id)
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -2078,7 +2216,7 @@ func ask_learn_skill(at: int, key: String) -> void:
 		return
 	link.notice(id, "вивчено: %s" % data.skills.get_skill(key).name)
 	send_stats(id)
-	rpc_id(id, "client_guild", at, _guild_rows(a))
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -2097,7 +2235,7 @@ func ask_raise_skill(at: int, key: String) -> void:
 	link.notice(id, "піднято рівень: %s → %d"
 			% [data.skills.get_skill(key).name, int(a.learned[key])])
 	send_stats(id)
-	rpc_id(id, "client_guild", at, _guild_rows(a))
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 
 
 ## Розподілити одне вільне очко (П-147). Разом із максимумом росте й
@@ -2291,6 +2429,10 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_port", at, town))
 		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_learn_skill", at, key))
+		hud.wants_take_profession.connect(func(at: int, key: String) -> void:
+				rpc_id(1, "ask_take_profession", at, key))
+		hud.wants_synthesize.connect(func(at: int, key: String) -> void:
+				rpc_id(1, "ask_synthesize", at, key))
 		hud.wants_raise_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_raise_skill", at, key))
 		hud.wants_spend_stat.connect(func(field: String) -> void:
@@ -2555,9 +2697,10 @@ func client_warehouse(at: int, things: Array, stacks: Array) -> void:
 ## Вікно гільдії: усі скіли з даних і чи вже вивчені, щоб гравець бачив,
 ## що можна, а що ще ні, ще до підходу до вимог.
 @rpc("authority", "call_remote", "reliable")
-func client_guild(at: int, rows: Array) -> void:
+func client_guild(at: int, rows: Array,
+		about: Dictionary = {}) -> void:
 	if hud != null:
-		hud.show_guild(at, rows)
+		hud.show_guild(at, rows, about)
 
 
 ## Хтось замахнувся: показуємо рух рукою. `armed` — зброя чи голі руки

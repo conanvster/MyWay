@@ -1020,6 +1020,9 @@ signal wants_super_bless(at: int)
 signal wants_ports(at: int)
 signal wants_port(at: int, town: String)
 signal wants_learn_skill(at: int, key: String)
+## Узяти наступну професію й злити два вміння в одне (П-224).
+signal wants_take_profession(at: int, key: String)
+signal wants_synthesize(at: int, key: String)
 signal wants_raise_skill(at: int, key: String)
 
 ## Розподілити одне вільне очко в стат (П-147).
@@ -1767,14 +1770,20 @@ func set_warehouse(things: Array, stacks: Array) -> void:
 ## сітка вузлів переставляється між вкладками — категорій три, а форма
 ## одна й та сама (П-150).
 
-const TREE_CATEGORIES := ["Бойові кличі", "Бойові стійки", "Бойові навички"]
-const TREE_COLS := 2
-const TREE_ROWS := 3
+## Вкладки більше не список у коді: їх називає сервер (П-224). Спільні
+## три йдуть першими в цьому порядку, далі расова гілка, далі професії
+## свого ланцюга, і останньою — своя вкладка «Професія».
+const TREE_FIRST := ["Бойові навички", "Бойові кличі", "Бойові стійки"]
+const TREE_PROF := "Професія"
+const TABS_MAX := 8
+const TABS_PER_ROW := 4
+const TREE_COLS := 3
+const TREE_ROWS := 4
 const NODE := 48.0
 const NODE_GAP := 30.0
 const TREE_W := TREE_COLS * NODE + (TREE_COLS - 1) * NODE_GAP
 const TREE_H := TREE_ROWS * NODE + (TREE_ROWS - 1) * NODE_GAP
-const TREE_TOP := 40.0
+const TREE_TOP := 62.0
 const DETAIL_W := 220.0
 const GUILD_INNER := Vector2(TREE_W + 24.0 + DETAIL_W, TREE_TOP + TREE_H)
 
@@ -1790,6 +1799,12 @@ var _guild_lines: TreeLines
 var _guild_detail_name: Label
 var _guild_detail_info: Label
 var _guild_detail_press: Button
+## Друга половина вікна (П-224): професія, етап, відкриті гілки й те,
+## куди можна піти далі.
+var _guild_about: Dictionary = {}
+var _guild_cats: Array = []
+var _prof_box: VBoxContainer
+var _prof_pick := ""
 
 
 func _build_guild() -> void:
@@ -1801,13 +1816,17 @@ func _build_guild() -> void:
 	_root.add_child(_guild_box)
 	var page: Control = _guild_box.body
 
-	var tab_w := (TREE_W + 24.0 + DETAIL_W - 8.0) / 3.0
-	for i in TREE_CATEGORIES.size():
+	# Кнопок вкладок стільки, скільки їх узагалі може бути; зайві просто
+	# ховаються. Створювати їх наново на кожен перелік означало б
+	# перепідписувати сигнали щоразу, коли гравець відчиняє гільдію.
+	var tab_w := (TREE_W + 24.0 + DETAIL_W - 12.0) / TABS_PER_ROW
+	for i in TABS_MAX:
 		var tab := Button.new()
-		tab.text = TREE_CATEGORIES[i]
-		tab.add_theme_font_size_override("font_size", 11)
+		tab.add_theme_font_size_override("font_size", 10)
 		tab.size = Vector2(tab_w, 26.0)
-		tab.position = Vector2(i * (tab_w + 4.0), 0)
+		tab.position = Vector2((i % TABS_PER_ROW) * (tab_w + 4.0),
+				(i / TABS_PER_ROW) * 30.0)
+		tab.visible = false
 		tab.pressed.connect(func() -> void: _pick_guild_tab(i))
 		page.add_child(tab)
 		_guild_tabs_ui.append(tab)
@@ -1841,6 +1860,13 @@ func _build_guild() -> void:
 			press.add_child(icon)
 			_guild_icons[Vector2i(col, row)] = icon
 
+	_prof_box = VBoxContainer.new()
+	_prof_box.position = Vector2(0, TREE_TOP)
+	_prof_box.size = Vector2(TREE_W, TREE_H)
+	_prof_box.add_theme_constant_override("separation", 4)
+	_prof_box.visible = false
+	page.add_child(_prof_box)
+
 	var detail_x := TREE_W + 24.0
 	_guild_detail_name = _gothic_text(14, page, WindowBox.GOTHIC_GOLD)
 	_guild_detail_name.position = Vector2(detail_x, TREE_TOP)
@@ -1870,11 +1896,14 @@ func _node_center(at: Vector2i) -> Vector2:
 			TREE_TOP + at.y * (NODE + NODE_GAP)) + Vector2(NODE, NODE) * 0.5
 
 
-func show_guild(at: int, rows: Array) -> void:
+func show_guild(at: int, rows: Array, about: Dictionary = {}) -> void:
 	if _guild_box == null:
 		return
 	_guild_with = at
 	_guild_data = rows
+	_guild_about = about
+	_guild_cats = _tabs_from(rows)
+	_guild_tab = clampi(_guild_tab, 0, _guild_cats.size() - 1)
 	if _talk_box != null:
 		_talk_box.visible = false
 	_guild_box.visible = true
@@ -1889,9 +1918,20 @@ func _render_guild_tree() -> void:
 		return
 	for i in _guild_tabs_ui.size():
 		var tab: Button = _guild_tabs_ui[i]
-		tab.disabled = i == _guild_tab
+		tab.visible = i < _guild_cats.size()
+		if tab.visible:
+			tab.text = str(_guild_cats[i])
+			tab.disabled = i == _guild_tab
 
-	var category: String = TREE_CATEGORIES[_guild_tab]
+	var category: String = str(_guild_cats[_guild_tab]) \
+			if _guild_tab < _guild_cats.size() else ""
+	_prof_box.visible = category == TREE_PROF
+	if category == TREE_PROF:
+		for place: Vector2i in _guild_nodes:
+			_guild_nodes[place].visible = false
+		_guild_lines.set_segments([])
+		_render_professions()
+		return
 	var by_place: Dictionary = {}     # Vector2i -> row
 	var by_key: Dictionary = {}       # ключ -> row
 	for row: Dictionary in _guild_data:
@@ -1959,6 +1999,107 @@ func _render_guild_tree() -> void:
 	_select_guild_skill(_guild_selected)
 
 
+## Вкладки з того, що прислав сервер: спільні три попереду в сталому
+## порядку, далі все інше в порядку появи, а «Професія» — завжди остання.
+func _tabs_from(rows: Array) -> Array:
+	var seen: Array = []
+	for row: Dictionary in rows:
+		var cat := str(row.get("вкладка", ""))
+		if cat != "" and not seen.has(cat):
+			seen.append(cat)
+	var out: Array = []
+	for first: String in TREE_FIRST:
+		if seen.has(first):
+			out.append(first)
+	for cat: String in seen:
+		if not out.has(cat):
+			out.append(cat)
+	out.append(TREE_PROF)
+	return out
+
+
+## Сторінка «Професія»: хто я зараз, що відкрито й куди можна далі.
+## Умови квеста рахує сервер — тут лише показ.
+func _render_professions() -> void:
+	for child in _prof_box.get_children():
+		child.queue_free()
+	var here := str(_guild_about.get("назва професії", "без професії"))
+	var stage := int(_guild_about.get("етап", 1))
+	var head := _gothic_text(13, _prof_box, WindowBox.GOTHIC_GOLD)
+	head.custom_minimum_size = Vector2(TREE_W, 20)
+	head.text = "%s · етап %d" % [here, stage]
+
+	var opened: Array = _guild_about.get("відкриті гілки", [])
+	var line := _gothic_text(11, _prof_box)
+	line.custom_minimum_size = Vector2(TREE_W, 18)
+	line.text = "гілки: %s" % (", ".join(PackedStringArray(opened))
+			if not opened.is_empty() else "жодної")
+
+	var next: Array = _guild_about.get("далі", [])
+	if next.is_empty():
+		var last := _gothic_text(11, _prof_box)
+		last.custom_minimum_size = Vector2(TREE_W, 18)
+		last.text = "далі йти нема куди"
+	for row: Dictionary in next:
+		var press := Button.new()
+		press.add_theme_font_size_override("font_size", 11)
+		press.custom_minimum_size = Vector2(TREE_W, 26)
+		press.text = "%s · з %d рівня%s" % [str(row.get("назва", "")),
+				int(row.get("з рівня", 1)),
+				"  ✓" if bool(row.get("можна", false)) else ""]
+		var key := str(row.get("ключ", ""))
+		press.pressed.connect(func() -> void:
+				_prof_pick = key
+				_show_profession(row))
+		_prof_box.add_child(press)
+	if _prof_pick == "" and not next.is_empty():
+		_prof_pick = str(next[0].get("ключ", ""))
+	for row: Dictionary in next:
+		if str(row.get("ключ", "")) == _prof_pick:
+			_show_profession(row)
+			return
+	_show_profession({})
+
+
+## Праворуч — сам квест: що треба зробити й скільки вже зроблено.
+func _show_profession(row: Dictionary) -> void:
+	_unlink(_guild_detail_press)
+	if row.is_empty():
+		_guild_detail_name.text = str(_guild_about.get("назва професії", ""))
+		_guild_detail_info.text = "далі йти нема куди"
+		_guild_detail_press.text = ""
+		_guild_detail_press.disabled = true
+		return
+	_guild_detail_name.text = str(row.get("назва", ""))
+	var text := "%s
+
+квест «%s»
+%s
+" % [str(row.get("опис", "")),
+			str(row.get("квест", "")), str(row.get("де", ""))]
+	for step: Dictionary in row.get("умови", []):
+		text += "
+%s %s — %d із %d" % ["✓" if bool(step["готово"]) else "·",
+				str(step["що"]), int(step["зроблено"]), int(step["треба"])]
+	var hint := str(row.get("як відкрити", ""))
+	if hint != "":
+		text += "
+
+прихована гілка «%s»:
+%s" % [str(row.get("гілка", "")),
+				hint]
+	_guild_detail_info.text = text
+	if bool(row.get("можна", false)):
+		_guild_detail_press.text = "Стати: %s" % str(row.get("назва", ""))
+		_guild_detail_press.disabled = false
+		var key := str(row.get("ключ", ""))
+		_guild_detail_press.pressed.connect(func() -> void:
+				wants_take_profession.emit(_guild_with, key))
+	else:
+		_guild_detail_press.text = "ще ні"
+		_guild_detail_press.disabled = true
+
+
 func _node_style(known: bool, open: bool, hover: bool = false) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.set_corner_radius_all(4)
@@ -1999,6 +2140,11 @@ func _select_guild_skill(key: String) -> void:
 			% [str(row["назва"]), str(row["грейд"])]
 	_guild_detail_info.text = "рівень: %d / %d\nз рівня персонажа: %d" \
 			% [level, max_level, int(row["з рівня"])]
+	if str(row.get("гілка", "")) != "":
+		_guild_detail_info.text += "\nприхована гілка: %s" \
+				% str(row["гілка"])
+	if str(row.get("опис", "")) != "":
+		_guild_detail_info.text += "\n\n%s" % str(row["опис"])
 	if not open:
 		var req: String = str(row.get("передумова", ""))
 		var req_name := req
@@ -2008,6 +2154,27 @@ func _select_guild_skill(key: String) -> void:
 		_guild_detail_info.text += "\n\nспершу: %s" % req_name
 		_guild_detail_press.text = "недоступно"
 		_guild_detail_press.disabled = true
+	elif str(row.get("джерело", "дерево")) == "синтез":
+		# Вміння синтезу не вчать руною — його зливають із двох інших
+		# (П-224). Тому й кнопка інша, і причина відмови інша.
+		var from: Array = row.get("синтез", [])
+		var names: Array = []
+		for other: String in from:
+			var title := other
+			for r2: Dictionary in _guild_data:
+				if str(r2["ключ"]) == other:
+					title = str(r2["назва"])
+			names.append(title)
+		_guild_detail_info.text += "\n\nсинтез: %s" \
+				% " + ".join(PackedStringArray(names))
+		if bool(row.get("синтез відомий", false)):
+			_guild_detail_press.text = "Злити"
+			_guild_detail_press.disabled = false
+			_guild_detail_press.pressed.connect(func() -> void:
+					wants_synthesize.emit(_guild_with, key))
+		else:
+			_guild_detail_press.text = "бракує навичок"
+			_guild_detail_press.disabled = true
 	elif not known:
 		_guild_detail_press.text = "Вивчити (%s)" % str(row["руна вивчення"])
 		_guild_detail_press.disabled = false

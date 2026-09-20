@@ -172,6 +172,12 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"y": who.global_position.y,
 		"z": who.global_position.z,
 		"skills": who.learned,
+		# Професія, відкриті приховані гілки й рахунок убитих (П-224):
+		# без них після перезаходу гравець утратив би і професію, і
+		# половину пройденого квеста.
+		"profession": who.profession,
+		"opened": who.opened,
+		"kills": who.kills,
 		"items": who.items,
 		"things": _things_row(who),
 		"warehouse_items": who.warehouse_items,
@@ -231,6 +237,9 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	# рівні скілів і кількість речей ставали б 1.0 замість 1, і будь-яке
 	# порівняння з цілим потім давало б несподіванки.
 	who.learned = _whole(row.get("skills", {}))
+	who.profession = str(row.get("profession", who.profession))
+	who.opened.assign(row.get("opened", who.opened))
+	who.kills = _whole(row.get("kills", {}))
 	who.items = _whole(row.get("items", {}))
 	who.warehouse_items = _whole(row.get("warehouse_items", {}))
 	who.gear = _whole(row.get("gear", {}))

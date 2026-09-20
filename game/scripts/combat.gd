@@ -224,10 +224,13 @@ func cast(me: int, key: String) -> bool:
 func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 	a.skill_ready_in[skill.key] = a.stats.skill_cooldown(skill.cooldown_points)
 	var power: float = a.stats.magical_attack() * skill.power_share(level)
+	var mend: float = a.stats.magical_attack() * skill.heal_share(level)
 	var state: Dictionary = skill.state_at(level)
 	for victim: Node in victims:
 		if power > 0.0:
 			_land(me, a, victim, power)
+		if mend > 0.0:
+			_mend(victim, mend)
 		# Баф або дебаф зі скіла — тим самим механізмом станів, що й усе
 		# інше (крок 2.1). Окремого коду для монстрів немає.
 		if not state.is_empty() and victim.is_alive():
@@ -341,12 +344,30 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 		_kill(me, a, victim, id)
 
 
+## Лікування (П-224). Окремо від шкоди: крізь магічний захист воно не
+## йде — захищатися від власного цілителя нема сенсу, — і мертвого не
+## піднімає: оживлення це інше питання (П-68).
+func _mend(victim: Node, power: float) -> void:
+	if not victim.is_alive():
+		return
+	var id: int = _id_of(victim)
+	var was: int = victim.hp
+	victim.hp = mini(victim.stats.max_hp(), victim.hp + int(power))
+	if victim.hp == was:
+		return
+	_link.to_watchers(id, &"client_hp", [id, victim.hp])
+	_link.to_watchers(id, &"client_damage", [id, victim.hp - was, false])
+
+
 ## Хтось загинув. Тут-таки й винагорода вбивці: повага, досвід і дроп
 ## (крок 3). Гравець за гравця поки не отримує нічого — це PvP, і воно
 ## має свої правила (П-88).
 ## Кому сказати про смерть, крім клієнтів: світ ловить так боса
 ## підземелля (Ф6). (victim_id, victim) -> void.
 var on_kill: Callable
+## Кличеться після того, як убивця отримав своє (досвід, повага, дроп).
+## Бій не знає ні про професії, ні про квести — рахунок убитих веде світ.
+var on_reward: Callable
 
 
 func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
@@ -402,6 +423,8 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 		if count <= 0:
 			continue
 		_give(me, killer, str(row["що"]), count)
+	if on_reward.is_valid():
+		on_reward.call(me, killer, victim)
 
 
 ## Покласти здобуте. Складані речі йдуть кількістю, поодинокі — кожна

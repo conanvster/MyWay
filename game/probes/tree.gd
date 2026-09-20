@@ -18,6 +18,13 @@ class Хтось extends Node:
 	var race := "людина"
 	var sex := "чоловік"
 	var learned := {}
+	## Професія (П-224): у цій пробі її немає — дивимось саме спільне
+	## дерево й расові гілки.
+	var profession := ""
+	var opened: Array[String] = []
+	var kills := {}
+	var items := {}
+	var level := 1
 
 	func knows(_key: String) -> bool:
 		return false
@@ -140,6 +147,11 @@ func _runes() -> void:
 	for key: String in data.skills.keys():
 		var skill: Skill = data.skills.get_skill(key)
 		if skill.category == "" or стартові.has(key):
+			continue
+		# Уміння синтезу руни не мають і мати не можуть (П-224): його не
+		# вчать, його зливають із двох уже вивчених. Свою перевірку на
+		# них має проба `profesii`.
+		if skill.source == "синтез":
 			continue
 		if skill.rune == "":
 			без_руни.append(key)

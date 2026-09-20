@@ -14,6 +14,7 @@ const BAR_PATH := "res://data/bar.json"
 const SKILLS_PATH := "res://data/skills.json"
 const LEVELS_PATH := "res://data/levels.json"
 const ITEMS_PATH := "res://data/items.json"
+const PROFS_PATH := "res://data/professions.json"
 const MAP_PATH := "res://data/map.json"
 ## Світ версії 2 — згенерована карта (`tools/svit2.py`). Береться замість
 ## `map.json`, коли серверові дано `-- --світ2`. Версія 1 лишається за
@@ -74,6 +75,9 @@ var starting_skills: Dictionary = {}
 var levels: Dictionary = {}
 ## Речі: бази й таблиця афіксів (крок 4).
 var items := ItemBook.new()
+
+## Професії, етапи, квести переходу й приховані гілки (П-224).
+var professions := Professions.new()
 ## Краєвид: місто, ліс, гори (крок 5, побажання замовника).
 var map: Dictionary = {}
 
@@ -113,6 +117,14 @@ func load_all() -> bool:
 	if read_items is Dictionary:
 		items.load_from(read_items)
 		print("[дані] речей: %d" % items.count())
+	else:
+		ok = false
+
+	var read_profs: Variant = _read(PROFS_PATH)
+	if read_profs is Dictionary:
+		professions.load_from(read_profs)
+		print("[дані] професій: %d на %d етапах"
+				% [professions.rows.size(), professions.stages.size()])
 	else:
 		ok = false
 
@@ -178,7 +190,7 @@ func poll(delta: float) -> bool:
 	_since_check = 0.0
 	var changed := false
 	for path in [MOBS_PATH, BAR_PATH, SKILLS_PATH, LEVELS_PATH, ITEMS_PATH,
-			map_path()]:
+			PROFS_PATH, map_path()]:
 		var stamp := _stamp(path)
 		if stamp != 0 and _stamps.get(path, 0) != stamp:
 			changed = true

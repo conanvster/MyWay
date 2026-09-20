@@ -17,10 +17,14 @@ extends RefCounted
 const LEVEL_RUNE := "руна підняття %s грейду"
 
 var _skills: SkillBook
+## Професії (П-224). Без них клас працює як раніше — перевірок професії
+## просто не буде; так старі проби лишаються чинними.
+var _profs: Professions
 
 
-func _init(book: SkillBook = null) -> void:
+func _init(book: SkillBook = null, profs: Professions = null) -> void:
 	_skills = book if book != null else SkillBook.new()
+	_profs = profs
 
 
 static func level_rune_for(grade: String) -> String:
@@ -45,12 +49,63 @@ func learn(who: Node, key: String) -> String:
 		var need: Skill = _skills.get_skill(skill.requires)
 		return "спершу потрібно: %s" \
 				% (need.name if need != null else skill.requires)
+	var why := profession_bar(who, skill)
+	if why != "":
+		return why
 	if skill.rune != "" and not who.has_item(skill.rune):
 		return "потрібна %s" % skill.rune
 	if who.experience < skill.learn_cost:
 		return "бракує досвіду: %d із %d" % [who.experience, skill.learn_cost]
 
 	who.take_item(skill.rune)
+	who.experience -= skill.learn_cost
+	who.learn(key, 1)
+	return ""
+
+
+## Чи дозволяє професія взяти це вміння (П-224). Три причини відмови, і
+## кожна каже гравцеві саме те, чого бракує: не та професія, не відкрита
+## гілка, вміння синтезу (його не вчать — його зливають).
+func profession_bar(who: Node, skill: Skill) -> String:
+	if _profs == null:
+		return ""
+	if skill.source == "синтез":
+		return "%s не вивчається — виходить синтезом" % skill.name
+	if skill.profession != "" \
+			and not _profs.line(who.profession).has(skill.profession):
+		return "%s — уміння професії %s" % [skill.name,
+				_profs.name_of(skill.profession)]
+	if not _profs.branch_open(who, skill.branch):
+		return "гілку «%s» ще не відкрито" % skill.branch
+	return ""
+
+
+## Синтез (П-224): два вивчені вміння зливаються в нове. Руни синтез не
+## потребує — потрібні самі вміння, рівень і досвід; батьки при цьому
+## ЛИШАЮТЬСЯ: замовник казав «зливаються в новий», а не «згоряють», і
+## забирати вивчене без його слова не можна.
+func synthesize(who: Node, key: String) -> String:
+	var skill: Skill = _skills.get_skill(key)
+	if skill == null:
+		return "такого вміння немає"
+	if skill.source != "синтез" or skill.synthesis.size() < 2:
+		return "%s не виходить синтезом" % skill.name
+	if who.knows(key):
+		return "%s уже вивчено" % skill.name
+	if who.level < skill.from_level:
+		return "%s зливається з %d рівня" % [skill.name, skill.from_level]
+	if _profs != null and skill.profession != "" \
+			and not _profs.line(who.profession).has(skill.profession):
+		return "%s — уміння професії %s" % [skill.name,
+				_profs.name_of(skill.profession)]
+	for from: String in skill.synthesis:
+		if not who.knows(from):
+			var need: Skill = _skills.get_skill(from)
+			return "спершу потрібно: %s" % (need.name if need != null
+					else from)
+	if who.experience < skill.learn_cost:
+		return "бракує досвіду: %d із %d" % [who.experience,
+				skill.learn_cost]
 	who.experience -= skill.learn_cost
 	who.learn(key, 1)
 	return ""

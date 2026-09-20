@@ -127,12 +127,24 @@ static func band(mobs: Dictionary, grade: String) -> Array[int]:
 	while at >= 0:
 		var key := "ключ святині %s" % grades[at]
 		var kinds: Array[int] = []
+		var anyone: Array[int] = []
 		for kind: String in mobs.keys():
 			if not kind.is_valid_int():
 				continue
 			for drop: Dictionary in mobs[kind].get("дроп", []):
 				if drop.get("що") == key:
-					kinds.append(int(kind))
+					anyone.append(int(kind))
+					# Слово замовника 20.09.2026: «для підземелля будуть
+					# інші монстри». Види з поміткою `підземелля` на мапі
+					# не стоять (їх туди не ставить `розселення.md`), а
+					# тут мають перевагу; немає своїх на цей грейд —
+					# беремо загальних і кажемо про це вголос (P3).
+					if bool(mobs[kind].get("підземелля", false)):
+						kinds.append(int(kind))
+		if kinds.is_empty() and not anyone.is_empty():
+			print("[підземелля] ‼ своїх монстрів на ворота %s немає — "
+					% grades[at] + "беру звичайних")
+			kinds = anyone
 		if not kinds.is_empty():
 			if grades[at] != grade:
 				print("[підземелля] ‼ для воріт %s монстрів немає — беру %s"

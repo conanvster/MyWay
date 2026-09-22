@@ -29,11 +29,16 @@ def clear():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-def material(name, rgb, colour_map=None, normal_map=None):
+def material(name, rgb, colour_map=None, normal_map=None, normal_strength=1.0):
     """Матеріал. З картинками (`fur_texture.py`) — хутро: колір із
     картинки, ворс — картою нормалей, шорсткість майже 1 і слабкий
     відблиск, інакше поверхня блищить, як шліфована (слово замовника
-    19.09.2026). Лише картинки: вузли-шуми glTF не переносить."""
+    19.09.2026). Лише картинки: вузли-шуми glTF не переносить.
+
+    `normal_strength` — сила ворсу для ОДНОГО виклику; дефолт (1.0)
+    лишається як є для всіх наявних монстрів. Підсилювати тут, у
+    виклику для конкретного виду, а не міняти сам дефолт — інакше
+    зачепить усіх, хто теж використовує хутро/луску через цю функцію."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -52,7 +57,7 @@ def material(name, rgb, colour_map=None, normal_map=None):
         bump.image = bpy.data.images.load(normal_map)
         bump.image.colorspace_settings.name = "Non-Color"
         nm = nodes.new("ShaderNodeNormalMap")
-        nm.inputs["Strength"].default_value = 1.0
+        nm.inputs["Strength"].default_value = normal_strength
         links.new(bump.outputs["Color"], nm.inputs["Color"])
         links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
     # Колір і для вікна Blender (режим Solid), не лише для рендера й гри.

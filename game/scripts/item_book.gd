@@ -14,12 +14,26 @@ var bases: Dictionary = {}
 var affixes: Dictionary = {}
 ## Правила крамаря: за скільки викуповує, чого не бере (П-132).
 var trade: Dictionary = {}
+## Драбина грейдів: грейд -> найвищий рівень (`items.json → грейди`).
+var ladder: Dictionary = {}
+## Скільки міцності в новій зброї (`data/smith.json`); 0 — міцності
+## немає. Ставить `GameData`, коли прочитав коваля.
+var weapon_durability := 0
 
 
 func load_from(raw: Dictionary) -> void:
 	bases = raw.get("бази", {})
 	affixes = raw.get("афікси", {})
 	trade = raw.get("торгівля", {})
+	ladder = raw.get("грейди", {}).get("до рівня", {})
+
+
+## Грейд рівня за драбиною: рівень 30 — це C.
+func grade_for_level(level: int) -> String:
+	for grade: String in GRADES:
+		if level <= int(ladder.get(grade, 999)):
+			return grade
+	return GRADES[-1]
 
 
 func has(name: String) -> bool:
@@ -80,7 +94,8 @@ func make(name: String, rolled: Array = []) -> Item:
 	item.two_handed = bool(data.get("дві руки", false))
 	item.grade = str(data.get("грейд", "E"))
 	item.affixes = rolled if not rolled.is_empty() \
-			else _roll(item.grade, str(data.get("рід", "ч")))
+			else _roll(item.grade, str(data.get("рід", "ч")),
+					str(data.get("тип", "")))
 	# JSON не знає цілих: без цього «витривалість» приходила як 1.0, і в
 	# показі речі стояло б «+1.0» замість «+1».
 	item.stats = {}
@@ -89,6 +104,9 @@ func make(name: String, rolled: Array = []) -> Item:
 	for affix: Dictionary in item.affixes:
 		var stat: String = affix["стат"]
 		item.stats[stat] = int(item.stats.get(stat, 0)) + int(affix["скільки"])
+	if item.kind == "зброя" and weapon_durability > 0:
+		item.durability_max = weapon_durability
+		item.durability = weapon_durability
 	return item
 
 
@@ -97,7 +115,10 @@ func make(name: String, rolled: Array = []) -> Item:
 ## Афікс спереду — прикметник, і він мусить збігтися з річчю в роді:
 ## «міцний меч», але «міцна куртка». Форми лежать у даних, бо це
 ## українська мова, а не властивість коду.
-func _roll(grade: String, gender: String = "ч") -> Array:
+##
+## «для» в афіксі — лише на речі цих типів: посох «інколи» дає швидкість
+## касту й відкату (слово замовника 21.09.2026), а меч — ні.
+func _roll(grade: String, gender: String = "ч", kind_type: String = "") -> Array:
 	var out: Array = []
 	# Розмах афікса росте з грейдом речі (З-6): доки крок дорівнював
 	# нулю, «міцний» давав ті самі 1–3 витривалості і на E-куртці, і на
@@ -107,6 +128,9 @@ func _roll(grade: String, gender: String = "ч") -> Array:
 	for where: String in ["спереду", "ззаду"]:
 		for affix: Dictionary in affixes.get(where, []):
 			if not _grade_allows(grade, str(affix.get("з грейду", "E"))):
+				continue
+			var only: Array = affix.get("для", [])
+			if not only.is_empty() and not kind_type in only:
 				continue
 			if randf() > float(affix.get("шанс", 0.0)):
 				continue

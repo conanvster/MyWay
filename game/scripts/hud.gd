@@ -127,6 +127,7 @@ func setup(world: Node) -> void:
 	_build_things()
 	_build_talk()
 	_build_ports()
+	_build_smith()
 	_build_shop()
 	_build_warehouse()
 	_build_guild()
@@ -1019,6 +1020,11 @@ signal wants_bless(at: int)
 signal wants_super_bless(at: int)
 signal wants_ports(at: int)
 signal wants_port(at: int, town: String)
+## Коваль (21.09.2026): вікно, ремонт речі, зачарування речі. Номер —
+## місце речі в торбі; ціну рахує сервер.
+signal wants_smith(at: int)
+signal wants_repair(at: int, thing_at: int)
+signal wants_enchant(at: int, thing_at: int)
 signal wants_learn_skill(at: int, key: String)
 ## Узяти наступну професію й злити два вміння в одне (П-224).
 signal wants_take_profession(at: int, key: String)
@@ -1042,6 +1048,7 @@ var _talk_guild: Button
 var _talk_bless: Button
 var _talk_mage: Button
 var _talk_super: Button
+var _talk_smith: Button
 var _talk_with := -1
 
 ## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
@@ -1145,6 +1152,16 @@ func _build_talk() -> void:
 			if _talk_with >= 0:
 				wants_super_bless.emit(_talk_with))
 	page.add_child(_talk_super)
+
+	_talk_smith = Button.new()
+	_talk_smith.text = "Ремонт і зачарування"
+	_talk_smith.size = Vector2(TALK_INNER.x, 32)
+	_talk_smith.custom_minimum_size = _talk_smith.size
+	_talk_smith.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_smith.emit(_talk_with)
+			_talk_box.visible = false)
+	page.add_child(_talk_smith)
 
 
 ## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
@@ -1335,7 +1352,7 @@ func aim_resident(title: String, trades: bool) -> void:
 func show_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
 		priest: bool = false, mage: bool = false,
-		super_buff: bool = false) -> void:
+		super_buff: bool = false, smith: bool = false) -> void:
 	if _talk_box == null:
 		return
 	_talk_with = at
@@ -1346,11 +1363,12 @@ func show_talk(at: int, title: String, trades: bool,
 	_talk_bless.visible = priest
 	_talk_mage.visible = mage
 	_talk_super.visible = super_buff
+	_talk_smith.visible = smith
 	# Видимі кнопки — підряд згори: у кожного мешканця своя одна-дві, і
 	# на сталих місцях кнопка священика висіла б під трьома порожніми.
 	var row := 0
 	for button: Button in [_talk_trade, _talk_warehouse, _talk_guild,
-			_talk_bless, _talk_mage, _talk_super]:
+			_talk_bless, _talk_mage, _talk_smith, _talk_super]:
 		if button.visible:
 			button.position.y = 40 + row * 40
 			row += 1
@@ -1432,6 +1450,114 @@ func show_ports(at: int, title: String, towns: Array,
 					_ports_box.visible = false)
 	_ports_box.visible = true
 	_ports_box._keep_on_screen()
+
+
+## Коваль (21.09.2026): кожна річ — рядок із двома кнопками. Ціну видно
+## ДО натиску, а чого бракує на зачарування — у підказці й на самій
+## кнопці: мовчки вимкнена кнопка змушувала б гадати, чому.
+const SMITH_INNER := Vector2(520, 360)
+
+var _smith_box: WindowBox
+var _smith_title: Label
+var _smith_money: Label
+var _smith_list: VBoxContainer
+var _smith_with := -1
+
+
+func _build_smith() -> void:
+	_smith_box = WindowBox.new()
+	_smith_box.name = "ВікноКоваля"
+	_smith_box.setup("Коваль", SMITH_INNER)
+	_smith_box.set_anchors_preset(Control.PRESET_CENTER)
+	_smith_box.position = -_smith_box.size * 0.5
+	_root.add_child(_smith_box)
+	var page: Control = _smith_box.body
+	_smith_title = _text(15, page)
+	_smith_title.text = "—"
+	_smith_money = _text(13, page)
+	_smith_money.position = Vector2(0, 20)
+	var hint := _text(11, page)
+	hint.position = Vector2(0, 38)
+	hint.modulate = CAPTION_COLOR
+	hint.text = "зачарування кладе одну руну; нова замінює стару " \
+			+ "й лагодить зброю"
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(0, 60)
+	scroll.size = Vector2(SMITH_INNER.x, SMITH_INNER.y - 60)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	_smith_list = VBoxContainer.new()
+	_smith_list.custom_minimum_size = Vector2(SMITH_INNER.x - 14, 0)
+	_smith_list.add_theme_constant_override("separation", 6)
+	scroll.add_child(_smith_list)
+
+
+## `rows` — те, що порахував сервер (`world._send_smith`).
+func show_smith(at: int, title: String, rows: Array, money: int) -> void:
+	if _smith_box == null:
+		return
+	_smith_with = at
+	_smith_title.text = title
+	_smith_money.text = "у тебе %d монет" % money
+	for old in _smith_list.get_children():
+		old.queue_free()
+	if rows.is_empty():
+		var none := _text(13, _smith_list)
+		none.text = "нема ні зброї, ні обладунку, ні прикрас"
+	for row: Dictionary in rows:
+		_smith_list.add_child(_smith_row(row))
+	_smith_box.visible = true
+	_smith_box._keep_on_screen()
+
+
+func _smith_row(row: Dictionary) -> Control:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 6)
+	var about := Label.new()
+	about.custom_minimum_size = Vector2(250, 0)
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	about.add_theme_font_size_override("font_size", 12)
+	var worn: Array = row.get("міцність", [0, 0])
+	var parts: Array = ["%s · %s%s" % [row.get("грейд", ""),
+			row.get("назва", ""),
+			" (вдягнено)" if row.get("вдягнено") else ""]]
+	if int(worn[1]) > 0:
+		parts.append("міцність %d/%d%s" % [int(worn[0]), int(worn[1]),
+				" — ЗАТУПЛЕНА" if int(worn[0]) <= 0 else ""])
+	var rune := str(row.get("руна", ""))
+	parts.append("руна: %s" % (rune if rune != "" else "немає"))
+	parts.append("річ %s" % ("магічна" if row.get("магічна") else "фізична"))
+	about.text = "\n".join(parts)
+	line.add_child(about)
+	var at := int(row.get("номер", -1))
+
+	var fix := Button.new()
+	fix.custom_minimum_size = Vector2(110, 30)
+	var cost := int(row.get("ремонт", 0))
+	fix.text = "Ремонт %d" % cost if cost > 0 else "ціла"
+	fix.disabled = cost <= 0
+	fix.pressed.connect(func() -> void:
+			if _smith_with >= 0:
+				wants_repair.emit(_smith_with, at))
+	line.add_child(fix)
+
+	var charm := Button.new()
+	charm.custom_minimum_size = Vector2(140, 30)
+	var needs: Dictionary = row.get("речі", {})
+	var bits: Array = ["%d монет" % int(row.get("гроші", 0))]
+	for name in needs:
+		bits.append("%s ×%d" % [name, int(needs[name])])
+	var lacking: Array = row.get("бракує", [])
+	charm.text = "Зачарувати" if lacking.is_empty() else "Бракує"
+	charm.disabled = not lacking.is_empty()
+	charm.tooltip_text = "ціна: %s" % ", ".join(bits) \
+			+ ("" if lacking.is_empty()
+				else "\nбракує: %s" % ", ".join(lacking))
+	charm.pressed.connect(func() -> void:
+			if _smith_with >= 0:
+				wants_enchant.emit(_smith_with, at))
+	line.add_child(charm)
+	return line
 
 
 func _build_shop() -> void:
@@ -2297,6 +2423,16 @@ func _build_target() -> void:
 
 
 ## Панель 1-7 і черга дій — унизу посередині (П-20, П-38, П-58).
+##
+## Смуг чотири, одна над одною (П-232, слово замовника 21.09.2026): скільки
+## з них видно, каже ремінь — грейд E одна, D дві, C три, B чотири. Клавіші:
+## перша смуга 1–7, друга Ctrl+1–7, третя Alt+1–7, четверта Ctrl+Alt+1–7
+## (мої, замовник не називав); мишею тиснеться будь-яка видима.
+const STRIPS := 4
+const STRIP_KEYS := ["", "C", "A", "CA"]
+var _strips := 1
+
+
 func _build_panel() -> void:
 	var wide := CELL * 7 + GAP * 6
 	var box := Control.new()
@@ -2305,8 +2441,8 @@ func _build_panel() -> void:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(box)
 
-	for i in 7:
-		var at := Vector2(i * (CELL + GAP), 0)
+	for i in 7 * STRIPS:
+		var at := Vector2((i % 7) * (CELL + GAP), -(i / 7) * (CELL + GAP))
 		# Комірка ловить мишу: на неї тягнуть скіли, і по ній клацають.
 		var cell := BarCell.new()
 		cell.setup(i, CELL)
@@ -2329,7 +2465,7 @@ func _build_panel() -> void:
 		name_text.position = Vector2(4, CELL - 20)
 		name_text.size = Vector2(CELL - 8, 16)
 		var key := _text(11, cell)
-		key.text = str(i + 1)
+		key.text = STRIP_KEYS[i / 7] + str(i % 7 + 1)
 		key.position = Vector2(4, 2)
 		# Затемнення на відкаті: спадає згори вниз, як пісок.
 		var shade := _plate(Vector2(CELL, CELL), Color(0, 0, 0, 0.62), cell)
@@ -2369,8 +2505,16 @@ func _build_messages() -> void:
 
 # ── те, що надсилає сервер ────────────────────────────────────────────
 
-func set_bar(bar: Array) -> void:
+func set_bar(bar: Array, strips: int = 1) -> void:
 	_bar.assign(bar)
+	_strips = clampi(strips, 1, STRIPS)
+	var lift := (_strips - 1) * (CELL + GAP)
+	for i in _cells.size():
+		_cells[i]["cell"].visible = i / 7 < _strips
+	# Над панеллю — черга й смуга читання; ростуть смуги — вони вгору.
+	_queue_text.position.y = -24 - lift
+	if _cast_box != null:
+		_cast_box.position.y = -CELL - 62 - lift
 	for i in _cells.size():
 		var action: String = _bar[i] if i < _bar.size() else ""
 		var title := _title(action)

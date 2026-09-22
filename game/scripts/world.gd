@@ -113,6 +113,7 @@ func _ready() -> void:
 	combat.skills = data.skills
 	combat.progress = Progress.new(data.levels)
 	combat.goods = data.items
+	combat.smith = data.smith
 	actions = Actions.new(creatures, vision, combat, link)
 	actions.goods = data.items
 	mobs = MobAI.new(creatures, combat)
@@ -636,12 +637,15 @@ func set_slot(slot: int, action: String) -> void:
 	var a: Node = creatures.get(id)
 	if a == null or slot < 0 or slot >= a.bar.size():
 		return
+	if not a.slot_open(slot):
+		link.notice(id, "ця смуга панелі закрита — потрібен кращий ремінь")
+		return
 	var allowed := bar_allows(a, action)
 	if not allowed:
 		link.notice(id, "цього на панель не покласти")
 		return
 	a.bar[slot] = action
-	rpc_id(id, "client_bar", PackedStringArray(a.bar))
+	_send_bar(id)
 
 
 ## Чи можна покласти дію на панель: базова, вивчений скіл або річ, яку
@@ -1413,6 +1417,8 @@ func _on_joined(id: int) -> void:
 						print("[база] %s дістав стартовий скіл «%s»"
 								% [name, key])
 				creatures[id].refresh_stats()
+				creatures[id].pad_bar()
+				_send_bar(id)
 				if row.is_empty():
 					print("[база] %s новий, починає з нуля" % name)
 				else:
@@ -1426,6 +1432,7 @@ func _on_joined(id: int) -> void:
 				_tell_look(id, creatures[id]), CONNECT_ONE_SHOT)
 		store.load_character(_names[id])
 	a.bar = data.bar if not data.bar.is_empty() else a.bar
+	a.pad_bar()
 	# Стартові скіли — заглушка до рун і крамниць (П-97).
 	for skill_key in data.starting_skills:
 		a.learn(skill_key, int(data.starting_skills[skill_key]))
@@ -1435,7 +1442,7 @@ func _on_joined(id: int) -> void:
 			look_of(a))
 	rpc_id(id, "client_vision", a.vision_radius())
 	rpc_id(id, "client_vitals", id, a.hp, a.stats.max_hp())
-	rpc_id(id, "client_bar", PackedStringArray(a.bar))
+	_send_bar(id)
 	vision.watch(id)
 	send_stats(id)
 	send_skills(id)
@@ -1690,7 +1697,8 @@ func ask_talk(at: int) -> void:
 		return
 	rpc_id(id, "client_talk", at, who.title(), who.trades(),
 			who.keeps(), who.teaches(), who.blesses(), who.ports(),
-			who.blesses() and not _super_blessing().is_empty())
+			who.blesses() and not _super_blessing().is_empty(),
+			who.forges())
 
 
 const BLESSINGS_PATH := "res://data/blessings.json"
@@ -1791,6 +1799,89 @@ func ask_ports(at: int) -> void:
 		return
 	rpc_id(id, "client_ports", at, who.title(), towns,
 			Shop.money_of(a))
+
+
+# ── коваль (21.09.2026) ───────────────────────────────────────────────
+#
+# Ремонт і рунне посилення. Уся арифметика — у `Smith`; тут лише хто,
+# де й чи досить близько. Ціну рахує сервер щоразу, клієнт шле номер речі.
+
+var _smith_rng := RandomNumberGenerator.new()
+
+
+## Вікно коваля: кожна річ, яку можна полагодити чи зачарувати, з ціною.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_smith(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.forges():
+		return
+	_send_smith(id, at, who.title())
+
+
+func _send_smith(id: int, at: int, title: String) -> void:
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var rows: Array = []
+	for i in a.things.size():
+		var item: Item = a.things[i]
+		if not item.kind in ["зброя", "обладунок", "амулет"]:
+			continue
+		var cost: Dictionary = data.smith.enchant_cost(item, data.items)
+		rows.append({
+			"номер": i, "назва": item.title(), "грейд": item.grade,
+			"вдягнено": a.is_worn(i),
+			"міцність": [item.durability, item.durability_max],
+			"ремонт": data.smith.repair_cost(item, data.items),
+			"гроші": int(cost["гроші"]), "речі": cost["речі"],
+			"бракує": data.smith.missing_for(a, item, data.items),
+			"руна": Smith.rune_text(item.rune),
+			"магічна": data.smith.is_magic(item, data.items)})
+	rpc_id(id, "client_smith", at, title, rows, Shop.money_of(a))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_repair(at: int, thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.forges():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = data.smith.repair(a, thing_at, data.items)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "%s: полагоджено «%s»" % [who.title(),
+			a.things[thing_at].title()])
+	print("[коваль] %d полагодив %s" % [id, a.things[thing_at].base])
+	_after_bag(id, a)
+	_send_smith(id, at, who.title())
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_enchant(at: int, thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.forges():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = data.smith.enchant(a, thing_at, data.items, _smith_rng)
+	if why != "":
+		link.notice(id, why)
+		return
+	var text := Smith.rune_text(data.smith.last)
+	link.notice(id, "%s: на «%s» лягла руна — %s" % [who.title(),
+			a.things[thing_at].title(), text])
+	print("[коваль] %d зачарував %s: %s" % [id, a.things[thing_at].base, text])
+	_after_bag(id, a)
+	_send_smith(id, at, who.title())
 
 
 ## Перенести. Ціну беремо ЩЕ РАЗ тут, а не ту, що надіслав клієнт:
@@ -2277,6 +2368,16 @@ func ask_cancel() -> void:
 func _after_bag(id: int, a: Node) -> void:
 	send_things(id)
 	send_stats(id)
+	# Ремінь міг змінитись — а з ним і скільки смуг панелі відкрито.
+	_send_bar(id)
+
+
+## Розкладка панелі й скільки її смуг відкриває ремінь (П-232).
+func _send_bar(id: int) -> void:
+	var a: Node = creatures.get(id)
+	if a == null or not a.has_method("strips"):
+		return
+	rpc_id(id, "client_bar", PackedStringArray(a.bar), a.strips())
 
 
 ## Те саме після зміни на складі: і торба (річ туди-сюди йде з неї), і
@@ -2425,6 +2526,12 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_super_bless", at))
 		hud.wants_ports.connect(func(at: int) -> void:
 				rpc_id(1, "ask_ports", at))
+		hud.wants_smith.connect(func(at: int) -> void:
+				rpc_id(1, "ask_smith", at))
+		hud.wants_repair.connect(func(at: int, thing_at: int) -> void:
+				rpc_id(1, "ask_repair", at, thing_at))
+		hud.wants_enchant.connect(func(at: int, thing_at: int) -> void:
+				rpc_id(1, "ask_enchant", at, thing_at))
 		hud.wants_port.connect(func(at: int, town: String) -> void:
 				rpc_id(1, "ask_port", at, town))
 		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
@@ -2592,9 +2699,9 @@ func client_vitals(id: int, hp: int, max_hp: int) -> void:
 
 ## Розкладка панелі з data/bar.json (П-58).
 @rpc("authority", "call_remote", "reliable")
-func client_bar(bar: PackedStringArray) -> void:
+func client_bar(bar: PackedStringArray, strips: int = 1) -> void:
 	if hud != null:
-		hud.set_bar(Array(bar))
+		hud.set_bar(Array(bar), strips)
 	# Ту саму розкладку знає й ввід: без неї він не скаже, чи потрібна
 	# натиснутій дії відстань (підхід до цілі).
 	view.set_bar(Array(bar))
@@ -2663,10 +2770,17 @@ func client_cast_end(id: int, done: bool) -> void:
 func client_talk(at: int, title: String, trades: bool,
 		warehouse_keeper: bool = false, guild_master: bool = false,
 		priest: bool = false, mage: bool = false,
-		super_buff: bool = false) -> void:
+		super_buff: bool = false, smith: bool = false) -> void:
 	if hud != null:
 		hud.show_talk(at, title, trades, warehouse_keeper, guild_master,
-				priest, mage, super_buff)
+				priest, mage, super_buff, smith)
+
+
+## Коваль: що в тебе є, почому ремонт і що просить зачарування.
+@rpc("authority", "call_remote", "reliable")
+func client_smith(at: int, title: String, rows: Array, money: int) -> void:
+	if hud != null:
+		hud.show_smith(at, title, rows, money)
 
 
 ## Майстер магії: куди й почому (20.09.2026).

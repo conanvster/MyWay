@@ -14,6 +14,36 @@ extends Creature
 var bar: Array[String] = ["attack", "next_player", "next_mob",
 		"corpse_skill", "taunt", "", ""]
 
+## Смуг панелі по сім комірок (слово замовника 21.09.2026, П-232):
+## «більше грейд — більше полосок… 2 грейд 2 полоски, 3 грейд 3, 4 грейд
+## 4». Грейд рахується від ременя: E — перший, D — другий і так далі;
+## без ременя — одна смуга, як і було. Комірки всіх чотирьох смуг живуть
+## у `bar` завжди, а ремінь лише вирішує, скількома з них можна
+## користуватись: зняв ремінь — розкладка не губиться.
+const STRIP := 7
+const MAX_STRIPS := 4
+
+
+func strips() -> int:
+	var belt: Item = worn_in("ремінь")
+	if belt == null:
+		return 1
+	return clampi(ItemBook.GRADES.find(belt.grade) + 1, 1, MAX_STRIPS)
+
+
+## Панель завжди на всі чотири смуги: розкладка, збережена до
+## 21.09.2026, мала сім комірок.
+func pad_bar() -> void:
+	while bar.size() < STRIP * MAX_STRIPS:
+		bar.append("")
+	if bar.size() > STRIP * MAX_STRIPS:
+		bar.resize(STRIP * MAX_STRIPS)
+
+
+## Чи можна тиснути цю комірку з тим ременем, що зараз на тобі.
+func slot_open(slot: int) -> bool:
+	return slot >= 0 and slot < STRIP * strips()
+
 ## Модель людини (П-150): Quaternius Universal Base Characters + Universal
 ## Animation Library, обидва CC0 (game/models/player/LICENSE_CC0_*.txt).
 ## Лише «Superhero» statура є в безкоштовному рівні набору — «Regular» і

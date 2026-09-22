@@ -44,6 +44,10 @@ func use_slot(me: int, slot: int, shift: bool) -> void:
 	var a: Node = _creatures.get(me)
 	if a == null or slot < 0 or slot >= a.bar.size():
 		return
+	# Смуга, яку ремінь не відкриває, не тиснеться — навіть якщо клієнт
+	# її якось показав (П-232; сервер нікому не вірить, P1).
+	if a.has_method("slot_open") and not a.slot_open(slot):
+		return
 	var action: String = a.bar[slot]
 	if action == "":
 		return

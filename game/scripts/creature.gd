@@ -194,10 +194,17 @@ func refresh_stats() -> void:
 	dressed.stamina = base_stats.stamina + _gear_bonus("витривалість")
 	dressed.intellect = base_stats.intellect + _gear_bonus("інтелект")
 	dressed.sense = base_stats.sense + _gear_bonus("чуття")
-	dressed.cooldown_cut = base_stats.cooldown_cut
-	dressed.cast_speed_bonus = base_stats.cast_speed_bonus
+	# Рунні посилення коваля бувають не статами, а відсотками швидкості
+	# (21.09.2026). Каст і відкат — додатком, як і бафи на них: відкат
+	# скорочує лише спорядження й стани, не стати (П-35), і це саме той
+	# шлях. Швидкість атаки — множником, як баф священика.
+	dressed.cooldown_cut = base_stats.cooldown_cut \
+			+ _gear_bonus(Smith.COOLDOWN) / 100.0
+	dressed.cast_speed_bonus = base_stats.cast_speed_bonus \
+			+ _gear_bonus(Smith.CAST) / 100.0
 	dressed.concentration_bonus = base_stats.concentration_bonus
 	stats = states.applied_to(dressed)
+	stats.battle_factor *= 1.0 + _gear_bonus(Smith.ATTACK_SPEED) / 100.0
 	# Стан, що піднімав здоров'я (штраф світу, П-213), спав — здоров'я
 	# не може лишитись вищим за новий максимум.
 	hp = mini(hp, stats.max_hp())
@@ -209,9 +216,23 @@ func _gear_bonus(stat: String) -> int:
 	var total := 0
 	for slot in gear:
 		var at: int = gear[slot]
-		if at >= 0 and at < things.size():
+		if at >= 0 and at < things.size() and not things[at].is_blunt():
 			total += int(things[at].stats.get(stat, 0))
 	return total
+
+
+## Удар влучив — зброя тупиться (21.09.2026). Повертає true, коли саме
+## цим ударом міцність дійшла до нуля: тоді стати зброї більше не діють,
+## і світ має сказати про це гравцеві.
+func wear_weapon(amount: int) -> bool:
+	var weapon: Item = worn_in("зброя")
+	if weapon == null or weapon.durability_max <= 0 or weapon.durability <= 0:
+		return false
+	weapon.durability = maxi(0, weapon.durability - amount)
+	if weapon.durability > 0:
+		return false
+	refresh_stats()
+	return true
 
 
 ## Узяти поодиноку річ. Повертає її номер в інвентарі.

@@ -34,6 +34,7 @@ func _go() -> void:
 	_джерела()
 	_крамар()
 	_афікси()
+	_типи()
 	print("  підсумок: %s" % ("усе гаразд" if _bad == 0
 			else "‼ вад: %d" % _bad))
 	get_tree().quit(1 if _bad > 0 else 0)
@@ -66,8 +67,13 @@ func _набір() -> void:
 	var slots: Array = ["голова", "тіло", "ремінь", "рукавиці", "взуття",
 			"щит", "зброя", "підвіска", "перстень"]
 	var порожні: Array = []
+	# Ременів лише чотири — E, D, C, B (слово замовника 21.09.2026,
+	# П-232): вище B ремінь не «порожній», його там немає за рішенням.
+	var belts_to := ItemBook.GRADES.find("B")
 	for grade: String in ItemBook.GRADES:
 		for slot: String in slots:
+			if slot == "ремінь" and ItemBook.GRADES.find(grade) > belts_to:
+				continue
 			if int(by.get("%s/%s" % [grade, slot], 0)) == 0:
 				порожні.append("%s/%s" % [grade, slot])
 	print("    носимих баз %d на %d грейдів" % [worn.size(),
@@ -219,3 +225,68 @@ func _афікси() -> void:
 	_yes("на SS афікс більший, ніж на E",
 			int(найбільший.get("зоряний панцир", 0))
 			> int(найбільший.get("куртка з кори дуба", 99)))
+
+
+## Типи спорядження (слово замовника 21.09.2026, П-223, П-228…П-231).
+func _типи() -> void:
+	print("\n— типи зброї й броні —")
+	var worn := _worn()
+	var weapons := ["меч", "сокира", "кинджал", "спис", "лук", "посох"]
+	var armours := ["важка", "легка", "магічна"]
+	var gaps: Array = []
+	for grade: String in ItemBook.GRADES:
+		for w: String in weapons:
+			var found := false
+			for name: String in worn:
+				var b: Dictionary = worn[name]
+				if b.get("грейд") == grade and b.get("тип") == w:
+					found = true
+			if not found:
+				gaps.append("%s/%s" % [grade, w])
+		for a: String in armours:
+			for slot: String in ["голова", "тіло", "рукавиці", "взуття"]:
+				var found := false
+				for name: String in worn:
+					var b: Dictionary = worn[name]
+					if b.get("грейд") == grade and b.get("тип") == a \
+							and b.get("слот") == slot:
+						found = true
+				if not found:
+					gaps.append("%s/%s/%s" % [grade, a, slot])
+	_yes("на кожен грейд 6 видів зброї й 3 типи броні × 4 місця (дір: %s)"
+			% [gaps], gaps.is_empty())
+	var hands_bad: Array = []
+	for name: String in worn:
+		var b: Dictionary = worn[name]
+		var t := str(b.get("тип", ""))
+		var two := bool(b.get("дві руки", false))
+		if t in ["меч", "сокира", "кинджал"] and two:
+			hands_bad.append(name)
+		if t in ["спис", "лук"] and not two:
+			hands_bad.append(name)
+	_yes("меч, сокира, кинджал одноручні; спис і лук дворучні (не так: %s)"
+			% [hands_bad], hands_bad.is_empty())
+	var shield_bad: Array = []
+	for name: String in worn:
+		var b: Dictionary = worn[name]
+		if b.get("тип") == "щит" and int(b.get("стати", {})
+				.get("спритність", 0)) >= 0:
+			shield_bad.append(name)
+	_yes("щит забирає спритність (не забирає: %s)" % [shield_bad],
+			shield_bad.is_empty())
+	var belts := 0
+	for name: String in worn:
+		if worn[name].get("слот") == "ремінь":
+			belts += 1
+	_yes("ременів 4 (%d)" % belts, belts == 4)
+	var on_sword := 0
+	var on_staff := 0
+	for _i in 2000:
+		for affix: Dictionary in _data.items.make("сталевий меч").affixes:
+			if affix["стат"] in ["швидкість касту", "швидкість відкату"]:
+				on_sword += 1
+		for affix: Dictionary in _data.items.make("тисовий посох").affixes:
+			if affix["стат"] in ["швидкість касту", "швидкість відкату"]:
+				on_staff += 1
+	_yes("каст/відкат-афікси: на мечі %d, на посоху %d із 2000"
+			% [on_sword, on_staff], on_sword == 0 and on_staff > 200)

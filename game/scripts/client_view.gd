@@ -657,6 +657,14 @@ func input(event: InputEvent) -> void:
 			return
 		var slot := slot_of(event.keycode)
 		if slot != -1:
+			# Смуги 2–4 панелі (П-232): Ctrl, Alt, Ctrl+Alt. Чи відкрита
+			# смуга, вирішує сервер за ременем — тут лише номер комірки.
+			if event.ctrl_pressed and event.alt_pressed:
+				slot += 21
+			elif event.alt_pressed:
+				slot += 14
+			elif event.ctrl_pressed:
+				slot += 7
 			use_slot(slot, event.shift_pressed)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:

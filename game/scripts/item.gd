@@ -22,6 +22,31 @@ var grade := "E"
 var stats: Dictionary = {}
 ## Що випало: [{"назва", "стат", "скільки"}], не більше двох.
 var affixes: Array = []
+## Міцність (21.09.2026, лише зброя). `durability_max` 0 — у речі
+## міцності немає зовсім. На нулі зброя тупиться: її стати не діють
+## (`Creature._gear_bonus`), доки коваль не полагодить.
+var durability := 0
+var durability_max := 0
+## Рунне посилення від коваля: {"стат", "скільки"}. Одне на річ — нове
+## замінює старе. Уже враховане в `stats`.
+var rune: Dictionary = {}
+
+
+func is_blunt() -> bool:
+	return durability_max > 0 and durability <= 0
+
+
+## Покласти рунне посилення: старе з `stats` знімається, нове додається.
+func set_rune(new_rune: Dictionary) -> void:
+	if not rune.is_empty():
+		var old: String = rune["стат"]
+		stats[old] = int(stats.get(old, 0)) - int(rune["скільки"])
+		if int(stats[old]) == 0:
+			stats.erase(old)
+	rune = new_rune
+	if not rune.is_empty():
+		var stat: String = rune["стат"]
+		stats[stat] = int(stats.get(stat, 0)) + int(rune["скільки"])
 
 
 ## Назва, яку бачить гравець: «гострий меч з кори дуба вовчої зграї».
@@ -38,7 +63,12 @@ func title() -> String:
 
 ## Для збереження в базу: усе, що потрібно, щоб відтворити річ.
 func to_row() -> Dictionary:
-	return {"база": base, "грейд": grade, "афікси": affixes}
+	var row := {"база": base, "грейд": grade, "афікси": affixes}
+	if durability_max > 0:
+		row["міцність"] = [durability, durability_max]
+	if not rune.is_empty():
+		row["руна"] = rune
+	return row
 
 
 static func from_row(row: Dictionary, book: Object) -> Item:
@@ -46,4 +76,14 @@ static func from_row(row: Dictionary, book: Object) -> Item:
 			row.get("афікси", []))
 	if made != null:
 		made.grade = str(row.get("грейд", made.grade))
+		# Річ, збережена до 21.09.2026, міцності в рядку не має — тоді
+		# лишається та, з якою її щойно зробила книга (повна).
+		var worn: Array = row.get("міцність", [])
+		if worn.size() == 2:
+			made.durability = int(worn[0])
+			made.durability_max = int(worn[1])
+		var saved_rune: Variant = row.get("руна", {})
+		if saved_rune is Dictionary and not saved_rune.is_empty():
+			made.set_rune({"стат": str(saved_rune.get("стат", "")),
+					"скільки": int(saved_rune.get("скільки", 0))})
 	return made

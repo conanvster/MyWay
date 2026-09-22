@@ -281,6 +281,8 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	var saved_bar: Array = row.get("bar", [])
 	if not saved_bar.is_empty():
 		who.bar.assign(saved_bar)
+		if who.has_method("pad_bar"):
+			who.pad_bar()
 	who.place_at(Vector3(float(row.get("x", 0.0)), float(row.get("y", 1.5)),
 			float(row.get("z", 0.0))), 0.0)
 	# Здоров'я й ману ставимо після позиції: `place_at` їх не чіпає, але

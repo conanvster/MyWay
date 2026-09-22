@@ -25,7 +25,7 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Euler, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import make_races as races  # noqa: E402
@@ -143,6 +143,15 @@ SPECIES = {
                                       ("наплічники", (0.3, 0.3, 0.34))],
                               weapon="алебарда", moves="зброя",
                               eyes=(1.0, 0.6, 0.1)),
+    # Імп (Л): багряна шкіра, широкий рельєфний тулуб, довгі руки з
+    # масивними чотирипалими кігтями, козячі гомілки з кігтястою
+    # трипалою ступнею, товстий хвіст — підігнано під референс-арт
+    # (24.09.2026), не буквально під короткий опис у бестіарії.json.
+    "імп": dict(skin=("колір", "імп"), head="імп",
+               tail=("товстий", 0.55), bulk=0.03,
+               long_arms=True, goat_legs=True,
+               outfit=[("пов'язка", (0.35, 0.28, 0.2))],
+               moves="звір", eyes=(1.0, 0.45, 0.05)),
     # Наги (Л+З): верх людини на зміїному хвості.
     "наг": dict(skin=("колір", "наг"), naga=("луска-зелена", 2.4),
                 outfit=[("пасок", (0.55, 0.45, 0.2))], weapon="спис",
@@ -186,6 +195,8 @@ PIECES = {
     "пасок": ({"pelvis", "spine_01"}, 0.019, lambda p: 0.93 <= p.z <= 1.0),
     "чоботи": ({"calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r",
                 "ball_leaf_l", "ball_leaf_r"}, 0.011, lambda p: p.z <= 0.34),
+    "пов'язка": ({"pelvis", "thigh_l", "thigh_r"}, 0.009,
+                 lambda p: 0.78 <= p.z <= 0.98),
     "каптур": ({"Head", "neck_01"}, 0.02,
                lambda p: p.y > -0.06 and p.z >= 1.52),
 }
@@ -456,6 +467,13 @@ HEADS = {
                     ears=("круглі", 0.05)),
     "дракон": dict(skull=(0.1, 0.13, 0.09), snout=(0.17, 0.05),
                    ears=None, horns=0.18, ridge=True),
+    # Кажаняче плоске лице (не витягнута морда), низько посаджені вуха,
+    # драконячі шипи-відростки й великі закручені роги буйвола замість
+    # маленьких прямих — за референс-артом (24.09.2026), не за коротким
+    # описом у бестіарії.
+    "імп": dict(skull=(0.1, 0.09, 0.078), snout=(0.075, 0.042),
+                ears=("гострі", 0.075), ear_height=0.1, ridge=True,
+                ridge_span=0.45, great_horns=True, fangs=True, pupil=True),
 }
 
 
@@ -489,10 +507,20 @@ def animal_head(kind, fur, s):
                        tuple(C + Vector((sign * sx * 0.5, -sy * 0.8,
                                          sz * 0.25))),
                        (0.016, 0.01, 0.014), eye))
+    if h.get("pupil"):
+        # Зіниця — темна цятка поверх свічного ока (імп: помаранчеве
+        # око з чорною цяткою, не суцільна лампочка).
+        pupil = solid("Зіниця", (0.015, 0.015, 0.015), 0.2)
+        for sign in (1, -1):
+            parts.append(p("sphere", "Head",
+                           tuple(C + Vector((sign * sx * 0.5, -sy * 0.95,
+                                             sz * 0.25))),
+                           (0.006, 0.005, 0.006), pupil))
     if h.get("ears"):
         kind_e, size = h["ears"]
         for sign in (1, -1):
-            at = C + Vector((sign * sx * 0.6, sy * 0.1, sz * 0.8))
+            at = C + Vector((sign * sx * 0.6, sy * 0.1,
+                             sz * h.get("ear_height", 0.8)))
             if kind_e == "круглі":
                 parts.append(p("sphere", "Head", tuple(at),
                                (size, size * 0.4, size), fur))
@@ -516,22 +544,63 @@ def animal_head(kind, fur, s):
                                              sz * 0.6))),
                            (0.03, 0.03, horns * 0.5), bone,
                            (math.radians(55), math.radians(sign * 20), 0)))
+    if h.get("great_horns"):
+        # Широко поставлені, закручені роги буйвола: кожен сегмент
+        # орієнтований точно за вектором напряму (to_track_quat), не
+        # euler-кутами навздогад — інакше сегменти висіли окремо від
+        # голови (дві невдалі спроби 24.09.2026).
+        # Напрям — угору-назовні й трохи ВПЕРЕД (не назад): проба
+        # own_models.gd шукає «морду» як найдальшу від вертикальної осі
+        # точку голови й перевіряє, що вона лежить попереду — великі
+        # роги, зметені назад, самі ставали тією точкою й «дивились
+        # назад» (24.09.2026).
+        hornmat = solid("Ріг", (0.7, 0.64, 0.53), 0.35)
+        for sign in (1, -1):
+            at = C + Vector((sign * sx * 0.55, -sy * 0.1, sz * 0.55))
+            dirs = [Vector((sign * 0.35, -0.1, 0.9)).normalized(),
+                    Vector((sign * 0.6, -0.25, 0.5)).normalized(),
+                    Vector((sign * 0.75, -0.35, 0.05)).normalized()]
+            for direction, r in zip(dirs, (0.036, 0.028, 0.02)):
+                length = r * 3.0
+                centre = at + direction * length
+                obj = p("cone", "Head", tuple(centre), (r, r, length),
+                        hornmat)
+                obj.rotation_mode = "QUATERNION"
+                obj.rotation_quaternion = direction.to_track_quat("Z", "Y")
+                parts.append(obj)
+                at = at + direction * (2 * length)
     if h.get("ridge"):
+        # `ridge_span` стискає крок уздовж голови (0.05 за замовчуванням)
+        # — для короткої кажанячої морди імпа повний драконячий крок
+        # заводив останній шип за середину «морди» на пробі own_models.gd
+        # (шукає найдальшу від осі точку голови по центру; шип на межі
+        # переважував короткий писок і читався як «дивиться назад»,
+        # 24.09.2026).
+        step = 0.05 * h.get("ridge_span", 1.0)
         for i in range(5):
             parts.append(p("cone", "Head",
-                           tuple(C + Vector((0, -sy * 0.3 + i * 0.05,
+                           tuple(C + Vector((0, -sy * 0.3 + i * step,
                                              sz * 0.9 - i * 0.02))),
                            (0.012, 0.02, 0.04), bone,
                            (math.radians(30), 0, 0)))
     if h.get("mane"):
         parts.append(p("sphere", "neck_01", (0, 0.07, 1.55),
                        (0.1, 0.07, 0.12), fur))
+    if h.get("fangs"):
+        tooth = solid("Зуби", (0.95, 0.93, 0.88), 0.3)
+        for sign in (1, -1):
+            parts.append(p("cone", "Head",
+                           tuple(C + Vector((sign * thick * 0.35,
+                                             -sy - length * 0.75,
+                                             -sz * 0.55))),
+                           (0.008, 0.008, 0.022), tooth,
+                           (math.radians(160), 0, 0)))
     return parts
 
 
 # --- додатки -------------------------------------------------------------
 
-def tail(kind, length, fur):
+def tail(kind, length, fur, tip=False):
     p = base.part
     out = []
     # Сім сегментів, що налягають: п'ять розрізнених читались як диски
@@ -549,6 +618,51 @@ def tail(kind, length, fur):
         out.append(p("sphere", "pelvis", at,
                      (r, length / steps * 1.5, r), fur,
                      (math.radians(-30), 0, 0)))
+    if tip:
+        end = (0, 0.1 + length * 0.94, 0.95 - length * 0.58)
+        out.append(p("sphere", "pelvis", end, (0.05, 0.085, 0.012), fur,
+                     (math.radians(-30), 0, 0)))
+    return out
+
+
+def long_arms(fur):
+    """Довгі руки з масивною чотирипалою кистю — видовження поза
+    кісткою людини (людський скелет лишається незмінним, рухи не
+    ламаються; довжина тут суто силуетна, не анатомічна)."""
+    p = base.part
+    claw = solid("Кігті рук", (0.85, 0.8, 0.72), 0.4)
+    out = []
+    for sign, hand in ((1, "hand_l"), (-1, "hand_r")):
+        out.append(p("cyl", hand, (sign * 0.98, 0.065, 1.456),
+                     (0.045, 0.045, 0.22), fur,
+                     (0, math.radians(sign * 90), 0)))
+        out.append(p("sphere", hand, (sign * 1.2, 0.065, 1.456),
+                     (0.075, 0.055, 0.065), fur))
+        for i in range(4):
+            out.append(p("cone", hand,
+                         (sign * 1.33, -0.045 + i * 0.03, 1.44),
+                         (0.015, 0.015, 0.065), claw,
+                         (0, math.radians(sign * 90), 0)))
+    return out
+
+
+def goat_legs(fur):
+    """Гомілки з горбом «скакового суглоба» ззаду й лапи з трьома
+    кігтями замість людської ступні — сама кістка ноги не гнеться
+    (людський крок лишається робочим), лише накладні форми поверх."""
+    p = base.part
+    claw = solid("Кігті ніг", (0.85, 0.8, 0.72), 0.4)
+    out = []
+    for sign in (1, -1):
+        x = sign * 0.114
+        calf = "calf_l" if sign > 0 else "calf_r"
+        ball = "ball_l" if sign > 0 else "ball_r"
+        out.append(p("sphere", calf, (x, 0.14, 0.4), (0.055, 0.075, 0.11),
+                     fur, (math.radians(12), 0, 0)))
+        for i in range(3):
+            out.append(p("cone", ball, (x + (i - 1) * 0.032, -0.18, 0.022),
+                         (0.016, 0.016, 0.055), claw,
+                         (math.radians(75), 0, 0)))
     return out
 
 
@@ -760,7 +874,7 @@ def moves(rig, which):
     return keep
 
 
-def previews(rig, folder, tag, keep):
+def previews(rig, folder, tag, keep, wiki_out=None):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
     scene.render.resolution_x = 360
@@ -780,19 +894,58 @@ def previews(rig, folder, tag, keep):
              ("Walk", 0.4, (2.2, -3.0, 1.2), (86, 0, 36)),
              ("Attack", 0.45, (3.4, -0.4, 1.1), (88, 0, 83)),
              ("Idle", 0.3, (0.6, -1.1, 1.7), (88, 0, 28))]
-    for i, (name, t, at, rot) in enumerate(shots):
-        act = keep[name]
+    if folder:
+        for i, (name, t, at, rot) in enumerate(shots):
+            act = keep[name]
+            rig.animation_data.action = act
+            if act.slots:
+                rig.animation_data.action_slot = act.slots[0]
+            frame = int(act.frame_range[0] + (act.frame_range[1]
+                                              - act.frame_range[0]) * t)
+            scene.frame_set(frame)
+            cam.location = at
+            cam.rotation_euler = [math.radians(a) for a in rot]
+            scene.render.filepath = os.path.join(folder, "%s-%d-%s.png"
+                                                 % (tag, i, name))
+            bpy.ops.render.render(write_still=True)
+    if wiki_out:
+        # Квадратний знімок для картки вікі (той самий ракурс, що Idle-0,
+        # але 1:1 — так, як там очікує monstry-vyglyad.html/.photo).
+        act = keep["Idle"]
         rig.animation_data.action = act
         if act.slots:
             rig.animation_data.action_slot = act.slots[0]
         frame = int(act.frame_range[0] + (act.frame_range[1]
-                                          - act.frame_range[0]) * t)
+                                          - act.frame_range[0]) * 0.3)
         scene.frame_set(frame)
-        cam.location = at
-        cam.rotation_euler = [math.radians(a) for a in rot]
-        scene.render.filepath = os.path.join(folder, "%s-%d-%s.png"
-                                             % (tag, i, name))
+        # Тісніше кадрування й темна печера з вогнем — як у референс-арті
+        # з wiki/img/monstry/<назва>.png (24.09.2026: пліч-о-пліч на
+        # сірому студійному тлі не порівнювалось з ним узагалі).
+        cam.location = (1.85, -2.5, 1.25)
+        cam.rotation_euler = [math.radians(a) for a in (86, 0, 36)]
+        cam.data.lens = 47  # тісніше, ніж діагностичні кадри (40 мм)
+        scene.render.resolution_x = 1024
+        scene.render.resolution_y = 1024
+        # AgX (типовий тоновий режим) сильно підіймає тіні — темний фон
+        # без цього виглядає сірим, не чорним. І `world.color` тут не
+        # працює: у нових світах (Blender 5.x) є власне node tree, і
+        # реальний колір фону — вхід «Color» вузла Background у ньому,
+        # не властивість `.color` (та лишається на дефолтних 0.05 сірого
+        # незалежно від неї).
+        scene.view_settings.view_transform = "Standard"
+        bg = world.node_tree.nodes.get("Background")
+        bg.inputs["Color"].default_value = (0.012, 0.02, 0.026, 1.0)
+        sun.data.energy = 1.6
+        sun.data.color = (0.6, 0.72, 0.85)
+        fire = bpy.data.objects.new("Вогонь", bpy.data.lights.new("Вогонь",
+                                                                   "POINT"))
+        fire.data.energy = 45
+        fire.data.color = (1.0, 0.45, 0.12)
+        fire.location = (0.35, -0.55, 0.15)
+        scene.collection.objects.link(fire)
+        scene.render.filepath = wiki_out
         bpy.ops.render.render(write_still=True)
+        bpy.data.objects.remove(fire)
     bpy.data.objects.remove(cam)
     bpy.data.objects.remove(sun)
     rig.animation_data.action = keep["Idle"]
@@ -873,7 +1026,7 @@ def _aim(obj, a, b):
     return obj
 
 
-def build(name, shots=None):
+def build(name, shots=None, wiki_out=None):
     s = SPECIES[name]
     rig, body = races.load(s.get("sex", "чоловік"))
     if s.get("bones"):
@@ -883,7 +1036,7 @@ def build(name, shots=None):
             made += weapon(s["weapon"])
         if s.get("shield"):
             made += shield()
-        return finish(name, rig, made, s, shots)
+        return finish(name, rig, made, s, shots, wiki_out)
     races.inflate(body, s.get("bulk", 0.0))
     fur = reskin(body, s["skin"], s.get("sex", "чоловік"))
     if s.get("naga") or s.get("scorpid"):
@@ -893,13 +1046,18 @@ def build(name, shots=None):
         drop_head(body)
         made += animal_head(s["head"], fur, s)
     if s.get("tail"):
-        made += tail(s["tail"][0], s["tail"][1], fur)
+        t = s["tail"]
+        made += tail(t[0], t[1], fur, tip=t[2] if len(t) > 2 else False)
     if s.get("naga"):
         made += snake_tail(*s["naga"])
     if s.get("scorpid"):
         made += scorpion_body(*s["scorpid"])
     if s.get("claws"):
         made += claws()
+    if s.get("long_arms"):
+        made += long_arms(fur)
+    if s.get("goat_legs"):
+        made += goat_legs(fur)
     if s.get("fangs") and not s.get("head"):
         made += fangs()
     if s.get("wings"):
@@ -911,7 +1069,7 @@ def build(name, shots=None):
         made += weapon(s["weapon"])
     if s.get("shield"):
         made += shield()
-    return finish(name, rig, made, s, shots)
+    return finish(name, rig, made, s, shots, wiki_out)
 
 
 def skeleton_outfit(items):
@@ -934,11 +1092,11 @@ def skeleton_outfit(items):
     return out
 
 
-def finish(name, rig, made, s, shots):
+def finish(name, rig, made, s, shots, wiki_out=None):
     races.attach(rig, made)
     keep = moves(rig, s.get("moves", "звір"))
-    if shots:
-        previews(rig, shots, name, keep)
+    if shots or wiki_out:
+        previews(rig, shots, name, keep, wiki_out)
     os.makedirs(OUT, exist_ok=True)
     out = os.path.join(OUT, name + ".gltf")
     bpy.ops.object.select_all(action="DESELECT")
@@ -956,7 +1114,8 @@ def main():
     if not args or args[0] == "--список":
         print("[людиноподібні] види: " + ", ".join(SPECIES))
         return
-    build(args[0], args[1] if len(args) > 1 else None)
+    build(args[0], args[1] if len(args) > 1 else None,
+          args[2] if len(args) > 2 else None)
 
 
 if __name__ == "__main__":

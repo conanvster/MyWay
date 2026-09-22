@@ -14,6 +14,7 @@ const WAREHOUSE := "завідувач складу"
 const GUILD := "гільдмайстер"
 const PRIEST := "священик"
 const MAGE := "майстер магії"
+const SMITH := "коваль"
 
 @export var who := "мешканець"
 @export var craft := ""
@@ -100,3 +101,8 @@ func blesses() -> bool:
 ## чергу ремесел: у місті з чотирма мешканцями він випадав би через раз.
 func ports() -> bool:
 	return craft == MAGE
+
+
+## Чи ремонтує й зачаровує (21.09.2026, `data/smith.json`).
+func forges() -> bool:
+	return craft == SMITH

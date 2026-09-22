@@ -70,6 +70,10 @@ var tint := Color(1, 1, 1)
 ## кістяк, той самий шлях `Armature/Skeleton3D` від кореня. Порожньо —
 ## анімації беруться з `path`, як і раніше.
 var anim_path := ""
+## Хутро шарами (`fur_shell.gdshader`, 23.09.2026): `вигляд.хутро` у
+## `data/mobs.json` — {"довжина" (метри в грі), "шари", "густота"}.
+## Порожньо — моделі без ворсу, як і було.
+var fur: Dictionary = {}
 
 var _skeleton: Skeleton3D
 var _player: AnimationPlayer
@@ -101,6 +105,8 @@ func build() -> void:
 	# завбільшки з будинок, а імп — із долоню. Тому «зріст» означає
 	# МЕТРИ, а модель підганяється під нього за власною висотою.
 	_fit(body)
+	if not fur.is_empty():
+		_grow_fur(body)
 
 	_player = body.find_child("AnimationPlayer", true, false)
 	if _player == null and anim_path != "" \
@@ -191,6 +197,39 @@ static func _cloth(look: Dictionary) -> StandardMaterial3D:
 			print("[одяг] ‼ немає текстури ", picture)
 	_cloths[key] = m
 	return m
+
+
+const FUR_SHADER := preload("res://scripts/fur_shell.gdshader")
+
+
+## Ворс: до кожного матеріалу з текстурою чіпляється ланцюжок `next_pass`
+## — по шару на прохід, від кореня до кінчиків. Колір волосин — з тієї ж
+## текстури, що й шкура під ними. Довжина в даних — метри в грі, а шейдер
+## зсуває вершини в одиницях самого файла, тому ділимо на масштаб `_fit`.
+func _grow_fur(body: Node3D) -> void:
+	var layers := int(fur.get("шари", 16))
+	var length := float(fur.get("довжина", 0.02)) / maxf(body.scale.x, 0.0001)
+	for child in body.find_children("*", "MeshInstance3D", true, false):
+		var mesh: MeshInstance3D = child
+		if mesh.mesh == null:
+			continue
+		for i in mesh.mesh.get_surface_count():
+			var skin: Material = mesh.get_active_material(i)
+			if not (skin is BaseMaterial3D) or skin.albedo_texture == null:
+				continue
+			var top: BaseMaterial3D = skin.duplicate()
+			var last: Material = top
+			for n in range(1, layers + 1):
+				var shell := ShaderMaterial.new()
+				shell.shader = FUR_SHADER
+				shell.set_shader_parameter("albedo_tex", skin.albedo_texture)
+				shell.set_shader_parameter("layer", float(n) / layers)
+				shell.set_shader_parameter("fur_length", length)
+				shell.set_shader_parameter("density",
+						float(fur.get("густота", 600.0)))
+				last.next_pass = shell
+				last = shell
+			mesh.set_surface_override_material(i, top)
 
 
 ## Пофарбувати. У готових моделей свої кольори, тож фарбу не чіпаємо —

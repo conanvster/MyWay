@@ -83,6 +83,11 @@ func attack(me: int) -> bool:
 	victim.hp = maxi(0, victim.hp - hit)
 	_mark_fight(a, victim)
 	_try_interrupt(victim, a.target_id, hit)
+	# Зброя тупиться від кожного удару, що влучив (слово замовника
+	# 21.09.2026). Монстрів не стосується: у них речей немає.
+	if me > 0 and a.wear_weapon(smith.wear_per_hit()):
+		_link.notice(me,
+				"‼ зброя затупилась — її стати не діють, неси до коваля")
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
 	if a.target_id < 0 and me > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
@@ -170,6 +175,8 @@ var skills := SkillBook.new()
 var progress := Progress.new()
 ## Речі: бази й афікси (крок 4).
 var goods := ItemBook.new()
+## Коваль: скільки тупиться зброя за удар і що дає бос (21.09.2026).
+var smith := Smith.new()
 
 
 ## Застосувати скіл. Повертає true, якщо він справді спрацював.
@@ -423,6 +430,17 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 		if count <= 0:
 			continue
 		_give(me, killer, str(row["що"]), count)
+	# Бос понад свою таблицю дає рунну есенцію свого грейду — інгредієнт
+	# для зачарування в коваля («дропаються з босів», 21.09.2026). Не
+	# рядком у `mobs.json`: бос — це роль у підземеллі, а не вид.
+	if victim.get("is_boss"):
+		var rule: Dictionary = smith.rules.get("есенція з боса", {})
+		if randf() <= float(rule.get("шанс", 0.0)) * mult:
+			var essence := "рунна есенція %s" \
+					% goods.grade_for_level(victim.level)
+			if goods.has(essence):
+				_give(me, killer, essence, randi_range(int(rule.get("від", 1)),
+						int(rule.get("до", 1))))
 	if on_reward.is_valid():
 		on_reward.call(me, killer, victim)
 

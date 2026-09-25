@@ -10,6 +10,10 @@ extends Node
 ## упритул; `<основа>-вікі.png` — квадрат 1024 з одним хутряним звіром
 ## збоку, готовий у `wiki/img/monstry/<назва>-модель.png`. Вид і хутро —
 ## з `data/mobs.json`, як у грі. Інший вид: `-- --вид <назва>`.
+## `-- --поворот <градуси>` — повернути звіра для ВСІХ трьох знімків
+## (0 — камера бачить спину, 180 — морду). Без нього — як було: 60° для
+## «поруч» і «зблизька», 90° (строго збоку) для вікі. Кажан (23.09.2026,
+## слово замовника «3D рендер схожим профілем, а не зі спини») — 200.
 
 const KIND := "заєць"      ## типово, якщо не дали `--вид`
 
@@ -26,6 +30,9 @@ func _go() -> void:
 	var kind := args[kind_at + 1] if kind_at >= 0 \
 			and kind_at + 1 < args.size() else KIND
 	var look := _look(kind)
+	var turn_at := args.find("--поворот")
+	var turn := float(args[turn_at + 1]) if turn_at >= 0 \
+			and turn_at + 1 < args.size() else NAN
 	if look.is_empty():
 		print("‼ немає виду «%s» у data/mobs.json" % kind)
 		get_tree().quit(1)
@@ -57,10 +64,11 @@ func _go() -> void:
 		skin.height = size
 		if i == 1:
 			skin.fur = look.get("хутро", {})
+			skin.held = look.get("в_руці", {})
 		world.add_child(skin)
 		skin.build()
 		skin.position = Vector3((i - 0.5) * size * 1.3, 0, 0)
-		skin.rotation_degrees.y = 60
+		skin.rotation_degrees.y = 60.0 if is_nan(turn) else turn
 		if i == 0:
 			bare = skin
 		else:
@@ -83,7 +91,7 @@ func _go() -> void:
 	ok = await _shot(stem + "-зблизька.png") and ok
 	# Вікі: лише хутряний, строго збоку, квадрат.
 	bare.visible = false
-	furry.rotation_degrees.y = 90
+	furry.rotation_degrees.y = 90.0 if is_nan(turn) else turn
 	get_window().size = Vector2i(1024, 1024)
 	var middle := Vector3(size * 0.65, size * 0.5, 0)
 	eye.position = middle + Vector3(0, size * 0.05, size * 2.4)

@@ -15,6 +15,8 @@
 #                     «вид+рух»; хто ще на фігурці з примітивів —
 #                     стій→іди→бий по колу, як у --парад; тут же (без
 #                     kind у мобах) — орк і 6 тварин Farm Animals Pack
+#   ./run.sh --звірі-скан     заєць, вовк, кажан, скорпіон за референсом: по фігурі на
+#                             рух, з хутром, на підставках (--знімок <основа>)
 #   ./run.sh --нові-моделі  104 щойно завантажені персонажі (ще не в
 #                     репозиторії, читає напряму з ~/assets/: RPG+Ultimate
 #                     Character Pack, решта Ultimate Monster Pack, 4
@@ -102,6 +104,7 @@ case "${1:-}" in
     --рослини) exec godot --path "$proj" --script res://probes/plants.gd ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
+    --звірі-скан) exec godot --path "$proj" --script res://probes/scan_beasts.gd -- "${@:2}" ;;
     --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;
     # Сценою, а не --script: інакше немає автозавантажень, і проба тихо
     # вмирає на Net усередині hud.gd (полагоджено 05.09.2026).

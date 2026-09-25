@@ -222,8 +222,11 @@ ul.d li .p{font:500 .8rem var(--mono);color:var(--muted)}
   border-radius:3px;background:var(--ground);display:grid;place-items:center;
   overflow:hidden}
 .photo img{width:100%;height:100%;object-fit:cover}
-.photo.photo-2{display:flex;gap:2px}
-.photo.photo-2 img{width:50%}
+.photos{display:grid;gap:.5rem;align-content:start}
+.photo-3d{margin:0;padding:0;background:transparent;border:0}
+.photo-3d img{height:100%}
+.photo-3d figcaption{font-size:.75rem;color:var(--muted);margin-top:.25rem;
+  text-align:center}
 .card h3{margin:0 0 .15rem;font:600 1.25rem/1.2 var(--display)}
 .card .meta{color:var(--muted);font-size:.85rem;margin-bottom:.6rem}
 .card dl{margin:0;display:grid;gap:.45rem}
@@ -266,7 +269,7 @@ footer{max-width:1280px;margin:0 auto;padding:0 16px 2rem;color:var(--muted);
   font-size:.8rem}
 @media (max-width:640px){
   .card{grid-template-columns:1fr}
-  .photo{max-width:260px}
+  .photo,.photos{max-width:260px}
   h1{font-size:1.7rem}
   html{scroll-padding-top:10rem}
   .sub{top:calc(env(safe-area-inset-top,0px) + 5.4rem)}
@@ -808,6 +811,7 @@ def монстри(світ):
     # Вигляд: фото + опис у два стовпці.
     os.makedirs(ФОТО_МОНСТРІВ, exist_ok=True)
     з_фото = 0
+    з_моделлю = 0
     тіло = ['<h1>Вигляд монстрів</h1>',
             '<p class="lead">Ліворуч фото, праворуч опис моделі. Порожня рамка '
             'означає, що зображення ще немає: досить покласти файл '
@@ -831,17 +835,22 @@ def монстри(світ):
                         e(m["назва"]), розш, e(m["назва"]))
                     з_фото += 1
                     break
-            # 3D-модель (якщо вже своя, з Blender) — другим кадром поряд,
-            # не замінюючи референс-арт. Файл кладеться поруч:
+            # 3D-модель (якщо вже своя, з Blender) — окремим квадратом ПІД
+            # референс-артом, не замінюючи його й не ділячи рамку навпіл
+            # (слово замовника 23.09.2026: «це зображення повинно бути під
+            # основним зображенням референсу»). Файл кладеться поруч:
             # wiki/img/monstry/<назва>-модель.png.
+            фото = '<div class="photo">%s</div>' % фото
             for розш in ("jpg", "png", "webp"):
                 шлях = os.path.join(ФОТО_МОНСТРІВ, "%s-модель.%s" % (m["назва"], розш))
                 if os.path.exists(шлях):
-                    фото = '<div class="photo photo-2">%s<img src="img/monstry/%s-модель.%s" alt="%s (3D-модель)" loading="lazy"></div>' % (
-                        фото or "", e(m["назва"]), розш, e(m["назва"]))
+                    фото = ('<div class="photos">%s<figure class="photo-3d">'
+                            '<div class="photo"><img src="img/monstry/%s-модель.%s" '
+                            'alt="%s (3D-модель)" loading="lazy"></div>'
+                            '<figcaption>3D-модель у грі</figcaption></figure></div>') % (
+                        фото, e(m["назва"]), розш, e(m["назва"]))
+                    з_моделлю += 1
                     break
-            else:
-                фото = '<div class="photo">%s</div>' % фото
             d = запис.get("опис моделі") or {}
             пункти = []
             for ключ, підпис in bestiary.ЧАСТИНИ + [("тактика", "Як б'ється")]:
@@ -868,8 +877,8 @@ def монстри(світ):
                    (" · " + e(запис["опис"])) if запис.get("опис") else "",
                    "".join(пункти)))
         тіло.append('<div class="cards">%s</div>' % "".join(картки))
-    тіло[2] = ('<p class="note">Зображень зараз: %d із %d.</p>'
-               % (з_фото, len(світ.mobs)))
+    тіло[2] = ('<p class="note">Зображень зараз: %d із %d; 3D-моделей: %d.</p>'
+               % (з_фото, len(світ.mobs), з_моделлю))
     сторінка("monstry-vyglyad.html", "Вигляд монстрів", "\n".join(тіло),
              "Фото й опис моделі кожного монстра MyWay за грейдами")
 

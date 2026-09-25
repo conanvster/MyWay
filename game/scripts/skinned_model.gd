@@ -74,6 +74,12 @@ var anim_path := ""
 ## `data/mobs.json` — {"довжина" (метри в грі), "шари", "густота"}.
 ## Порожньо — моделі без ворсу, як і було.
 var fur: Dictionary = {}
+## Річ у руці (25.09.2026, лук скелета-лучника): `вигляд.в_руці` у
+## `data/mobs.json` — {"модель" (res://…), "кістка" (типово `hand.L`),
+## "поворот" [x, y, z] у градусах, "зсув" [x, y, z] в одиницях файла
+## моделі}. Кістку кисті ставить `scan_lib.add_hands`. Немає кістки чи
+## файла — у консоль попередження, звір лишається без речі (P3).
+var held: Dictionary = {}
 
 var _skeleton: Skeleton3D
 var _player: AnimationPlayer
@@ -123,10 +129,36 @@ func build() -> void:
 			if at != -1:
 				_bones[name] = at
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
+	if not held.is_empty():
+		_hold(held)
 	if _player != null:
 		_play_if_has(["Idle"])
 	# Одяг сховано, доки нічого не вдягнуто.
 	wear({}, null)
+
+
+## Вкласти річ у руку: `BoneAttachment3D` на кістці кисті. Масштаб і
+## розворот тіла річ успадковує від кістяка, тож модель речі — в тих
+## самих одиницях, що й файл звіра.
+func _hold(what: Dictionary) -> void:
+	var bone := str(what.get("кістка", "hand.L"))
+	var file := str(what.get("модель", ""))
+	if _skeleton == null or _skeleton.find_bone(bone) == -1:
+		push_warning("в_руці: у %s немає кістки %s" % [path, bone])
+		return
+	if file == "" or not ResourceLoader.exists(file):
+		push_warning("в_руці: немає файла %s" % file)
+		return
+	var grip := BoneAttachment3D.new()
+	grip.name = "ВРуці"
+	grip.bone_name = bone
+	_skeleton.add_child(grip)
+	var thing: Node3D = (load(file) as PackedScene).instantiate()
+	var turn: Array = what.get("поворот", [0, 0, 0])
+	var move: Array = what.get("зсув", [0, 0, 0])
+	thing.rotation_degrees = Vector3(turn[0], turn[1], turn[2])
+	thing.position = Vector3(move[0], move[1], move[2])
+	grip.add_child(thing)
 
 
 ## Забрати `AnimationPlayer` із окремого файла (П-150): пряма пересадка,
@@ -227,6 +259,20 @@ func _grow_fur(body: Node3D) -> void:
 				shell.set_shader_parameter("fur_length", length)
 				shell.set_shader_parameter("density",
 						float(fur.get("густота", 600.0)))
+				# Необов'язкові (кажан, 23.09.2026): без них — типові з
+				# шейдера, тож заєць і вовк не міняються. `товщина` —
+				# thickness, `корінь` — root_shade, `нахил` — [x, y, z]
+				# gravity у власних осях моделі (перед — +Z).
+				if fur.has("товщина"):
+					shell.set_shader_parameter("thickness",
+							float(fur["товщина"]))
+				if fur.has("корінь"):
+					shell.set_shader_parameter("root_shade",
+							float(fur["корінь"]))
+				if fur.has("нахил"):
+					var g: Array = fur["нахил"]
+					shell.set_shader_parameter("gravity",
+							Vector3(g[0], g[1], g[2]))
 				last.next_pass = shell
 				last = shell
 			mesh.set_surface_override_material(i, top)

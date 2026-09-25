@@ -138,6 +138,7 @@ func _apply_look() -> void:
 			skin.path = made
 			skin.height = float(look.get("зріст", 1.0))
 			skin.fur = look.get("хутро", {})
+			skin.held = look.get("в_руці", {})
 			add_child(skin)
 			skin.build()
 	var body := model()

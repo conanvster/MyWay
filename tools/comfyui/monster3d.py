@@ -8,6 +8,9 @@
         bear). Типово 4 сіди (11 22 33 44). Кадри → ComfyUI/output/
         <назва>_pose_s<сід>_00001_.png і копії в art/monsters/<назва>-3d/.
 
+        Не чотирилапий (кажан, птах) — свій промт: `--промт <файл>` будь-де
+        серед аргументів; у файлі текст із «{who}». Без ключа — POSE_PROMPT.
+
     python3 tools/comfyui/monster3d.py сітка <поза.png> <назва> [граней]
         Pixal3D (шаблон `3d_pixal3d_trellis2_image_to_model`, граф —
         `pixal3d.api.json` поруч) → ComfyUI/output/3d/<назва>_textured_
@@ -84,7 +87,8 @@ def free():
     post("/free", {"unload_models": True, "free_memory": True})
 
 
-def pose(picture, name, seeds, who):
+def pose(picture, name, seeds, who, prompt=None):
+    prompt = prompt or POSE_PROMPT
     image = stage(picture)
     folder = os.path.join(ROOT, "art", "monsters", name + "-3d")
     os.makedirs(folder, exist_ok=True)
@@ -105,7 +109,7 @@ def pose(picture, name, seeds, who):
             "6": {"class_type": "VAEEncode",
                   "inputs": {"pixels": ["5", 0], "vae": ["3", 0]}},
             "7": {"class_type": "CLIPTextEncode",
-                  "inputs": {"text": POSE_PROMPT.format(who=who),
+                  "inputs": {"text": prompt.format(who=who),
                              "clip": ["2", 0]}},
             "8": {"class_type": "ReferenceLatent",
                   "inputs": {"conditioning": ["7", 0], "latent": ["6", 0]}},
@@ -134,6 +138,23 @@ def pose(picture, name, seeds, who):
             print("[поза] сід %d → %s" % (seed, dst))
 
 
+def cutout(picture, out_png):
+    """Маска звіра на референсі (birefnet, біле — звір) — секунди, без
+    Kontext/Pixal3D. Для швидкого шляху «шаблон»."""
+    g = {
+        "1": {"class_type": "LoadImage", "inputs": {"image": stage(picture)}},
+        "2": {"class_type": "LoadBackgroundRemovalModel",
+              "inputs": {"bg_removal_name": "birefnet.safetensors"}},
+        "3": {"class_type": "RemoveBackground",
+              "inputs": {"bg_removal_model": ["2", 0], "image": ["1", 0]}},
+        "4": {"class_type": "MaskToImage", "inputs": {"mask": ["3", 0]}},
+        "5": {"class_type": "SaveImage",
+              "inputs": {"images": ["4", 0], "filename_prefix": "cutout"}},
+    }
+    out = run(g)["outputs"]["5"]["images"][0]
+    shutil.copy(os.path.join(COMFY, "output", out["subfolder"], out["filename"]), out_png)
+
+
 def mesh(picture, name, faces):
     graph = json.load(open(os.path.join(HERE, "pixal3d.api.json")))
     graph["122"]["inputs"]["image"] = stage(picture)
@@ -156,11 +177,16 @@ def mesh(picture, name, faces):
 
 def main():
     args = sys.argv[1:]
+    prompt = None
+    if "--промт" in args:
+        at = args.index("--промт")
+        prompt = open(args[at + 1], encoding="utf-8").read().strip()
+        del args[at:at + 2]
     if not args:
         sys.exit(__doc__)
     if args[0] == "поза" and len(args) >= 4:
         seeds = [int(s) for s in args[4:]] or [11, 22, 33, 44]
-        pose(args[1], args[2], seeds, args[3])
+        pose(args[1], args[2], seeds, args[3], prompt)
     elif args[0] == "сітка" and len(args) >= 3:
         mesh(args[1], args[2], int(args[3]) if len(args) > 3 else 150000)
     elif args[0] == "звільнити":

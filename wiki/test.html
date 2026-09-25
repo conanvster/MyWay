@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Тест генерації · MyWay</title>
+<meta name="description" content="Порівняння референсів і згенерованих зображень для предметів і монстрів">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+SC:wght@500;700&family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+.compare{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:1rem 0 2.4rem}
+.compare figure{margin:0;background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:.6rem}
+.compare img{display:block;width:100%;height:auto;aspect-ratio:1/1;object-fit:contain;background:#000;border-radius:3px}
+.compare figcaption{font-size:.8rem;color:var(--muted);margin-top:.4rem;text-align:center}
+.compare figcaption b{color:var(--ink);display:block;font-size:.85rem;margin-bottom:.1rem}
+.ref figure{border-color:var(--accent)}
+</style>
+</head><body>
+<header class="top"><div class="in">
+<a class="brand" href="index.html">MyWay<small>вікі</small></a>
+<nav class="main" aria-label="Розділи"><a href="index.html">Карта світу</a><a href="rasy.html">Раси та професії</a><a href="monstry.html">Монстри</a><a href="zbroia.html">Зброя та захист</a><a href="rechi.html">Ітеми та матеріали</a><a href="test.html" aria-current="page">Тест генерації</a></nav>
+</div></header>
+<main>
+<h1>Тест генерації</h1>
+<p class="lead">Робоча сторінка для порівняння референсів і згенерованих варіантів перед тим, як картинка йде у вікі. Нічого звідси не лінкується з основних сторінок.</p>
+
+<h2>Монстри — референс проти власного FLUX-конвеєра</h2>
+<p class="note">Три монстри з <a href="monstry.html">бестіарію</a> (рівні 38–40, підземелля 1): <b>оригінал</b> — знайдений референс (Oreate AI), <b>v1/v2</b> — наша генерація тим самим промтом локальним FLUX (flux1-dev-Q4_K_S, ComfyUI, 28 кроків, guidance 3.5, без ітерацій, лише зміна seed).</p>
+
+<h3>тіньовий некро-ірбіс</h3>
+<p class="note">рівень 40 · C · підземелля 1 · примарна нежива кішка, що матеріалізується з темряви</p>
+<div class="compare">
+<figure class="ref"><img src="img/test/nekro_irbis_orig.jpeg" alt="тіньовий некро-ірбіс, оригінальний референс"><figcaption><b>оригінал</b>Oreate AI</figcaption></figure>
+<figure><img src="img/test/nekro_irbis_v1.png" alt="тіньовий некро-ірбіс, наша генерація v1"><figcaption><b>v1</b>FLUX, seed 1001</figcaption></figure>
+<figure><img src="img/test/nekro_irbis_v2.png" alt="тіньовий некро-ірбіс, наша генерація v2"><figcaption><b>v2</b>FLUX, seed 1002</figcaption></figure>
+</div>
+
+<h3>кабанолюд-вождь</h3>
+<p class="note">рівень 39 · C · Початкова рівнина · дворучний молот, корона з іклів</p>
+<div class="compare">
+<figure class="ref"><img src="img/test/kabanolyud_vozhd_orig.jpeg" alt="кабанолюд-вождь, оригінальний референс"><figcaption><b>оригінал</b>Oreate AI</figcaption></figure>
+<figure><img src="img/test/kabanolyud_vozhd_v1.png" alt="кабанолюд-вождь, наша генерація v1"><figcaption><b>v1</b>FLUX, seed 2001</figcaption></figure>
+<figure><img src="img/test/kabanolyud_vozhd_v2.png" alt="кабанолюд-вождь, наша генерація v2"><figcaption><b>v2</b>FLUX, seed 2002</figcaption></figure>
+</div>
+
+<h3>проклятий кристалічний скорпіон-нежить</h3>
+<p class="note">рівень 38 · C · підземелля 1 · панцир проріс проклятою темною рудою</p>
+<div class="compare">
+<figure class="ref"><img src="img/test/skorpion_nezhyt_orig.jpeg" alt="проклятий кристалічний скорпіон-нежить, оригінальний референс"><figcaption><b>оригінал</b>Oreate AI</figcaption></figure>
+<figure><img src="img/test/skorpion_nezhyt_v1.png" alt="проклятий кристалічний скорпіон-нежить, наша генерація v1"><figcaption><b>v1</b>FLUX, seed 3001</figcaption></figure>
+<figure><img src="img/test/skorpion_nezhyt_v2.png" alt="проклятий кристалічний скорпіон-нежить, наша генерація v2"><figcaption><b>v2</b>FLUX, seed 3002</figcaption></figure>
+</div>
+
+</main>
+<footer>Тестова сторінка, не для гравців.</footer>
+</body></html>

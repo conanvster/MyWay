@@ -100,6 +100,37 @@ def baza2(dzerkalo):
         dzerk(dzerkalo, "baza2-s%d.png" % seed)
 
 
+# Голова для перуки (01.10.2026, «1 — окрема перука зі скану голови»):
+# у кадрі всієї постаті голова — кілька десятків пікселів, і Pixal3D
+# пасм не бачить. Великий кадр тієї самої голови дає їх у десятки разів
+# більше.
+HOLOVA_SIDY = [311, 322]
+HOLOVA_PROMT = (
+    "Change only the framing and the background: show an extreme close-up "
+    "of the same man's head, from the base of his neck to just above the "
+    "top of his hair, the head filling the whole frame, facing the camera "
+    "directly, front view, eyes open, neutral expression, every strand of "
+    "his hair sharply detailed with its volume and shape clearly visible. "
+    "Plain uniform light grey studio background, soft even lighting. Keep "
+    "exactly the same man: same face, same hairstyle and hair colour, same "
+    "beard, same skin tone, same photorealistic style.")
+
+
+def holova(dzerkalo):
+    rk.PROMT = HOLOVA_PROMT
+    image = m.stage(str(BAZA_Z))
+    # Без m.free(): поруч може йти інший прогін Kontext — та сама модель.
+    for seed in HOLOVA_SIDY:
+        done = m.run(rk.graf(image, seed, "avatar1_holova_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]),
+                    VYKHID / ("holova-s%d.png" % seed))
+        print("готово голова", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, "holova-s%d.png" % seed)
+
+
 def rozdil(kadry):
     r = ['<!-- аватар -->',
          '<h2>Аватар 3D — людина, чоловік, варіант 1</h2>',
@@ -130,6 +161,8 @@ def rozdil(kadry):
                      % (seed, seed, seed))
         r.append('</div>')
     for nazva, shablon, sidy in (
+            ("Голова для перуки — великий кадр", "holova-s%d.png",
+             HOLOVA_SIDY),
             ("База 2 — щільна коротка пов'язка (ноги окремі)",
              "baza2-s%d.png", BAZA2_SIDY),
             ("Людина, жінка — T-поза", "zh-tpoza-s%d.png", SIDY),
@@ -236,6 +269,11 @@ def dzerk(dzerkalo, fail):
 
 
 def main():
+    if "--голова" in sys.argv:
+        dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
+            if "--дзеркало" in sys.argv else None
+        holova(dzerkalo)
+        return
     if "--база2" in sys.argv:
         dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
             if "--дзеркало" in sys.argv else None

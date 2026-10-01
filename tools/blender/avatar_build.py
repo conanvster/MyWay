@@ -37,8 +37,13 @@ MANEKEN = os.path.join(ROOT, "game/models/player/Superhero_Male_FullBody.gltf")
 RUKHY = os.path.join(ROOT, "game/models/player/animations/UAL1_Standard.glb")
 PERED = -1
 ARGS = sys.argv[sys.argv.index("--") + 1:]
+PERUKA = None
+if "--перука" in ARGS:
+    PERUKA = ARGS[ARGS.index("--перука") + 1]
+    del ARGS[ARGS.index("--перука"):ARGS.index("--перука") + 2]
 SKAN, KUDY = ARGS[0], ARGS[1]
 KADRY = ARGS[2] if len(ARGS) > 2 else None
+POVERNUTO = False
 # Рухи для кадрів перевірки: назва в UAL1 → кадр, на якому знімати.
 PEREVIRKA = [("Idle_Loop", 10), ("Walk_Loop", 8), ("Sword_Attack", 14),
              ("Punch_Jab", 6), ("Death01", 40)]
@@ -117,6 +122,8 @@ def main():
     if pered_skanu != pered_manekena:
         skan.rotation_euler = (0, 0, math.pi)
         zastosuvaty(skan)
+        global POVERNUTO
+        POVERNUTO = True
     # Зріст — як у манекена, ступні на нулі, вісь по центру.
     p = svit(skan)
     lo, hi = mezhi(p)
@@ -378,9 +385,12 @@ def main():
     kysti.data.materials.clear()
     kysti.data.materials.append(mk)
 
+    # 3б. Перука зі скану голови (слово замовника 01.10.2026).
+    peruka = zrobyty_peruku(PERUKA, skan, kist) if PERUKA else None
+
     # 4. На скелет.
     bpy.data.objects.remove(tilo)
-    for o in (skan, kysti):
+    for o in [x for x in (skan, kysti, peruka) if x is not None]:
         o.parent = arm
         if not any(m.type == "ARMATURE" for m in o.modifiers):
             am = o.modifiers.new("Armature", "ARMATURE")
@@ -401,6 +411,104 @@ def main():
     print("[аватар] →", KUDY)
     if KADRY:
         kadry(arm, skan)
+
+
+def zrobyty_peruku(shliakh, skan, kist):
+    """Волосся зі скану голови → окрема сітка «Перука» на кістці Head."""
+    import bmesh
+    import numpy as np
+    stari = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=shliakh)
+    novi = [o for o in bpy.data.objects if o not in stari]
+    h = next(o for o in novi if o.type == "MESH")
+    for o in novi:
+        if o is not h:
+            bpy.data.objects.remove(o)
+    h.parent = None
+    zastosuvaty(h)
+    h.name = "Перука"
+    # Той самий поворот, що й скану тіла: обидва з Pixal3D, одна
+    # орієнтація.
+    if POVERNUTO:
+        h.rotation_euler = (0, 0, math.pi)
+        zastosuvaty(h)
+    # Голова тіла — усе вище шиї; скан голови — від шиї до маківки.
+    n_z = kist["neck_01"].z
+    tilo_h = [v.co for v in skan.data.vertices
+              if v.co.z > n_z and abs(v.co.x) < 0.2]
+    lo_t, hi_t = mezhi(tilo_h)
+    p = [v.co.copy() for v in h.data.vertices]
+    lo_h, hi_h = mezhi(p)
+    # Масштаб — за шириною голови (вуха скану голови можуть виходити за
+    # межі, тож за висотою від шиї до маківки, яка стійкіша).
+    k = (hi_t.z - lo_t.z) / (hi_h.z - lo_h.z)
+    tsil = Vector(((lo_t.x + hi_t.x) / 2, (lo_t.y + hi_t.y) / 2, lo_t.z))
+    dzh = Vector(((lo_h.x + hi_h.x) / 2, (lo_h.y + hi_h.y) / 2, lo_h.z))
+    for v in h.data.vertices:
+        v.co = tsil + (v.co - dzh) * k
+    # Лише волосся: темний колір текстури й висота — спереду вище брів,
+    # ззаду (за серединою голови) вище потилиці.
+    obraz = None
+    for m in h.data.materials:
+        for n in (m.node_tree.nodes if m else []):
+            if n.type == "TEX_IMAGE" and any(
+                    l.to_socket.name == "Base Color" for l in n.outputs[0].links):
+                obraz = n.image
+    w, hh = obraz.size
+    px = np.empty(w * hh * 4, dtype=np.float32)
+    obraz.pixels.foreach_get(px)
+    px = px.reshape(hh, w, 4)
+    uv = h.data.uv_layers.active.data
+    lo_t2, hi_t2 = mezhi([v.co for v in h.data.vertices])
+    vys = hi_t2.z - lo_t2.z
+    sered_y = (lo_t2.y + hi_t2.y) / 2
+    zad = 1 if PERED < 0 else -1      # бік потилиці по Y
+    bm = bmesh.new()
+    bm.from_mesh(h.data)
+    uv_l = bm.loops.layers.uv.active
+    zaivi = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        u = sum(l[uv_l].uv[0] for l in f.loops) / len(f.loops)
+        vv = sum(l[uv_l].uv[1] for l in f.loops) / len(f.loops)
+        r, g, b = px[min(hh - 1, int(vv * hh)), min(w - 1, int(u * w)), :3]
+        temne = 0.299 * r + 0.587 * g + 0.114 * b < 0.33
+        t = (c.z - lo_t2.z) / vys
+        pozadu = (c.y - sered_y) * zad > 0
+        if not (temne and (t > 0.72 or (pozadu and t > 0.45))):
+            zaivi.append(f)
+    bmesh.ops.delete(bm, geom=zaivi, context="FACES")
+    # Дрібні клапті (брови, тіні) — геть: лишаються шматки від 200 граней.
+    bm.faces.ensure_lookup_table()
+    bachyly, shmatky = set(), []
+    for f in bm.faces:
+        if f.index in bachyly:
+            continue
+        stos, shm = [f], []
+        bachyly.add(f.index)
+        while stos:
+            x = stos.pop()
+            shm.append(x)
+            for e in x.edges:
+                for y in e.link_faces:
+                    if y.index not in bachyly:
+                        bachyly.add(y.index)
+                        stos.append(y)
+        shmatky.append(shm)
+    dribni = [f for shm in shmatky if len(shm) < 200 for f in shm]
+    bmesh.ops.delete(bm, geom=dribni, context="FACES")
+    bm.normal_update()
+    for v in bm.verts:
+        v.co += v.normal * 0.003
+    bm.to_mesh(h.data)
+    bm.free()
+    for m in h.data.materials:
+        if m:
+            m.use_backface_culling = False
+    g = h.vertex_groups.new(name="Head")
+    g.add(list(range(len(h.data.vertices))), 1.0, "REPLACE")
+    print("[аватар] перука: граней %d, ×%.3f" % (len(h.data.polygons), k))
+    return h
 
 
 def serednii_kolir(obraz, ob):

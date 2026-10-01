@@ -16,6 +16,7 @@ ComfyUI, 1024×1024, 28 кроків, guidance 3.5, euler/beta, промт
 
     python3 -u tools/comfyui/rasy_ref.py            згенерувати й зібрати сторінку
     python3 -u tools/comfyui/rasy_ref.py --сторінка лише перебудувати test.html
+    … --дзеркало ~/гра-lineage                  ще й копіювати туди кожен кадр
 
 Перед запуском — ComfyUI на 127.0.0.1:8188 і вільна відеокарта (розділ 4
 спеки). Вихід: `wiki/img/test/rasy/<раса>-<стать>-v<N>.png` (лише диск,
@@ -66,8 +67,28 @@ RASY = [
      "short pointed ears, strong and enduring but slow"),
     ("ельф", "Ельф", "швидкий, чуйний, крихкий · 1,85 м",
      "an elf: pale skin, slender and thinner than a human, about 1.85 m "
-     "tall, long pointed ears, light agile and perceptive but fragile"),
+     "tall, long straight white or pale straw-white hair, small sharp "
+     "pointed ears, an elongated narrow face, light agile and perceptive "
+     "but fragile"),
 ]
+# Слово замовника після першого огляду (01.10.2026): «орки жінки з
+# більшими грудями та стегнами і грубим виразом обличчя, ельфи усі мають
+# біле або солом'яно-біле довге волосся, з гострими невеликими вухами, і
+# видовженим обличчям» — ельфам уписано в опис вище, орчицям — тут.
+DODATOK = {
+    ("орк", "female"): "a larger bust and wide heavy hips, a coarse, "
+                       "rough, stern facial expression",
+}
+NEG_ELF = ", long ears, huge ears, dark hair, black hair, brown hair, " \
+          "round face"
+# Відкинуті замовником варіанти: ім'я -> новий seed (старі seed 7102,
+# 7111–7113, 7202, 7203, 7211, 7213). Решта лишається як була.
+NOVI = {
+    "орк-чоловік-v2": 8102,
+    "орк-жінка-v1": 8111, "орк-жінка-v2": 8112, "орк-жінка-v3": 8113,
+    "ельф-чоловік-v2": 8202, "ельф-чоловік-v3": 8203,
+    "ельф-жінка-v1": 8211, "ельф-жінка-v3": 8213,
+}
 STATI = [("чоловік", "male", "чоловік"), ("жінка", "female", "жінка")]
 SIDY = [1, 2, 3]
 
@@ -79,10 +100,17 @@ def promt(rasa, stat):
                      else "")
     return (
         "Dark fantasy RPG character concept art, full-body portrait of a "
-        "%s %s hero, %s, %s. Body: %s, %s. Clothing: %s. Hands empty, "
+        "%s %s hero, %s, %s. Body: %s, %s%s. Clothing: %s. Hands empty, "
         "relaxed natural stance. %s"
         % (eng, rasa[0] == "людина" and "human" or rasa[0] == "орк"
-           and "orc" or "elf", KUT, TLO, eng, tilo, odiag, KHVIST))
+           and "orc" or "elf", KUT, TLO, eng, tilo,
+           ", " + DODATOK[(rasa[0], eng)] if (rasa[0], eng) in DODATOK
+           else "", odiag, KHVIST))
+
+
+def seed_of(ri, si, v):
+    imia = "%s-%s-v%d" % (RASY[ri][0], STATI[si][0], v)
+    return NOVI.get(imia, 7000 + ri * 100 + si * 10 + v)
 
 
 def vybir():
@@ -91,10 +119,11 @@ def vybir():
     for ri, rasa in enumerate(RASY):
         for si, stat in enumerate(STATI):
             for v in SIDY:
-                seed = 7000 + ri * 100 + si * 10 + v
+                neg = NEG_ZHIN if stat[1] == "female" else NEG
+                if rasa[0] == "ельф":
+                    neg += NEG_ELF
                 out.append(("%s-%s-v%d" % (rasa[0], stat[0], v),
-                            promt(rasa, stat), seed,
-                            NEG_ZHIN if stat[1] == "female" else NEG))
+                            promt(rasa, stat), seed_of(ri, si, v), neg))
     return out
 
 
@@ -163,8 +192,20 @@ def generuvaty():
                             VYKHID / (imia + ".png"))
                 print("готово", imia, flush=True)
                 zibraty()
+                dzerkalo(imia)
                 break
             time.sleep(5)
+
+
+def dzerkalo(imia):
+    """`--дзеркало <корінь>`: копія кадру й сторінки ще й туди — у
+    робочу копію, яку замовник відкриває в браузері."""
+    if "--дзеркало" not in sys.argv:
+        return
+    kudy = Path(sys.argv[sys.argv.index("--дзеркало") + 1])
+    (kudy / "wiki/img/test/rasy").mkdir(parents=True, exist_ok=True)
+    shutil.copy(VYKHID / (imia + ".png"), kudy / "wiki/img/test/rasy")
+    shutil.copy(STORINKA, kudy / "wiki/test.html")
 
 
 def zibraty():
@@ -190,7 +231,7 @@ def zibraty():
             tilo.append('<div class="compare">')
             for v in SIDY:
                 imia = "%s-%s-v%d" % (rasa[0], stat[0], v)
-                seed = 7000 + RASY.index(rasa) * 100 + si * 10 + v
+                seed = seed_of(RASY.index(rasa), si, v)
                 if (VYKHID / (imia + ".png")).exists():
                     kadr = '<img src="img/test/rasy/%s.png" alt="%s, %s, ' \
                            'варіант %d">' % (imia, rasa[1], stat[2], v)

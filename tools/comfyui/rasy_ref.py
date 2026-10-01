@@ -108,6 +108,13 @@ def promt(rasa, stat):
            else "", odiag, KHVIST))
 
 
+# Кадри, зроблені не FLUX з нуля, а редагуванням Kontext: ім'я -> підпис.
+PIDPYS = {
+    "орк-жінка-v%d" % v: "Kontext від v1 (8111), seed %d" % s
+    for v, s in ((1, 61), (2, 62), (3, 63))
+}
+
+
 def seed_of(ri, si, v):
     imia = "%s-%s-v%d" % (RASY[ri][0], STATI[si][0], v)
     return NOVI.get(imia, 7000 + ri * 100 + si * 10 + v)
@@ -239,8 +246,9 @@ def zibraty():
                     kadr = '<div style="aspect-ratio:1/1;background:#000;' \
                            'border-radius:3px;display:grid;place-items:' \
                            'center;color:#888">ще генерується</div>'
-                tilo.append('<figure>%s<figcaption><b>v%d</b>seed %d'
-                            '</figcaption></figure>' % (kadr, v, seed))
+                pidpys = PIDPYS.get(imia, "seed %d" % seed)
+                tilo.append('<figure>%s<figcaption><b>v%d</b>%s'
+                            '</figcaption></figure>' % (kadr, v, pidpys))
             tilo.append('</div>')
     tilo.append('<p class="note">Тестова сторінка, не для гравців.</p>')
     STORINKA.write_text(holova + "\n".join(tilo) + "\n" + khvist,

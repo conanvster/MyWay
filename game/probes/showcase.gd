@@ -215,7 +215,8 @@ func _report_confirm_store(box: Control) -> void:
 	var stored: Array[String] = []
 	_hud.wants_store_thing.connect(func(_at: int, _n: int) -> void:
 			stored.append("річ"))
-	_hud.wants_store_stack.connect(func(_at: int, what: String) -> void:
+	_hud.wants_store_stack.connect(
+			func(_at: int, what: String, _n: int) -> void:
 			stored.append(what))
 	_hud.show_warehouse(0)
 	var rows: Array = _hud._bag_rows

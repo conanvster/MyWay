@@ -200,6 +200,9 @@ func cycle_target(me: int, mobs: bool, corpses: bool) -> void:
 		# і чіплятись за мертвих — найгірше, що може статись (П-45).
 		if c.is_corpse() != corpses:
 			continue
+		# Прикликаний (П-41) — не монстр для перебору: бити його не можна.
+		if id < 0 and "owner_id" in c and int(c.owner_id) > 0:
+			continue
 		if (id < 0) == mobs:
 			list.append(id)
 	if list.is_empty():

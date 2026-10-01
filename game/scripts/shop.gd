@@ -125,17 +125,23 @@ func sell(who: Node, at: int) -> String:
 	return ""
 
 
-## Продаж складаної речі — усього стосу одразу.
-func sell_stack(who: Node, name: String) -> String:
+## Продаж складаної речі: `count` штук, −1 — увесь стос. Число гравець
+## вибирає − / + у вікні підтвердження (П-164); більше, ніж є, не
+## продасться, хоч би що прислав клієнт.
+func sell_stack(who: Node, name: String, count: int = -1) -> String:
 	var have := int(who.items.get(name, 0))
 	if have <= 0:
 		return "такої речі немає"
+	if count < 0:
+		count = have
+	if count == 0 or count > have:
+		return "стільки немає: є %d" % have
 	if refuses(name):
 		return "крамар цього не бере"
-	var paid := buy_price(name) * have
+	var paid := buy_price(name) * count
 	if paid <= 0:
 		return "крамар цього не бере"
-	who.take_item(name, have)
+	who.take_item(name, count)
 	give_money(who, paid)
 	return ""
 

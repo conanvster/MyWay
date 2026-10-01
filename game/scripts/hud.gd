@@ -88,6 +88,7 @@ var _hp_fill: ColorRect
 var _mp_fill: ColorRect
 var _vitals_text: Label
 var _target_box: Control
+var _target_trade: Button
 var _target_name: Label
 var _target_fill: ColorRect
 var _queue_text: Label
@@ -130,6 +131,7 @@ func setup(world: Node) -> void:
 	_build_smith()
 	_build_shop()
 	_build_warehouse()
+	_build_trade()
 	_build_guild()
 	_build_map()
 	_build_eye()
@@ -846,10 +848,13 @@ func set_things(things: Array, stacks: Array) -> void:
 			_eye_box._keep_on_screen()
 	_fill_body(things)
 	_fill_bag(things, stacks)
+	_fill_bar_counts()
 	# Вікно торгівлі показує ту саму торбу. Продав річ — і вона зникає
 	# звідти теж, без перевідкривання прилавка.
 	if _shop_box != null and _shop_box.visible:
 		_fill_mine()
+	if _trade_box != null and _trade_box.visible:
+		_fill_trade()
 
 
 ## Ім'я для пошуку значка. Поодинока річ несе «база» окремо від
@@ -1003,15 +1008,26 @@ func _bag_drag(from: Control, name: String) -> Dictionary:
 signal wants_shop(at: int)
 signal wants_buy(at: int, name: String)
 signal wants_sell(at: int, thing_at: int)
-signal wants_sell_stack(at: int, name: String)
+signal wants_sell_stack(at: int, name: String, count: int)
 
 ## Склад і гільдія (крок 5, П-145) — та сама «спитай сервер, він
 ## вирішить» логіка, що й у прилавка.
 signal wants_warehouse(at: int)
 signal wants_store_thing(at: int, thing_at: int)
-signal wants_store_stack(at: int, name: String)
+signal wants_store_stack(at: int, name: String, count: int)
 signal wants_withdraw_thing(at: int, thing_at: int)
-signal wants_withdraw_stack(at: int, name: String)
+signal wants_withdraw_stack(at: int, name: String, count: int)
+
+## Обмін між гравцями (П-218). Усе — прохання до сервера; що лежить на
+## столі й чи відбувся обмін, каже лише він.
+signal wants_trade_invite(to: int)
+signal wants_trade_answer(yes: bool)
+signal wants_trade_offer_thing(thing_at: int)
+signal wants_trade_offer_stack(name: String, count: int)
+signal wants_trade_take_back_thing(at_on_table: int)
+signal wants_trade_take_back_stack(name: String)
+signal wants_trade_agree()
+signal wants_trade_cancel()
 signal wants_guild(at: int)
 signal wants_bless(at: int)
 ## Майстер магії (20.09.2026): спершу спитати перелік міст, тоді назвати
@@ -1063,6 +1079,26 @@ var _confirm_yes: Button
 var _confirm_no: Button
 ## Що зробити на «Так». Порожній — вікно ні до чого не прив'язане.
 var _confirm_does := Callable()
+## Що зробити на «Скасувати» чи хрестик. Майже завжди нічого; запрошення
+## до обміну так відмовляє, а не висить, доки не прострочиться.
+var _confirm_refuses := Callable()
+
+## Скільки зі стосу (П-164): − / + і число, за замовчуванням увесь стос,
+## поля для вводу немає. Рядок живе у вікні підтвердження й видний, лише
+## коли питання про кількість.
+const COUNT_ROW_H := 34.0
+## Затиснута − / + повторюється: спершу після паузи, далі частіше й
+## більшим кроком — інакше стос у 5000 монет не набрати до вечора.
+const COUNT_HOLD_WAIT := 0.4
+const COUNT_HOLD_EVERY := 0.06
+var _count_row: Control
+var _count_label: Label
+var _count := 0
+var _count_most := 0
+var _count_text := Callable()
+var _count_hold := 0         ## −1 / +1 — яка кнопка затиснута; 0 — жодна
+var _count_hold_left := 0.0
+var _count_hold_times := 0
 
 var _shop_box: WindowBox
 var _shop_title: Label
@@ -1301,27 +1337,144 @@ func _build_confirm() -> void:
 	_confirm_no.position = Vector2(half + 8.0, CONFIRM_INNER.y - 32.0)
 	_confirm_no.size = Vector2(half, 32)
 	_confirm_no.custom_minimum_size = _confirm_no.size
-	_confirm_no.pressed.connect(hide_confirm)
+	_confirm_no.pressed.connect(_confirm_refused)
 	page.add_child(_confirm_no)
+	# Хрестик ховає вікно сам (`WindowBox`) — ловимо це як «Скасувати».
+	_confirm_box.visibility_changed.connect(func() -> void:
+			if not _confirm_box.visible and _confirm_does.is_valid():
+				_confirm_refused())
+
+	_count_row = Control.new()
+	_count_row.name = "Скільки"
+	_count_row.position = Vector2(0, 52)
+	_count_row.size = Vector2(CONFIRM_INNER.x, COUNT_ROW_H)
+	_count_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_count_row.visible = false
+	page.add_child(_count_row)
+	var middle := CONFIRM_INNER.x * 0.5
+	for step: int in [-1, 1]:
+		var press := Button.new()
+		press.text = "−" if step < 0 else "+"
+		press.size = Vector2(40, 30)
+		press.custom_minimum_size = press.size
+		press.position = Vector2(
+				middle - 90.0 if step < 0 else middle + 50.0, 0)
+		press.tooltip_text = "затисни — побіжить швидше\n" \
+				+ "Shift — по 10, Ctrl — по 100"
+		press.button_down.connect(func() -> void:
+				_count_step(step * _count_mult())
+				_count_hold = step
+				_count_hold_left = COUNT_HOLD_WAIT
+				_count_hold_times = 0)
+		press.button_up.connect(func() -> void: _count_hold = 0)
+		_count_row.add_child(press)
+	_count_label = _text(18, _count_row)
+	_count_label.size = Vector2(90, 30)
+	_count_label.position = Vector2(middle - 45.0, 0)
+	_count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
 
 ## Спитати перед дією. `does` виконається лише на «Так» (П-159).
-func ask_confirm(question: String, does: Callable) -> void:
+func ask_confirm(question: String, does: Callable,
+		refuses: Callable = Callable()) -> void:
 	if _confirm_box == null:
 		# Вікна немає — питати нема чим, але дію ковтати мовчки не можна
 		# (P3): краще виконати, ніж загубити натиск гравця.
 		does.call()
 		return
 	_confirm_text.text = question
+	_count_most = 0
+	_count_rows(false)
 	_confirm_does = does
+	_confirm_refuses = refuses
 	_confirm_box.visible = true
 	_confirm_box._keep_on_screen()
 
 
+## Спитати, скільки зі стосу (П-164). `text` складає питання з числа
+## («Продати «кора дуба» ×3 за 9?»), `does` дістає вибране число.
+## Стос з однієї штуки питає так само, лише без − / +.
+func ask_count(text: Callable, most: int, does: Callable) -> void:
+	if _confirm_box == null:
+		does.call(most)
+		return
+	_count_most = maxi(1, most)
+	_count = _count_most
+	_count_text = text
+	_count_hold = 0
+	_confirm_does = func() -> void: does.call(_count)
+	_confirm_refuses = Callable()
+	_count_rows(_count_most > 1)
+	_count_show()
+	_confirm_box.visible = true
+	_confirm_box._keep_on_screen()
+
+
+## Рядок − / + є чи немає: вікно росте під нього, кнопки сходять нижче.
+func _count_rows(on: bool) -> void:
+	_count_row.visible = on
+	var tall := CONFIRM_INNER.y + (COUNT_ROW_H if on else 0.0)
+	_confirm_box.resize(Vector2(CONFIRM_INNER.x, tall))
+	_confirm_yes.position.y = tall - 32.0
+	_confirm_no.position.y = tall - 32.0
+
+
+func _count_mult() -> int:
+	if Input.is_key_pressed(KEY_CTRL):
+		return 100
+	if Input.is_key_pressed(KEY_SHIFT):
+		return 10
+	return 1
+
+
+func _count_step(by: int) -> void:
+	if _count_most <= 0:
+		return
+	_count = clampi(_count + by, 1, _count_most)
+	_count_show()
+
+
+func _count_show() -> void:
+	_count_label.text = str(_count)
+	if _count_text.is_valid():
+		_confirm_text.text = str(_count_text.call(_count))
+
+
+## Затиснута − / +: кожні `COUNT_HOLD_EVERY` секунд ще крок, і що довше
+## тримаєш — то більший: 1, далі 10 після 20 кроків, 100 після 40.
+func _count_tick(delta: float) -> void:
+	if _count_hold == 0 or not _confirm_box.visible:
+		_count_hold = 0
+		return
+	_count_hold_left -= delta
+	if _count_hold_left > 0.0:
+		return
+	_count_hold_left = COUNT_HOLD_EVERY
+	_count_hold_times += 1
+	var size := 1
+	if _count_hold_times > 40:
+		size = 100
+	elif _count_hold_times > 20:
+		size = 10
+	_count_step(_count_hold * size * _count_mult())
+
+
 func hide_confirm() -> void:
+	# Спершу забуваємо дії, тоді ховаємо: сховане вікно саме питає, чи
+	# не відмова це (хрестик), і на вже порожніх діях нічого не робить.
+	_confirm_does = Callable()
+	_confirm_refuses = Callable()
+	_count_hold = 0
 	if _confirm_box != null:
 		_confirm_box.visible = false
-	_confirm_does = Callable()
+
+
+func _confirm_refused() -> void:
+	var refuses := _confirm_refuses
+	hide_confirm()
+	if refuses.is_valid():
+		refuses.call()
 
 
 func _confirm_done() -> void:
@@ -1703,12 +1856,19 @@ func _fill_mine() -> void:
 				press.disabled = true
 				_hover(press, "%s — крамар цього не бере" % name)
 				continue
-			press.tooltip_text = "%s ×%d\nпродати весь стос за %d" \
-					% [name, count, paid * count]
-			_hover(press, "%s ×%d — продати весь стос за %d"
-					% [name, count, paid * count])
+			press.tooltip_text = "%s ×%d\nпродати по %d за штуку" \
+					% [name, count, paid]
+			_hover(press, "%s ×%d — продати по %d за штуку"
+					% [name, count, paid])
+			# Скільки продати — − / + у вікні підтвердження, за
+			# замовчуванням увесь стос (П-164); сума міняється з числом.
 			press.pressed.connect(func() -> void:
-					wants_sell_stack.emit(_shop_with, name))
+					ask_count(func(n: int) -> String:
+								return "Продати «%s» ×%d за %d?" \
+										% [name, n, paid * n],
+							count,
+							func(n: int) -> void:
+								wants_sell_stack.emit(_shop_with, name, n)))
 
 
 func _blank(cell: Dictionary) -> void:
@@ -1835,10 +1995,13 @@ func _fill_bag_side() -> void:
 			var count: int = int(row.get("скільки", 0))
 			press.text = "%s ×%d" % [name, count]
 			press.pressed.connect(func() -> void:
-					ask_confirm("Перенести «%s» ×%d у склад?" % [name, count],
-							func() -> void:
+					ask_count(func(n: int) -> String:
+								return "Перенести «%s» ×%d у склад?" \
+										% [name, n],
+							count,
+							func(n: int) -> void:
 								wants_store_stack.emit(
-										_warehouse_with, name)))
+										_warehouse_with, name, n)))
 
 
 func _fill_kept_side() -> void:
@@ -1864,8 +2027,230 @@ func _fill_kept_side() -> void:
 		else:
 			var count: int = int(row.get("скільки", 0))
 			press.text = "%s ×%d" % [name, count]
+			# Забирання не питає (П-159) — окрім числа, коли в стосі
+			# більше однієї штуки (П-164).
 			press.pressed.connect(func() -> void:
-					wants_withdraw_stack.emit(_warehouse_with, name))
+					if count <= 1:
+						wants_withdraw_stack.emit(_warehouse_with, name, 1)
+						return
+					ask_count(func(n: int) -> String:
+								return "Забрати «%s» ×%d зі складу?" \
+										% [name, n],
+							count,
+							func(n: int) -> void:
+								wants_withdraw_stack.emit(
+										_warehouse_with, name, n)))
+
+
+# ── обмін між гравцями (П-218) ───────────────────────────────────────
+#
+## Одне вікно на три стовпці: торба (клікни — на стіл), твій бік (клікни —
+## забрати), бік другого. Згоду кожного видно над його стовпцем; будь-яка
+## зміна на столі її знімає (сервер). Хрестик — те саме, що «Скасувати».
+
+const TRADE_ROWS := 10
+const TRADE_COL := 210.0
+
+var _trade_box: WindowBox
+var _trade_bag_rows: Array = []
+var _trade_mine_rows: Array = []
+var _trade_theirs_rows: Array = []
+var _trade_mine_head: Label
+var _trade_theirs_head: Label
+var _trade_agree: Button
+var _trade_with := ""
+var _trade_table: Dictionary = {}
+## Вікно закриває сервер (обмін відбувся чи зламався) — тоді «скасувати»
+## йому вже не шлемо.
+var _trade_quiet := false
+
+
+func _build_trade() -> void:
+	var inner := Vector2(TRADE_COL * 3.0 + 24.0,
+			18.0 + TRADE_ROWS * (ROW_H + 2.0) + 12.0 + 32.0)
+	_trade_box = WindowBox.new()
+	_trade_box.name = "ВікноОбміну"
+	_trade_box.setup("Обмін", inner)
+	_trade_box.set_anchors_preset(Control.PRESET_CENTER)
+	_trade_box.position = -_trade_box.size * 0.5
+	_root.add_child(_trade_box)
+	var page: Control = _trade_box.body
+
+	var heads: Array = []
+	for col in 3:
+		var head := _text(11, page)
+		head.position = Vector2(col * (TRADE_COL + 12.0), 0)
+		head.modulate = CAPTION_COLOR
+		heads.append(head)
+	heads[0].text = "торба — клікни, щоб покласти"
+	_trade_mine_head = heads[1]
+	_trade_theirs_head = heads[2]
+
+	for col in 3:
+		for i in TRADE_ROWS:
+			var press := Button.new()
+			press.size = Vector2(TRADE_COL, ROW_H)
+			press.custom_minimum_size = press.size
+			press.position = Vector2(col * (TRADE_COL + 12.0),
+					18.0 + i * (ROW_H + 2.0))
+			press.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			press.clip_text = true
+			page.add_child(press)
+			[_trade_bag_rows, _trade_mine_rows, _trade_theirs_rows][col] \
+					.append(press)
+
+	var low := inner.y - 32.0
+	_trade_agree = Button.new()
+	_trade_agree.text = "Згоден"
+	_trade_agree.size = Vector2(TRADE_COL, 32)
+	_trade_agree.custom_minimum_size = _trade_agree.size
+	_trade_agree.position = Vector2(TRADE_COL + 12.0, low)
+	_trade_agree.pressed.connect(func() -> void: wants_trade_agree.emit())
+	page.add_child(_trade_agree)
+	var cancel := Button.new()
+	cancel.text = "Скасувати"
+	cancel.size = Vector2(TRADE_COL, 32)
+	cancel.custom_minimum_size = cancel.size
+	cancel.position = Vector2((TRADE_COL + 12.0) * 2.0, low)
+	cancel.pressed.connect(func() -> void: _trade_box.visible = false)
+	page.add_child(cancel)
+	_trade_box.visibility_changed.connect(func() -> void:
+			if not _trade_box.visible and not _trade_quiet:
+				wants_trade_cancel.emit()
+			_trade_quiet = false)
+
+
+## Сервер кличе на обмін: питаємо «так / ні» тим самим вікном
+## підтвердження. Відмова (і хрестик) — це «ні», а не тиша.
+func ask_trade_invite(from: String) -> void:
+	ask_confirm("%s пропонує обмін. Погодитись?" % from,
+			func() -> void: wants_trade_answer.emit(true),
+			func() -> void: wants_trade_answer.emit(false))
+	_trade_inviting = true
+
+
+var _trade_inviting := false
+
+
+## Запрошення прострочилось — ховаємо питання, якщо це ще воно.
+func trade_invite_gone() -> void:
+	if _trade_inviting and _confirm_box != null and _confirm_box.visible \
+			and _confirm_text.text.ends_with("пропонує обмін. Погодитись?"):
+		hide_confirm()
+	_trade_inviting = false
+
+
+## Стіл від сервера — після відкриття й після кожної зміни.
+func show_trade(with: String, table: Dictionary) -> void:
+	if _trade_box == null:
+		return
+	_trade_inviting = false
+	_trade_with = with
+	_trade_table = table
+	if not _trade_box.visible:
+		_trade_box.visible = true
+		_trade_box._keep_on_screen()
+	_fill_trade()
+
+
+## Сервер закрив стіл.
+func hide_trade() -> void:
+	if _trade_box == null or not _trade_box.visible:
+		return
+	_trade_quiet = true
+	_trade_box.visible = false
+	_trade_table = {}
+	# Питання «скільки покласти» до столу, якого вже немає, — теж геть.
+	hide_confirm()
+
+
+func _fill_trade() -> void:
+	var mine: Array = _trade_table.get("моє", [])
+	var theirs: Array = _trade_table.get("їхнє", [])
+	var i_agree: bool = bool(_trade_table.get("я згоден", false))
+	var they_agree: bool = bool(_trade_table.get("вони згодні", false))
+	_trade_mine_head.text = "твій бік%s — клікни, щоб забрати" \
+			% ("  ✓ згоден" if i_agree else "")
+	_trade_theirs_head.text = "%s%s" % [_trade_with,
+			"  ✓ згоден" if they_agree else "  — ще не згоден"]
+	_trade_mine_head.modulate = Color(0.55, 0.85, 0.5) if i_agree \
+			else CAPTION_COLOR
+	_trade_theirs_head.modulate = Color(0.55, 0.85, 0.5) if they_agree \
+			else CAPTION_COLOR
+	_trade_agree.disabled = i_agree
+	_trade_agree.text = "Чекаємо на %s" % _trade_with if i_agree else "Згоден"
+
+	# Торба: вдягнене не пропонуємо, речі зі столу теж; гроші — так
+	# (П-218: гроші передаються тим самим вікном).
+	var on_table := {}
+	for row: Dictionary in mine:
+		if row.has("номер"):
+			on_table[int(row["номер"])] = true
+	var bag: Array = []
+	for row: Dictionary in _things:
+		if not bool(row.get("вдягнене", false)) \
+				and not on_table.has(int(row.get("номер", -1))):
+			bag.append(row)
+	bag.append_array(_stacks)
+	for i in _trade_bag_rows.size():
+		var press: Button = _trade_bag_rows[i]
+		_unlink(press)
+		if i >= bag.size():
+			press.text = ""
+			press.disabled = true
+			continue
+		var row: Dictionary = bag[i]
+		var name: String = str(row.get("назва", "?"))
+		press.disabled = false
+		if row.has("номер"):
+			var thing_at: int = int(row["номер"])
+			press.text = name
+			press.pressed.connect(func() -> void:
+					wants_trade_offer_thing.emit(thing_at))
+		else:
+			var count: int = int(row.get("скільки", 0))
+			press.text = "%s ×%d" % [name, count]
+			press.pressed.connect(func() -> void:
+					ask_count(func(n: int) -> String:
+								return "Покласти на стіл «%s» ×%d?" \
+										% [name, n],
+							count,
+							func(n: int) -> void:
+								wants_trade_offer_stack.emit(name, n)))
+
+	for i in _trade_mine_rows.size():
+		var press: Button = _trade_mine_rows[i]
+		_unlink(press)
+		if i >= mine.size():
+			press.text = ""
+			press.disabled = true
+			continue
+		var row: Dictionary = mine[i]
+		press.disabled = false
+		press.text = _trade_line(row)
+		if row.has("на столі"):
+			var at: int = int(row["на столі"])
+			press.pressed.connect(func() -> void:
+					wants_trade_take_back_thing.emit(at))
+		else:
+			var name: String = str(row.get("назва", ""))
+			press.pressed.connect(func() -> void:
+					wants_trade_take_back_stack.emit(name))
+
+	# Чужий бік лише показується: кнопки вимкнені, але текст видно.
+	for i in _trade_theirs_rows.size():
+		var press: Button = _trade_theirs_rows[i]
+		_unlink(press)
+		press.disabled = true
+		press.text = _trade_line(theirs[i]) if i < theirs.size() else ""
+
+
+func _trade_line(row: Dictionary) -> String:
+	var name: String = str(row.get("назва", "?"))
+	if row.has("скільки"):
+		return "%s ×%d" % [name, int(row["скільки"])]
+	var grade: String = str(row.get("грейд", ""))
+	return "%s  [%s]" % [name, grade] if grade != "" else name
 
 
 func show_warehouse(at: int) -> void:
@@ -2420,6 +2805,21 @@ func _build_target() -> void:
 	_target_states.position = Vector2(0, 46)
 	_target_states.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_target_box.add_child(_target_states)
+	# Обмін (П-218) кличеться з рамки цілі: ціль-гравця вже вибрано, і
+	# окремого списку «з ким міняти» не треба.
+	_target_trade = Button.new()
+	_target_trade.name = "Обмін"
+	_target_trade.text = "Обмін"
+	_target_trade.size = Vector2(70, 24)
+	_target_trade.custom_minimum_size = _target_trade.size
+	_target_trade.position = Vector2(WIDE + 10.0, 8)
+	_target_trade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_target_trade.visible = false
+	_target_trade.tooltip_text = "покликати на обмін (треба стояти поруч)"
+	_target_trade.pressed.connect(func() -> void:
+			if _target > 0:
+				wants_trade_invite.emit(_target))
+	_target_box.add_child(_target_trade)
 
 
 ## Панель 1-7 і черга дій — унизу посередині (П-20, П-38, П-58).
@@ -2472,8 +2872,14 @@ func _build_panel() -> void:
 		shade.visible = false
 		var left := _text(16, cell)
 		left.position = Vector2(CELL * 0.5 - 10, CELL * 0.5 - 12)
+		# Скільки витратної речі лишилось (В-1): у правому нижньому куті,
+		# тане тим самим натисканням, яким п'єш.
+		var count := _text(13, cell)
+		count.position = Vector2(4, CELL - 20)
+		count.size = Vector2(CELL - 8, 16)
+		count.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_cells.append({"cell": cell, "icon": icon, "name": name_text,
-				"shade": shade, "left": left})
+				"shade": shade, "left": left, "count": count})
 
 	_queue_text = _text(13, box)
 	_queue_text.position = Vector2(0, -24)
@@ -2529,6 +2935,32 @@ func set_bar(bar: Array, strips: int = 1) -> void:
 		_cells[i]["cell"].tooltip_text = title
 		# Комірка мусить знати свою дію: інакше її не перетягнути.
 		_cells[i]["cell"].action = action
+	_fill_bar_counts()
+
+
+## Число на комірках із витратним (В-1). Кличеться і з розкладки панелі,
+## і з кожної нової торби від сервера — інакше число стояло б старе.
+## Скінчилось — «0» і притемнений значок: видно, що натиск нічого не дасть.
+func _fill_bar_counts() -> void:
+	for i in _cells.size():
+		var action: String = _bar[i] if i < _bar.size() else ""
+		var label: Label = _cells[i]["count"]
+		if not action.begins_with(Actions.ITEM_PREFIX):
+			label.text = ""
+			_cells[i]["icon"].modulate = Color(1, 1, 1, 1)
+			continue
+		var have := _stack_count(action.substr(Actions.ITEM_PREFIX.length()))
+		label.text = str(have)
+		label.modulate = Color(1, 0.45, 0.4) if have <= 0 else Color(1, 1, 1)
+		_cells[i]["icon"].modulate = Color(1, 1, 1, 0.35) if have <= 0 \
+				else Color(1, 1, 1, 1)
+
+
+func _stack_count(name: String) -> int:
+	for row: Dictionary in _stacks:
+		if str(row.get("назва", "")) == name:
+			return int(row.get("скільки", 0))
+	return 0
 
 
 ## Значок дії: скіл, витратна річ і голе вміння (удар, наступна ціль...)
@@ -2572,6 +3004,9 @@ func set_hp(id: int, hp: int) -> void:
 func set_target(id: int) -> void:
 	_target = id
 	_target_box.visible = id != 0
+	# Гравці — у додатних номерах; себе на обмін не кличуть.
+	_target_trade.visible = id > 0 \
+			and id != _world.multiplayer.get_unique_id()
 	if id != 0:
 		# Ім'я й колір беремо в світу: він знає, хто це і якої різниці
 		# рівнів. Показ не рахує нічого сам (П-08).
@@ -2823,6 +3258,8 @@ func _process(delta: float) -> void:
 		_cast_text.text = "%s   %.1f с" % [_cast_text.text.split("   ")[0],
 				_cast_left]
 	_move_floats(delta)
+	if _confirm_box != null:
+		_count_tick(delta)
 
 
 ## Числа шкоди тримаються над головою тієї істоти, якій вони належать.

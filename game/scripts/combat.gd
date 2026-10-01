@@ -56,9 +56,12 @@ func attack(me: int) -> bool:
 	if not victim.is_alive():
 		_link.notice(me, "неможливо застосувати на даному типі цілі")
 		return false
+	if _forbidden(me, a.target_id):
+		_link.notice(me, "своїх не б'ють")
+		return false
 	var dist: float = a.global_position.distance_to(victim.global_position)
 	if dist > a.ATTACK_RANGE:
-		_link.notice(me, "задалеко")
+		_out_of_reach(me, "attack")
 		return false
 
 	# Куди дивиться жертва — брати ДО того, як нападник розвернеться до
@@ -89,7 +92,7 @@ func attack(me: int) -> bool:
 		_link.notice(me,
 				"‼ зброя затупилась — її стати не діють, неси до коваля")
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
-	if a.target_id < 0 and me > 0:
+	if side(a.target_id) < 0 and side(me) > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
 	# Про зміну здоров'я знають лише ті, хто бачить постраждалого.
 	_link.to_watchers(a.target_id, &"client_hp", [a.target_id, victim.hp])
@@ -205,8 +208,11 @@ func cast(me: int, key: String) -> bool:
 		_link.notice(me, "не вистачає мани")
 		return false
 
-	var victims: Array = _victims_for(a, me, skill, level)
-	if victims.is_empty():
+	var victims: Array = _victims_for(a, me, skill, level,
+			Actions.SKILL_PREFIX + key)
+	# Скіл, що ще й прикликає (П-41), читається й без ворогів поруч: «море
+	# праху» в порожньому полі не б'є нікого, але мертві однаково встають.
+	if victims.is_empty() and not _summons_anyway(skill):
 		return false
 
 	# Мана списується НА ПОЧАТКУ читання. Якщо каст переб'ють, вона не
@@ -247,6 +253,8 @@ func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 	if skill.sends_home(level):
 		send_home(me)
 		_link.notice(me, "ти в місті")
+	if not skill.summon.is_empty() and on_summon.is_valid():
+		on_summon.call(me, skill.summon)
 	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
 			% [me, skill.name, level, victims.size(), a.mp])
 
@@ -268,8 +276,9 @@ func tick_casts(delta: float) -> void:
 		if skill == null:
 			continue
 		var victims: Array = _victims_for(a, id, skill, level)
-		_link.to_watchers(id, &"client_cast_end", [id, not victims.is_empty()])
-		if victims.is_empty():
+		var lands := not victims.is_empty() or _summons_anyway(skill)
+		_link.to_watchers(id, &"client_cast_end", [id, lands])
+		if not lands:
 			continue
 		_apply(id, a, skill, level, victims)
 
@@ -297,7 +306,11 @@ func _try_interrupt(victim: Node, id: int, hit: int) -> void:
 
 ## Кого зачепить скіл. Тут-таки й повідомлення про невдачу, бо причина
 ## залежить від типу цілі (П-42).
-func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
+##
+## `chase` — дія, яку треба догнати, якщо ціль вийшла з-під руки (В-2).
+## Порожня — наприкінці читання: мана вже списана, доганяти пізно.
+func _victims_for(a: Node, me: int, skill: Skill, level: int,
+		chase: String = "") -> Array:
 	# Клич чи стійка (П-150): б'є самого себе, дальність тут ні до чого.
 	if skill.target == "себе":
 		return [a]
@@ -311,7 +324,7 @@ func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
 		var friends: bool = skill.hits_friends()
 		var found: Array = []
 		for id in _creatures:
-			if id == me or ((id < 0) == (me < 0)) != friends:
+			if id == me or (side(id) == side(me)) != friends:
 				continue
 			var other: Node = _creatures[id]
 			if not other.is_alive():
@@ -329,8 +342,14 @@ func _victims_for(a: Node, me: int, skill: Skill, level: int) -> Array:
 	if not victim.is_alive():
 		_link.notice(me, "неможливо застосувати на даному типі цілі")
 		return []
+	if skill.power_share(level) > 0.0 and _forbidden(me, a.target_id):
+		_link.notice(me, "своїх не б'ють")
+		return []
 	if a.global_position.distance_to(victim.global_position) > reach:
-		_link.notice(me, "задалеко")
+		if chase != "":
+			_out_of_reach(me, chase)
+		else:
+			_link.notice(me, "задалеко")
 		return []
 	a.face_point(victim.global_position)
 	return [victim]
@@ -343,7 +362,7 @@ func _land(me: int, a: Node, victim: Node, power: float) -> void:
 	victim.hp = maxi(0, victim.hp - hit)
 	_mark_fight(a, victim)
 	_try_interrupt(victim, id, hit)
-	if id < 0 and me > 0:
+	if side(id) < 0 and side(me) > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
 	_link.to_watchers(id, &"client_hp", [id, victim.hp])
 	_link.to_watchers(id, &"client_damage", [id, hit, false])
@@ -375,6 +394,59 @@ var on_kill: Callable
 ## Кличеться після того, як убивця отримав своє (досвід, повага, дроп).
 ## Бій не знає ні про професії, ні про квести — рахунок убитих веде світ.
 var on_reward: Callable
+## Ціль вийшла з-під руки, поки летіла команда (В-2): (me, дія) -> void.
+## Світ каже клієнтові «доганяй» — рухом гравця керує клієнт, і саме він
+## доводить до цілі й тисне ту саму дію вдруге. Без цього дія тихо
+## викидалась із «задалеко», а гравець стояв, хоч ціль ступила лише крок.
+var on_out_of_reach: Callable
+
+
+## Скіл когось прикликав (П-41): (хто читав, {"вид","скільки","строк"}).
+## Ставить істот світ — бій вузлів не створює.
+var on_summon: Callable
+
+
+## Бік істоти: +1 — гравці й їхні прикликані, −1 — монстри. Раніше бік
+## був просто знаком номера; прикликаний — від'ємний номер, але свій.
+func side(id: int) -> int:
+	if id > 0:
+		return 1
+	var c: Node = _creatures.get(id)
+	if c != null and "owner_id" in c and int(c.owner_id) > 0:
+		return 1
+	return -1
+
+
+## Прикликання по площі не потребує ворогів. По одній цілі — потребує:
+## такий скіл спершу б'є ціль, і без неї читати нема що.
+func _summons_anyway(skill: Skill) -> bool:
+	return not skill.summon.is_empty() and skill.target != "жива"
+
+
+## Хто отримує винагороду за вбивство: гравець — сам, прикликаний — його
+## господар. 0 — ніхто (монстр).
+func payee(id: int) -> int:
+	if id > 0:
+		return id
+	var c: Node = _creatures.get(id)
+	if c != null and "owner_id" in c:
+		return int(c.owner_id)
+	return 0
+
+
+## Прикликаного не б'ють свої, і він не б'є своїх. Гравець гравця —
+## можна: це PvP зі своїми правилами (П-26).
+func _forbidden(me: int, victim_id: int) -> bool:
+	if me > 0 and victim_id > 0:
+		return false
+	return side(me) == side(victim_id)
+
+
+func _out_of_reach(me: int, action: String) -> void:
+	if me > 0 and on_out_of_reach.is_valid():
+		on_out_of_reach.call(me, action)
+	else:
+		_link.notice(me, "задалеко")
 
 
 func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
@@ -396,8 +468,10 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	print("[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
-	if me > 0 and victim_id < 0:
-		_reward(me, killer, victim)
+	# Гравець або його прикликаний убив монстра — винагорода гравцеві.
+	var paid := payee(me)
+	if paid > 0 and side(victim_id) < 0 and _creatures.has(paid):
+		_reward(paid, _creatures[paid], victim)
 	if on_kill.is_valid():
 		on_kill.call(victim_id, victim)
 

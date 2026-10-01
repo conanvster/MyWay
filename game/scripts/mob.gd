@@ -61,6 +61,13 @@ var _wander_wait := 0.0
 var _had_target := false
 
 
+## Чий це прикликаний (П-41). 0 — звичайний монстр. Прикликаний живе в
+## тих самих від'ємних номерах, але воює на боці гравців (`Combat.side`).
+var owner_id := 0
+## Скільки ще стоїть, перш ніж розсипатись.
+var summon_left := 0.0
+
+
 func setup(at: Vector3, of_kind: int, is_aggressive: bool,
 		tuning: Dictionary = {}) -> void:
 	home = at

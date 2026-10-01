@@ -52,6 +52,10 @@ var spawner: Spawner
 ## Крамар: асортимент, ціни й перевірки торгівлі (П-132).
 var shop: Shop
 var warehouse: Warehouse
+## Обмін між гравцями (П-218): відкриті столи й запрошення.
+var trade: Trade
+## Прикликані істоти (П-41).
+var summons: Summons
 var runes: Runes
 ## Відкриті підземелля за порталами святинь (П-190).
 var dungeons: Dungeons
@@ -103,6 +107,8 @@ func _ready() -> void:
 	combat.ground_height = ground_at
 	combat.on_kill = _on_kill
 	combat.on_reward = _on_reward
+	combat.on_out_of_reach = func(me: int, action: String) -> void:
+			rpc_id(me, "client_chase", action)
 	# Куди вертає оживлення й скіл «повернутися в місто»: центр першого
 	# міста мапи. У версії 1 і 2 це (0,0) — столиця там навмисно, — але
 	# число тепер із даних, а не зашите в коді.
@@ -121,6 +127,11 @@ func _ready() -> void:
 	spawner = Spawner.new(creatures, self, data)
 	shop = Shop.new(data)
 	warehouse = Warehouse.new()
+	trade = Trade.new()
+	trade.names = _names
+	summons = Summons.new(creatures, combat, data, spawn, remove)
+	combat.on_summon = func(me: int, what: Dictionary) -> void:
+			summons.request(me, what)
 	runes = Runes.new(data.skills, data.professions)
 	view = ClientView.new(creatures, self, link)
 	dungeons = Dungeons.new()
@@ -226,9 +237,18 @@ func _mark_ready() -> void:
 ## клієнт до нього не дотягнеться.
 const RANGE_KIND := 2
 const RANGE_STEPS: Array[float] = [5.0, 14.0, 23.0]
+## Заєць полігона встає знову на своєму місці (В-5). Без цього показ
+## крамаря, що полює на 30 монет, залежав від везіння: з трьох зайців
+## гроші інколи падали лише з одного (заміряно 21.09.2026: 28 і 24
+## монети — «торгівля не дійшла до кінця»). Перевіряти треба крамаря, а
+## не дроп, тож зайців стає скільки треба, а не три на весь прогін.
+const RANGE_RESPAWN := 6.0
+var _range_on := false
+var _range_wait: Dictionary = {}
 
 
 func _range() -> void:
+	_range_on = true
 	for i in RANGE_STEPS.size():
 		var at := Vector3(RANGE_STEPS[i], 0.0, 0.0)
 		at.y = ground_at(at.x, at.z) + 1.0
@@ -237,6 +257,26 @@ func _range() -> void:
 	print("[полігон] %s, штук %d, найближчий за %.1f м"
 			% [data.for_kind(RANGE_KIND).get("назва", "?"),
 			   RANGE_STEPS.size(), RANGE_STEPS[0]])
+
+
+## Труп зайця прибрано — за `RANGE_RESPAWN` секунд він знову на місці.
+func _tick_range(delta: float) -> void:
+	if not _range_on:
+		return
+	for i in RANGE_STEPS.size():
+		var id := -(i + 1)
+		if creatures.has(id):
+			_range_wait.erase(id)
+			continue
+		_range_wait[id] = float(_range_wait.get(id, RANGE_RESPAWN)) - delta
+		if float(_range_wait[id]) > 0.0:
+			continue
+		_range_wait.erase(id)
+		var at := Vector3(RANGE_STEPS[i], 0.0, 0.0)
+		at.y = ground_at(at.x, at.z) + 1.0
+		var mob: Node = spawn(id, at)
+		mob.setup(at, RANGE_KIND, false, data.for_kind(RANGE_KIND))
+		print("[полігон] заєць %d знову на %.0f м" % [id, RANGE_STEPS[i]])
 
 
 ## Сервер іде — мітку прибираємо. На цьому не можна будувати: заміряно
@@ -283,7 +323,9 @@ func _physics_process(delta: float) -> void:
 			a.server_step(delta)
 		for id in creatures:
 			if id < 0:
-				mobs.think(id, delta)
+				# Прикликаний думає сам (`Summons.tick`), не як монстр.
+				if not summons.is_summon(id):
+					mobs.think(id, delta)
 			else:
 				actions.pump(id)
 		combat.tick_casts(delta)
@@ -297,6 +339,9 @@ func _physics_process(delta: float) -> void:
 		_tick_clearing(delta)
 		_tick_grace_places()
 		_tick_water(delta)
+		_tick_trade(delta)
+		summons.tick(delta)
+		_tick_range(delta)
 		if store != null and store.due(delta):
 			_save_everyone()
 		# Числа правляться в data/*.json під час гри: помітив зміну —
@@ -2020,9 +2065,9 @@ func ask_sell(at: int, thing_at: int) -> void:
 	_after_bag(id, a)
 
 
-## Продати складану річ — увесь стос одразу.
+## Продати складану річ: скільки — вибрав гравець − / + (П-164).
 @rpc("any_peer", "call_remote", "reliable")
-func ask_sell_stack(at: int, name: String) -> void:
+func ask_sell_stack(at: int, name: String, count: int = -1) -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -2030,9 +2075,10 @@ func ask_sell_stack(at: int, name: String) -> void:
 	if who == null or not who.trades():
 		return
 	var a: Node = creatures.get(id)
-	var count := int(a.items.get(name, 0))
+	if count < 0:
+		count = int(a.items.get(name, 0))
 	var paid := shop.buy_price(name) * count
-	var why: String = shop.sell_stack(a, name)
+	var why: String = shop.sell_stack(a, name, count)
 	if why != "":
 		link.notice(id, why)
 		return
@@ -2087,7 +2133,7 @@ func ask_withdraw_thing(at: int, thing_at: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func ask_store_stack(at: int, name: String) -> void:
+func ask_store_stack(at: int, name: String, count: int = -1) -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -2095,7 +2141,7 @@ func ask_store_stack(at: int, name: String) -> void:
 	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
-	var why: String = warehouse.store_stack(a, name)
+	var why: String = warehouse.store_stack(a, name, count)
 	if why != "":
 		link.notice(id, why)
 		return
@@ -2103,7 +2149,7 @@ func ask_store_stack(at: int, name: String) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func ask_withdraw_stack(at: int, name: String) -> void:
+func ask_withdraw_stack(at: int, name: String, count: int = -1) -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -2111,11 +2157,174 @@ func ask_withdraw_stack(at: int, name: String) -> void:
 	if who == null or not who.keeps():
 		return
 	var a: Node = creatures.get(id)
-	var why: String = warehouse.withdraw_stack(a, name)
+	var why: String = warehouse.withdraw_stack(a, name, count)
 	if why != "":
 		link.notice(id, why)
 		return
 	_after_warehouse(id, a, at)
+
+
+# ── обмін між гравцями (П-218) ───────────────────────────────────────
+#
+# Логіка — `Trade`; тут лише хто що попросив і кому що сказати.
+
+## Покликати ціль на обмін.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_invite(to: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	if to <= 0:
+		link.notice(id, "міняються лише з гравцями")
+		return
+	var why: String = trade.invite(id, to, creatures.get(id),
+			creatures.get(to))
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "запрошення до обміну надіслано: %s"
+			% _names.get(to, "гравець"))
+	rpc_id(to, "client_trade_invite", str(_names.get(id, "гравець")),
+			Trade.INVITE_TIME)
+
+
+## Відповідь на запрошення.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_answer(yes: bool) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var from: int = trade.invited_by(id)
+	if not yes:
+		trade.decline(id)
+		if from != 0:
+			link.notice(from, "%s відмовився від обміну"
+					% _names.get(id, "гравець"))
+		return
+	var why: String = trade.accept(id, creatures.get(from), creatures.get(id))
+	if why != "":
+		link.notice(id, why)
+		if from != 0:
+			link.notice(from, "обмін не відкрився: %s" % why)
+		return
+	_send_table(id)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_offer_thing(thing_at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	_trade_reply(id, trade.offer_thing(id, creatures.get(id), thing_at))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_offer_stack(name: String, count: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	_trade_reply(id, trade.offer_stack(id, creatures.get(id), name, count))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_take_back_thing(at_on_table: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	_trade_reply(id, trade.take_back_thing(id, at_on_table))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_take_back_stack(name: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	_trade_reply(id, trade.take_back_stack(id, name))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_agree() -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var other: int = trade.partner(id)
+	if other == 0:
+		return
+	var a: Node = creatures.get(id)
+	var b: Node = creatures.get(other)
+	var why: String = trade.agree(id, a, b)
+	if why == "":
+		_send_table(id)
+		return
+	if why == "обмінено":
+		for one: int in [id, other]:
+			rpc_id(one, "client_trade_closed", "")
+			link.notice(one, "обмін відбувся")
+			_after_bag(one, creatures.get(one))
+		return
+	# Відмова: стіл міг і вціліти (задалеко — ще можна підійти), і
+	# закритись (річ зникла). Кажемо обом і показуємо, що лишилось.
+	if trade.busy(id):
+		link.notice(id, why)
+		_send_table(id)
+	else:
+		_trade_closed(id, why)
+		_trade_closed(other, why)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_trade_cancel() -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var other: int = trade.close(id) if trade.busy(id) else 0
+	rpc_id(id, "client_trade_closed", "обмін скасовано")
+	if other != 0:
+		_trade_closed(other, "%s скасував обмін" % _names.get(id, "гравець"))
+
+
+func _trade_reply(id: int, why: String) -> void:
+	if why != "":
+		link.notice(id, why)
+	if trade.busy(id):
+		_send_table(id)
+
+
+## Показати стіл обом. Свої речі на столі несуть свій номер у торбі —
+## щоб вікно не пропонувало покласти ту саму річ удруге.
+func _send_table(id: int) -> void:
+	for one: int in [id, trade.partner(id)]:
+		if one == 0 or not creatures.has(one):
+			continue
+		var table: Dictionary = trade.table_of(one)
+		var me: Node = creatures[one]
+		for row: Dictionary in table["моє"]:
+			if row.has("на столі"):
+				row["номер"] = me.things.find(
+						trade.thing_on_table(one, int(row["на столі"])))
+		send_things(one)
+		rpc_id(one, "client_trade_table",
+				str(_names.get(trade.partner(one), "гравець")), table)
+
+
+func _trade_closed(id: int, why: String) -> void:
+	if not creatures.has(id):
+		return
+	rpc_id(id, "client_trade_closed", why)
+	if why != "":
+		link.notice(id, why)
+
+
+func _tick_trade(delta: float) -> void:
+	var res: Dictionary = trade.tick(delta, creatures)
+	for row: Array in res["зламані"]:
+		_trade_closed(int(row[0]), "обмін перервано: %s" % row[2])
+		_trade_closed(int(row[1]), "обмін перервано: %s" % row[2])
+	for row: Array in res["прострочені"]:
+		link.notice(int(row[1]), "%s не відповів на обмін"
+				% _names.get(int(row[0]), "гравець"))
+		if creatures.has(int(row[0])):
+			rpc_id(int(row[0]), "client_trade_invite_gone")
 
 
 # ── гільдія: вивчення й підняття рівня скілів (крок 5, П-145) ───────
@@ -2424,6 +2633,12 @@ func send_stats(id: int) -> void:
 func _on_left(id: int) -> void:
 	# Зберегти ДО того, як істота зникне: інакше зберігати вже нічого.
 	_save_one(id)
+	# Стіл обміну закривається, а не висить: другий лишився б сам на сам
+	# із вікном, у якому вже ніхто не відповість.
+	summons.dismiss(id)
+	var other: int = trade.forget(id)
+	if other != 0:
+		_trade_closed(other, "%s вийшов із гри" % _names.get(id, "гравець"))
 	_names.erase(id)
 	_signed.erase(id)
 	_stats_mark.erase(id)
@@ -2505,19 +2720,40 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_buy", at, name))
 		hud.wants_sell.connect(func(at: int, thing_at: int) -> void:
 				rpc_id(1, "ask_sell", at, thing_at))
-		hud.wants_sell_stack.connect(func(at: int, name: String) -> void:
-				rpc_id(1, "ask_sell_stack", at, name))
+		hud.wants_sell_stack.connect(
+				func(at: int, name: String, count: int) -> void:
+				rpc_id(1, "ask_sell_stack", at, name, count))
 		# Склад і гільдія (П-145) — та сама «спитай, сервер вирішить».
 		hud.wants_warehouse.connect(func(at: int) -> void:
 				rpc_id(1, "ask_warehouse", at))
 		hud.wants_store_thing.connect(func(at: int, thing_at: int) -> void:
 				rpc_id(1, "ask_store_thing", at, thing_at))
-		hud.wants_store_stack.connect(func(at: int, name: String) -> void:
-				rpc_id(1, "ask_store_stack", at, name))
+		hud.wants_store_stack.connect(
+				func(at: int, name: String, count: int) -> void:
+				rpc_id(1, "ask_store_stack", at, name, count))
 		hud.wants_withdraw_thing.connect(func(at: int, thing_at: int) -> void:
 				rpc_id(1, "ask_withdraw_thing", at, thing_at))
-		hud.wants_withdraw_stack.connect(func(at: int, name: String) -> void:
-				rpc_id(1, "ask_withdraw_stack", at, name))
+		hud.wants_withdraw_stack.connect(
+				func(at: int, name: String, count: int) -> void:
+				rpc_id(1, "ask_withdraw_stack", at, name, count))
+		# Обмін між гравцями (П-218).
+		hud.wants_trade_invite.connect(func(to: int) -> void:
+				rpc_id(1, "ask_trade_invite", to))
+		hud.wants_trade_answer.connect(func(yes: bool) -> void:
+				rpc_id(1, "ask_trade_answer", yes))
+		hud.wants_trade_offer_thing.connect(func(thing_at: int) -> void:
+				rpc_id(1, "ask_trade_offer_thing", thing_at))
+		hud.wants_trade_offer_stack.connect(
+				func(name: String, count: int) -> void:
+				rpc_id(1, "ask_trade_offer_stack", name, count))
+		hud.wants_trade_take_back_thing.connect(func(at: int) -> void:
+				rpc_id(1, "ask_trade_take_back_thing", at))
+		hud.wants_trade_take_back_stack.connect(func(name: String) -> void:
+				rpc_id(1, "ask_trade_take_back_stack", name))
+		hud.wants_trade_agree.connect(func() -> void:
+				rpc_id(1, "ask_trade_agree"))
+		hud.wants_trade_cancel.connect(func() -> void:
+				rpc_id(1, "ask_trade_cancel"))
 		hud.wants_guild.connect(func(at: int) -> void:
 				rpc_id(1, "ask_guild", at))
 		hud.wants_bless.connect(func(at: int) -> void:
@@ -2668,6 +2904,8 @@ func client_things(things: Array, stacks: Array) -> void:
 	if hud != null:
 		hud.set_things(things, stacks)
 	# Показ дивиться на гроші, щоб не йти до крамаря з порожньою кишенею.
+	# Віддав усі — стосу «гроші» в торбі немає, і число мусить стати 0.
+	view.money = 0
 	for row: Dictionary in stacks:
 		if str(row.get("назва", "")) == "гроші":
 			view.money = int(row.get("скільки", 0))
@@ -2688,6 +2926,41 @@ func client_skills(list: Array) -> void:
 func client_stats(data: Dictionary) -> void:
 	if hud != null:
 		hud.set_stats(data)
+
+
+## Ціль вийшла з-під руки, поки летів удар (В-2): доганяй і бий знову.
+@rpc("authority", "call_remote", "reliable")
+func client_chase(action: String) -> void:
+	view.chase(action)
+
+
+## Обмін (П-218): кличуть, стіл змінився, стіл закрито.
+@rpc("authority", "call_remote", "reliable")
+func client_trade_invite(from: String, _wait: float) -> void:
+	if view.trade_invited():
+		return
+	if hud != null:
+		hud.ask_trade_invite(from)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_trade_invite_gone() -> void:
+	if hud != null:
+		hud.trade_invite_gone()
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_trade_table(with: String, table: Dictionary) -> void:
+	view.trade_table(table)
+	if hud != null:
+		hud.show_trade(with, table)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_trade_closed(why: String) -> void:
+	view.trade_closed(why)
+	if hud != null:
+		hud.hide_trade()
 
 
 ## Скільки в істоти здоров'я всього — щоб смуга цілі мала від чого рахувати.

@@ -17,23 +17,35 @@ func within(who: Node3D, resident: Node3D) -> bool:
 
 # ── складані ─────────────────────────────────────────────────────────
 
-## Покласти весь стос складаної речі на склад.
-func store_stack(who: Node, name: String) -> String:
+## Покласти `count` штук складаної речі на склад; −1 — увесь стос.
+## Число вибирається − / + (П-164).
+func store_stack(who: Node, name: String, count: int = -1) -> String:
 	var have := int(who.items.get(name, 0))
 	if have <= 0:
 		return "такої речі немає"
-	who.take_item(name, have)
-	who.warehouse_items[name] = int(who.warehouse_items.get(name, 0)) + have
+	if count < 0:
+		count = have
+	if count == 0 or count > have:
+		return "стільки немає: є %d" % have
+	who.take_item(name, count)
+	who.warehouse_items[name] = int(who.warehouse_items.get(name, 0)) + count
 	return ""
 
 
-## Забрати весь стос складаної речі зі складу.
-func withdraw_stack(who: Node, name: String) -> String:
+## Забрати `count` штук складаної речі зі складу; −1 — увесь стос.
+func withdraw_stack(who: Node, name: String, count: int = -1) -> String:
 	var have := int(who.warehouse_items.get(name, 0))
 	if have <= 0:
 		return "на складі цього немає"
-	who.warehouse_items.erase(name)
-	who.give_item(name, have)
+	if count < 0:
+		count = have
+	if count == 0 or count > have:
+		return "стільки на складі немає: є %d" % have
+	if count == have:
+		who.warehouse_items.erase(name)
+	else:
+		who.warehouse_items[name] = have - count
+	who.give_item(name, count)
 	return ""
 
 

@@ -92,6 +92,7 @@ start_server() {
 cleanup() {
     [ -n "$own_server" ] && kill "$own_server" 2>/dev/null
     [ -n "${own_client:-}" ] && kill "$own_client" 2>/dev/null
+    [ -n "${own_client2:-}" ] && kill "$own_client2" 2>/dev/null
     return 0
 }
 trap cleanup EXIT INT TERM
@@ -363,6 +364,73 @@ $sell_amount, очікував $expect"
     fi
 }
 
+# ── обмін між гравцями (П-218) ────────────────────────────────────────
+#
+# Два справжні клієнти через справжній сервер: ведучий (`--веде`) полює
+# до перших грошей, другий ходить слідом. Тоді ведучий кличе на обмін,
+# кладе всі гроші на стіл, обидва згоджуються. Звіряємо: скільки віддав
+# один — стільки ж отримав другий, а сервер записав обмін у журнал.
+run_trade() {
+    head_of "Обмін між гравцями: запросити, покласти, обидва згодні"
+    stop_server
+    start_server "$logs/server-trade.log" --полігон \
+        || { say_bad "сервер не піднявся"; return; }
+    : > "$logs/trade-lead.log"
+    : > "$logs/trade-follow.log"
+    godot --headless --path game -- --демо --обмін --веде "$test_world" \
+        > "$logs/trade-lead.log" 2>&1 &
+    own_client=$!
+    sleep 2
+    godot --headless --path game -- --демо --обмін "$test_world" \
+        > "$logs/trade-follow.log" 2>&1 &
+    own_client2=$!
+    local waited=0
+    while [ "$waited" -lt 120 ]; do
+        if grep -q '\[обмін\] показ закінчив' "$logs/trade-lead.log" \
+            && grep -q '\[обмін\] показ закінчив' "$logs/trade-follow.log"
+        then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    kill "$own_client" "$own_client2" 2>/dev/null
+    wait "$own_client" "$own_client2" 2>/dev/null
+    own_client=""
+    own_client2=""
+    printf '    (обмін зайняв %d с)\n' "$waited"
+
+    local gave before_follow after_follow
+    gave=$(grep -m1 -o 'показ закінчив: віддав [0-9]*' "$logs/trade-lead.log" \
+        | grep -o '[0-9]*$')
+    after_follow=$(grep -m1 -o 'показ закінчив: отримав, грошей тепер [0-9]*' \
+        "$logs/trade-follow.log" | grep -o '[0-9]*$')
+    if [ -z "$gave" ] || [ -z "$after_follow" ]; then
+        say_bad "обмін не дійшов до кінця за 120 с"
+        grep -h '\[обмін\]\|\[гра\]' "$logs/trade-lead.log" \
+            "$logs/trade-follow.log" | tail -6 | sed 's/^/      /'
+        return
+    fi
+    say_ok "ведучий віддав $gave грошей, у другого стало $after_follow"
+    grep -q 'показ закінчив: віддав [0-9]*, грошей тепер 0' \
+        "$logs/trade-lead.log" \
+        && say_ok "у ведучого лишилось 0" \
+        || say_bad "у ведучого гроші не зникли: $(grep -m1 -o \
+            'показ закінчив.*' "$logs/trade-lead.log")"
+    before_follow=0
+    [ "$after_follow" -eq "$((before_follow + gave))" ] \
+        && say_ok "гроші зійшлись: $gave → $after_follow" \
+        || say_bad "гроші не зійшлись: віддав $gave, отримав $after_follow"
+    grep -q '\[обмін\].*гроші ×'"$gave" "$logs/server-trade.log" \
+        && say_ok "сервер записав обмін у журнал" \
+        || say_bad "у журналі сервера немає рядка [обмін]"
+    if grep -q 'ERROR' "$logs/trade-lead.log" "$logs/trade-follow.log"; then
+        say_bad "у журналах клієнтів є помилки:"
+        grep -h -m3 'ERROR' "$logs/trade-lead.log" "$logs/trade-follow.log" \
+            | sed 's/^/      /'
+    fi
+}
+
 # ── пам'ять не росте ──────────────────────────────────────────────────
 #
 # Найдорожча вада проєкту була саме така: вічний цикл у показі набирав по
@@ -426,6 +494,9 @@ case "$mode" in
     --лінт)
         run_lint
         ;;
+    --обмін)
+        run_trade
+        ;;
     --швидко)
         run_lint
         run_server
@@ -438,6 +509,7 @@ case "$mode" in
         run_screen
         run_fight
         run_shop
+        run_trade
         run_memory
         ;;
 esac

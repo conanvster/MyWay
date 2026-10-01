@@ -66,6 +66,9 @@ var stage := 1
 var branch := ""
 ## Чи вміння обов'язкове (основний ланцюг) чи допоміжне.
 var mandatory := true
+## Прикликання (П-41): {"вид", "скільки", "строк"}. Порожньо — скіл нікого
+## не кличе. Діє ДОДАТКОМ до решти скіла (шкоди, стану).
+var summon: Dictionary = {}
 ## Із яких двох умінь це виходить синтезом. Порожньо — не синтез.
 var synthesis: Array = []
 
@@ -98,6 +101,7 @@ static func from_data(of_key: String, data: Dictionary) -> Skill:
 	s.profession = str(data.get("професія", ""))
 	s.stage = int(data.get("етап", 1))
 	s.branch = str(data.get("гілка", ""))
+	s.summon = data.get("прикликає", {})
 	s.mandatory = bool(data.get("обовязковий", true))
 	s.synthesis = data.get("синтез", [])
 	return s

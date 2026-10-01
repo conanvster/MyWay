@@ -37,8 +37,17 @@ func _refresh_players() -> void:
 	_players_frame = frame
 	_players.clear()
 	for other in _creatures:
-		if other > 0 and _creatures[other].is_alive():
+		if _is_player_side(other) and _creatures[other].is_alive():
 			_players[other] = _creatures[other]
+
+
+## Гравець або чийсь прикликаний (П-41): монстр мітить і тих, і тих —
+## інакше прикликаний бив би його безкарно.
+func _is_player_side(id: int) -> bool:
+	if id > 0:
+		return true
+	var c: Node = _creatures.get(id)
+	return c != null and "owner_id" in c and int(c.owner_id) > 0
 
 
 func _far_from_all(m: Node3D, players: Dictionary) -> bool:
@@ -65,7 +74,7 @@ func think(id: int, delta: float) -> void:
 		m.asleep = false
 	else:
 		for other in _creatures:
-			if other > 0 and _creatures[other].is_alive():
+			if _is_player_side(other) and _creatures[other].is_alive():
 				players[other] = _creatures[other]
 
 	# Відбіг задалеко від дому — розвертається й геть забуває кривдника.
@@ -126,7 +135,7 @@ func call_for_help(id: int, victim: int) -> int:
 	var m: Node = _creatures[id]
 	var called := 0
 	for other in _creatures:
-		if other >= 0:
+		if _is_player_side(other):
 			continue
 		var o: Node = _creatures[other]
 		if o.is_alive() and o.hears(m, m.global_position):

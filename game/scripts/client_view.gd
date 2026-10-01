@@ -51,6 +51,8 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_demo = OS.get_cmdline_user_args().has("--демо")
 	_windows = OS.get_cmdline_user_args().has("--вікна")
 	_shop_demo = OS.get_cmdline_user_args().has("--крамар")
+	_trade_demo = OS.get_cmdline_user_args().has("--обмін")
+	_trade_lead = OS.get_cmdline_user_args().has("--веде")
 
 
 var _demo := false
@@ -74,6 +76,23 @@ const SHOP_DEMO_PAUSE := 0.8
 ## Річ, якої показ ніколи не подужає: на неї треба 300, а він приходить
 ## із сімдесятьма. Відмову сервера перевіряємо саме нею.
 const SHOP_DEMO_DEAR := "благословенний кристал душі"
+
+## Показ обміну (П-218): два клієнти, `--обмін --веде` і просто
+## `--обмін`. Ведучий полює до перших грошей, другий ходить за ним
+## слідом і в бій не лізе. Тоді ведучий кличе на обмін, кладе всі гроші,
+## обидва згоджуються — і кожен друкує, скільки грошей у нього стало.
+## Шле ті самі прохання, що й кнопки вікна обміну.
+var _trade_demo := false
+var _trade_lead := false
+var _trade_done := false
+var _trade_left := 0.0
+var _trade_gave := 0
+var _trade_table: Dictionary = {}
+var _trade_asked_agree := false
+const TRADE_DEMO_NEAR := 2.5
+## Де міняються: по другий бік від зайців полігона (вони на +x).
+const TRADE_DEMO_SPOT := Vector3(-12.0, 0.0, 0.0)
+const TRADE_DEMO_EVERY := 2.0
 
 ## Скільки грошей у торбі. Каже сервер разом із речами; показ дивиться на
 ## це число, щоб не йти до крамаря з порожньою кишенею.
@@ -519,6 +538,8 @@ func demo(delta: float) -> void:
 		return
 	# Крамар старший за полювання: назбирав грошей — іди витрать.
 	if _demo_shop(delta):
+		return
+	if _demo_trade(delta):
 		return
 	# У режимі показу гравець ще й іде до найближчого монстра — інакше
 	# він стоїть на місці й на всі удари відповідає «задалеко».
@@ -988,11 +1009,110 @@ func _demo_shop(delta: float) -> bool:
 		5:
 			_link.to_server(&"ask_buy", [at, SHOP_DEMO_GOODS])
 		6:
-			_link.to_server(&"ask_sell_stack", [at, SHOP_DEMO_GOODS])
+			_link.to_server(&"ask_sell_stack", [at, SHOP_DEMO_GOODS, -1])
 		_:
 			_shop_done = true
 			print("[крамар] показ закінчив торгувати")
 	return true
+
+
+## Показ обміну. Повертає true, поки зайнятий ним (полювання стоїть).
+func _demo_trade(delta: float) -> bool:
+	if not _trade_demo or _trade_done:
+		return false
+	# Ведучий полює, доки не має грошей і доки його ціль жива: кинута
+	# недобита ціль б'є в спину, і ведучий гине посеред обміну (перший
+	# прогін — «мертві не міняються»). Тоді відходить до місця обміну —
+	# убік від зайців полігона: вони відроджуються (В-5), і чекати
+	# порожнього поля не можна.
+	if _trade_lead and _trade_table.is_empty() \
+			and (money < 1 or _target_alive()):
+		return false
+	var me: Node = _me()
+	if _trade_lead:
+		var spot := Vector3(TRADE_DEMO_SPOT.x, me.global_position.y,
+				TRADE_DEMO_SPOT.z)
+		if me.global_position.distance_to(spot) > 1.5:
+			me.walk_to = spot
+			return true
+	var other: Node3D = null
+	for id: int in _creatures:
+		if id > 0 and id != _world.multiplayer.get_unique_id():
+			other = _creatures[id]
+	if other == null:
+		me.walk_to = Vector3.ZERO
+		return true
+	if me.global_position.distance_to(other.global_position) > TRADE_DEMO_NEAR:
+		if not _trade_lead:
+			me.walk_to = other.global_position
+		return true
+	me.walk_to = Vector3.ZERO
+	if not _trade_lead:
+		return true
+
+	_trade_left -= delta
+	if _trade_left > 0.0:
+		return true
+	_trade_left = TRADE_DEMO_EVERY
+	if _trade_table.is_empty():
+		# Кличемо, доки не відкриється стіл: другий міг бути ще в бою
+		# чи задалеко, і сервер тоді відмовляє — це не вада.
+		var other_id := 0
+		for id: int in _creatures:
+			if _creatures[id] == other:
+				other_id = id
+		_link.to_server(&"ask_trade_invite", [other_id])
+		return true
+	if Array(_trade_table.get("моє", [])).is_empty():
+		_trade_gave = money
+		print("[обмін] показ: кладу гроші ×%d" % money)
+		_link.to_server(&"ask_trade_offer_stack", ["гроші", money])
+		return true
+	return true
+
+
+## Ціль ведучого ще жива — бій не скінчено.
+func _target_alive() -> bool:
+	var me: Node = _me()
+	var target: Node = _creatures.get(me.target_id) if me.target_id != 0 \
+			else null
+	return target != null and target.is_alive()
+
+
+## Сервер покликав на обмін — у показі погоджуємось.
+func trade_invited() -> bool:
+	if not _trade_demo:
+		return false
+	_link.to_server(&"ask_trade_answer", [true])
+	return true
+
+
+## Стіл змінився. Показ згоджується, щойно на столі лежить те, чого
+## чекали: ведучий — свої гроші, другий — гроші ведучого.
+func trade_table(table: Dictionary) -> void:
+	if not _trade_demo:
+		return
+	_trade_table = table
+	var side: Array = table.get("моє" if _trade_lead else "їхнє", [])
+	if side.is_empty() or bool(table.get("я згоден", false)):
+		return
+	print("[обмін] показ: на столі %s, згоден" % [side])
+	_link.to_server(&"ask_trade_agree", [])
+
+
+func trade_closed(why: String) -> void:
+	if not _trade_demo or _trade_table.is_empty():
+		return
+	_trade_table = {}
+	if why != "":
+		print("[обмін] показ: стіл закрито — %s" % why)
+		return
+	_trade_done = true
+	# Гроші приходять окремо, слідом за закриттям, — чекаємо їх.
+	await _world.get_tree().create_timer(1.0).timeout
+	print("[обмін] показ закінчив: %s, грошей тепер %d"
+			% ["віддав %d" % _trade_gave if _trade_lead else "отримав",
+			   money])
 
 
 ## Перший крамар у краєвиді. Мешканців мало й вони не з'являються на ходу,
@@ -1050,9 +1170,46 @@ func _reach_of(action: String) -> float:
 	return skill.range_at(1)
 
 
+## Сервер сказав: ціль вийшла з-під руки, поки летіла дія (В-2). Беремо
+## ту саму комірку й доганяємо, як після натискання на далеку ціль. Щоб
+## не бігати по колу, коли клієнт і сервер бачать відстань по-різному,
+## поспіль доганяємо не більше `CHASE_MAX` разів — далі чесне «задалеко».
+func chase(action: String) -> void:
+	var me: Node = _me()
+	var slot := _bar.find(action)
+	if me == null or slot < 0 or me.target_id == 0:
+		_say("задалеко")
+		return
+	var target: Node3D = _creatures.get(me.target_id)
+	if target == null or not target.is_alive():
+		return
+	_chases += 1
+	if _chases > CHASE_MAX:
+		_chases = 0
+		_say("задалеко")
+		return
+	_wait_talk = -1
+	_wait_slot = slot
+	_wait_shift = false
+	_wait_target = me.target_id
+	_wait_range = _reach_of(action) * CHASE_MARGIN
+	_wait_left = REACH_TIME
+	me.walk_to = target.global_position
+	print("[гра] ціль відступила — доганяю")
+
+
+## Скільки разів поспіль догнали без жодного натискання гравця.
+var _chases := 0
+const CHASE_MAX := 3
+## Доганяємо ближче, ніж при звичайному підході: ціль уже раз утекла
+## з-під руки, і рівно на межі вона втече знову.
+const CHASE_MARGIN := 0.6
+
+
 func use_slot(slot: int, shift: bool) -> void:
 	_wait_slot = -1
 	_wait_talk = -1
+	_chases = 0
 	var me: Node = _me()
 	var action: String = _bar[slot] if slot < _bar.size() else ""
 	var need := _reach_of(action)

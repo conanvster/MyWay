@@ -84,7 +84,8 @@ NEG_ELF = ", long ears, huge ears, dark hair, black hair, brown hair, " \
 # Відкинуті замовником варіанти: ім'я -> новий seed (старі seed 7102,
 # 7111–7113, 7202, 7203, 7211, 7213). Решта лишається як була.
 NOVI = {
-    "орк-чоловік-v2": 8102,
+    "орк-чоловік-v1": 9101, "орк-чоловік-v2": 9102,
+    "орк-чоловік-v3": 9103,
     "орк-жінка-v1": 9111, "орк-жінка-v2": 9112, "орк-жінка-v3": 9113,
     "ельф-чоловік-v2": 8202, "ельф-чоловік-v3": 8203,
     "ельф-жінка-v1": 8211, "ельф-жінка-v3": 8213,
@@ -154,6 +155,32 @@ NEG_ZAMOVNYKA = ("cartoon, anime, chibi, stylized, toy, Shrek, Fiona, Pixar, "
                  "Disney, animated movie, cropped feet, cropped head, text, "
                  "watermark, nude, naked, topless, nsfw")
 # Додаткові ряди: (раса, стать) -> (заголовок, [(ім'я, промт, seed, негатив)]).
+# Орки-чоловіки — з налаштуваннями орчиць (слово замовника 01.10.2026:
+# «перегенеруй орка чоловіка з налаштуваннями від орка жінки, фон в
+# референсах не обов'язковий»). Тло — однотонне темне: фігуру видно, і
+# для 3D зручніше.
+OSOBLYVI[("орк", "male")] = (
+    "Dark fantasy RPG character concept art, full-body portrait of a "
+    "realistic male orc warrior, %s. Body: a grim powerful orc man about "
+    "1.9 m tall, muted olive green-brown skin with a rough weathered "
+    "pore-detailed texture and old scars, a heavy brow, a broad strong "
+    "jaw, prominent lower tusks jutting from the lower lip, short pointed "
+    "ears, a coarse stern scowling face, long thick dark hair in several "
+    "braids, a short rough beard, a massive heavily muscled build with "
+    "broad shoulders, a thick neck and powerful arms and legs. Clothing: "
+    "dark worn leather and iron armour: a leather breastplate with "
+    "riveted iron plates, fur-trimmed leather pauldrons, leather bracers, "
+    "a wide belt with pouches, leather trousers, heavy fur-topped leather "
+    "boots, a ragged dark cloak behind. Hands empty, relaxed natural "
+    "stance. Setting: a plain dark neutral background with soft "
+    "atmospheric haze. Atmosphere: gritty and realistic like a live-action "
+    "film, cinematic lighting, photorealistic skin, leather and metal, "
+    "high detail texture, 8k resolution, Unreal Engine 5 style rendering."
+    % KUT,
+    NEG.replace("armor, ", "") + ", Shrek, Pixar, Disney, animated movie, "
+    "cute, chubby cheeks, bright green skin, smooth plastic skin, elf, "
+    "beautiful model face")
+
 # Ряд за промтом замовника (seed 9201–9203) відкинуто ним самим: «це
 # неприйнятно» — огрядні жінки з людською шкірою, не орчиці. Кадри — у
 # vidkynuti/, промт лишено як запис, що не спрацювало.
@@ -274,6 +301,12 @@ def zibraty():
     stari = STORINKA.read_text(encoding="utf-8")
     holova = stari[:stari.index("<main>")]
     khvist = stari[stari.index("</main>"):]
+    # Розділ дерев (`tools/dereva_test.py`) живе між своїми мітками —
+    # перебудова рас його не губить.
+    if "<!-- дерева -->" in stari:
+        a = stari.index("<!-- дерева -->")
+        b = stari.index("<!-- /дерева -->") + len("<!-- /дерева -->")
+        khvist = stari[a:b] + "\n" + khvist
     tilo = ['<main>', '<h1>Тест генерації</h1>',
             '<p class="lead">Раси: по три варіанти на кожну стать кожної '
             'раси — вибери, які йдуть на сторінку '

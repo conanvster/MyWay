@@ -22,16 +22,22 @@ import monster3d as m  # noqa: E402
 import rasy_ref as r  # noqa: E402
 
 DZHERELO = r.VYKHID / "vidkynuti" / "орк-жінка-v1-s8111.png"
-SIDY = {1: 61, 2: 62, 3: 63}
+# Перша спроба (сіди 61–63, «more voluptuous and heavier built») вийшла
+# огрядною — замовник: «некрасивою, повернись до першого варіанта та
+# спробуй зробити моделі трохи сексуальнішими». Тепер — жіночність і
+# форма, а не вага.
+SIDY = {1: 71, 2: 72, 3: 73}
 PROMT = (
-    "Make the same green-skinned orc woman more voluptuous and heavier "
-    "built: give her a noticeably larger, fuller bust, much wider heavy "
-    "hips and thick strong thighs, a broad stocky powerful figure. Keep "
-    "everything else exactly the same: same face, same coarse stern "
-    "expression, same green skin, same tusks, same hair, same ears, same "
-    "clothing fully covering her body (linen shirt, brown leather vest, "
-    "trousers, belt, boots), same standing pose, same misty pine forest "
-    "background, same lighting, same photorealistic style.")
+    "Make the same green-skinned orc woman slightly more attractive and "
+    "sensual: an hourglass athletic figure with a fuller, shapely bust, a "
+    "narrower waist and rounded, wider hips, strong toned muscular arms "
+    "and legs, a confident proud posture. Make her clothing a little more "
+    "fitted so it follows her curves: the linen shirt laced and slightly "
+    "open at the neck, the leather vest tightly cinched at the waist by "
+    "the belt. Keep everything else exactly the same: same face, same "
+    "coarse stern expression, same green skin, same tusks, same hair, "
+    "same ears, same trousers and boots, same standing pose, same misty "
+    "pine forest background, same lighting, same photorealistic style.")
 
 
 def graf(image, seed, prefix):

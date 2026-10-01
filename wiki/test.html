@@ -21,51 +21,26 @@
 </div></header>
 <main>
 <h1>Тест генерації</h1>
-<p class="lead">Раси: по три варіанти на кожну стать кожної раси — вибери, які йдуть на сторінку <a href="rasy.html">Раси та професії</a>. Нічого звідси не лінкується з основних сторінок.</p>
-<p class="note">FLUX dev Q4 у ComfyUI, 1024×1024, 28 кроків, guidance 3.5 — правила з <code>spec/генерація-референсів-монстрів.md</code>. Вигляд рас — із <code>spec/DECIDED.md</code>; одяг простий стартовий, тло — туманний хвойний ліс.</p>
-<h2>Людина</h2>
-<p class="note">середина по всіх статах · 1,75 м</p>
-<h3>Людина, чоловік</h3>
+<p class="lead">Робоча сторінка для порівняння варіантів перед тим, як вони йдуть у вікі чи гру. Нічого звідси не лінкується з основних сторінок.</p>
+<!-- аватар -->
+<h2>Аватар 3D — людина, чоловік, варіант 1</h2>
+<p class="note">Чисті референси під 3D-модель: та сама людина з <a href="rasy.html">варіанта 1</a>, Kontext ставить її в T-позу манекена (на його скелет лягають рухи <code>./run.sh --рухи-людини</code>), сіре тло — під Pixal3D. Вибери, з якого будувати.</p>
 <div class="compare">
-<figure><img src="img/test/rasy/людина-чоловік-v1.png" alt="Людина, чоловік, варіант 1"><figcaption><b>v1</b>seed 7001</figcaption></figure>
-<figure><img src="img/test/rasy/людина-чоловік-v2.png" alt="Людина, чоловік, варіант 2"><figcaption><b>v2</b>seed 7002</figcaption></figure>
-<figure><img src="img/test/rasy/людина-чоловік-v3.png" alt="Людина, чоловік, варіант 3"><figcaption><b>v3</b>seed 7003</figcaption></figure>
+<figure class="ref"><img src="img/rasy/людина-чоловік-v1.png" alt="вихідний варіант 1"><figcaption><b>вихідний</b>варіант 1, seed 7001</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s11.png" alt="T-поза, seed 11"><figcaption><b>T-поза</b>Kontext, seed 11</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s22.png" alt="T-поза, seed 22"><figcaption><b>T-поза</b>Kontext, seed 22</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s33.png" alt="T-поза, seed 33"><figcaption><b>T-поза</b>Kontext, seed 33</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s44.png" alt="T-поза, seed 44"><figcaption><b>T-поза</b>Kontext, seed 44</figcaption></figure>
 </div>
-<h3>Людина, жінка</h3>
+<h3>База без одягу — лише пов'язка</h3>
+<p class="note">Модель не залежить від одягу: одяг ляже поверх окремими частинами. Kontext від T-пози seed 11.</p>
 <div class="compare">
-<figure><img src="img/test/rasy/людина-жінка-v1.png" alt="Людина, жінка, варіант 1"><figcaption><b>v1</b>seed 7011</figcaption></figure>
-<figure><img src="img/test/rasy/людина-жінка-v2.png" alt="Людина, жінка, варіант 2"><figcaption><b>v2</b>seed 7012</figcaption></figure>
-<figure><img src="img/test/rasy/людина-жінка-v3.png" alt="Людина, жінка, варіант 3"><figcaption><b>v3</b>seed 7013</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s111.png" alt="база, seed 111"><figcaption><b>база</b>Kontext від s11, seed 111</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s122.png" alt="база, seed 122"><figcaption><b>база</b>Kontext від s11, seed 122</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s133.png" alt="база, seed 133"><figcaption><b>база</b>Kontext від s11, seed 133</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s144.png" alt="база, seed 144"><figcaption><b>база</b>Kontext від s11, seed 144</figcaption></figure>
 </div>
-<h2>Орк</h2>
-<p class="note">сильний, витривалий, повільний · 1,9 м</p>
-<h3>Орк, чоловік</h3>
-<div class="compare">
-<figure><img src="img/test/rasy/орк-чоловік-v1.png" alt="Орк, чоловік, варіант 1"><figcaption><b>v1</b>seed 9101</figcaption></figure>
-<figure><img src="img/test/rasy/орк-чоловік-v2.png" alt="Орк, чоловік, варіант 2"><figcaption><b>v2</b>seed 9102</figcaption></figure>
-<figure><img src="img/test/rasy/орк-чоловік-v3.png" alt="Орк, чоловік, варіант 3"><figcaption><b>v3</b>seed 9103</figcaption></figure>
-</div>
-<h3>Орк, жінка</h3>
-<div class="compare">
-<figure><img src="img/test/rasy/орк-жінка-v1.png" alt="Орк, жінка, варіант 1"><figcaption><b>v1</b>seed 9111</figcaption></figure>
-<figure><img src="img/test/rasy/орк-жінка-v2.png" alt="Орк, жінка, варіант 2"><figcaption><b>v2</b>seed 9112</figcaption></figure>
-<figure><img src="img/test/rasy/орк-жінка-v3.png" alt="Орк, жінка, варіант 3"><figcaption><b>v3</b>seed 9113</figcaption></figure>
-</div>
-<h2>Ельф</h2>
-<p class="note">швидкий, чуйний, крихкий · 1,85 м</p>
-<h3>Ельф, чоловік</h3>
-<div class="compare">
-<figure><img src="img/test/rasy/ельф-чоловік-v1.png" alt="Ельф, чоловік, варіант 1"><figcaption><b>v1</b>seed 7201</figcaption></figure>
-<figure><img src="img/test/rasy/ельф-чоловік-v2.png" alt="Ельф, чоловік, варіант 2"><figcaption><b>v2</b>seed 8202</figcaption></figure>
-<figure><img src="img/test/rasy/ельф-чоловік-v3.png" alt="Ельф, чоловік, варіант 3"><figcaption><b>v3</b>seed 8203</figcaption></figure>
-</div>
-<h3>Ельф, жінка</h3>
-<div class="compare">
-<figure><img src="img/test/rasy/ельф-жінка-v1.png" alt="Ельф, жінка, варіант 1"><figcaption><b>v1</b>seed 8211</figcaption></figure>
-<figure><img src="img/test/rasy/ельф-жінка-v2.png" alt="Ельф, жінка, варіант 2"><figcaption><b>v2</b>seed 7212</figcaption></figure>
-<figure><img src="img/test/rasy/ельф-жінка-v3.png" alt="Ельф, жінка, варіант 3"><figcaption><b>v3</b>seed 8213</figcaption></figure>
-</div>
-<p class="note">Тестова сторінка, не для гравців.</p>
+<!-- /аватар -->
 <!-- дерева -->
 <h2>Дерева — генератор (П-253)</h2>
 <p class="note">Кожне дерево — випадковий тип і крона зі справжньої кори (Poly Haven) і справжніх листків (ambientCG), CC0; <code>tools/blender/derevo.py</code>. Вибери типи, які лишаємо, і що поправити.</p>
@@ -84,6 +59,7 @@
 <figure><img src="img/test/dereva/111.png" alt="дерево 111"><figcaption><b>№ 111 · хвойне, крона «колона»</b>20 м · кора pine_bark · листя LeafSet019 · 16 тис. трикутників</figcaption></figure>
 </div>
 <!-- /дерева -->
+<p class="note">Тестова сторінка, не для гравців. Раси перенесено на <a href="rasy.html">Раси та професії</a>.</p>
 </main>
 <footer>Тестова сторінка, не для гравців.</footer>
 </body></html>

@@ -94,6 +94,19 @@ def rozdil(kadry):
                      'від s11, seed %d</figcaption></figure>'
                      % (seed, seed, seed))
         r.append('</div>')
+    for nazva, shablon, sidy in (
+            ("Людина, жінка — T-поза", "zh-tpoza-s%d.png", SIDY),
+            ("Людина, жінка — база: пов'язки на стегнах і на грудях",
+             "zh-baza-s%d.png", BAZA_SIDY)):
+        ye = [s for s in sidy if (VYKHID / (shablon % s)).exists()]
+        if not ye:
+            continue
+        r += ['<h3>%s</h3>' % nazva, '<div class="compare">']
+        for seed in ye:
+            r.append('<figure><img src="img/test/avatar/%s" alt="%s"><figcaption>'
+                     '<b>%s</b>Kontext, seed %d</figcaption></figure>'
+                     % (shablon % seed, nazva, nazva.split(" — ")[1], seed))
+        r.append('</div>')
     r.append('<!-- /аватар -->')
     return "\n".join(r)
 
@@ -121,7 +134,71 @@ def baza(dzerkalo):
         print("готово база", seed, flush=True)
 
 
+# Жінка (слово замовника 01.10.2026: «паралельно згенеруй рендер для
+# людини жінки, у двох пов'язках на торсі та на рівні грудей»). Ті самі
+# два кроки; T-поза й база — з людини-жінки варіанта 1.
+ZHINKA = {
+    "dzherelo": KORIN / "wiki/img/rasy/людина-жінка-v1.png",
+    "prefix": "zh-",
+    "tpoza": PROMT.replace("The same man", "The same woman")
+    .replace("his hands or hanging from his belt",
+             "her hands or hanging from her belt")
+    .replace("Keep exactly the same man: same face, same hair, same "
+             "beard,", "Keep exactly the same woman: same face, same hair,"),
+    "baza": (
+        "Remove all of her clothing, belt, vest, shirt, trousers and boots, "
+        "and dress her only in two simple plain undyed linen wraps: one "
+        "wrapped around her hips as a loincloth and one wrapped tightly "
+        "around her chest covering her breasts. Show her bare shoulders, "
+        "bare arms, bare midriff, bare legs and bare feet with natural "
+        "realistic skin. Keep everything else exactly the same: same face, "
+        "same hair, same skin tone, same body proportions and build, same "
+        "strict T-pose with both arms straight out horizontally, same front "
+        "view, same plain light grey studio background, same soft even "
+        "lighting, same photorealistic style."),
+}
+
+
+def zhinka(dzerkalo):
+    """Обидва кроки для жінки: 4 T-пози, тоді база з першої."""
+    rk.PROMT = ZHINKA["tpoza"]
+    image = m.stage(str(ZHINKA["dzherelo"]))
+    m.free()
+    for seed in SIDY:
+        done = m.run(rk.graf(image, seed, "avatar1_zh_tpoza_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]),
+                    VYKHID / ("zh-tpoza-s%d.png" % seed))
+        print("готово жінка T-поза", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, "zh-tpoza-s%d.png" % seed)
+    rk.PROMT = ZHINKA["baza"]
+    image = m.stage(str(VYKHID / "zh-tpoza-s11.png"))
+    for seed in BAZA_SIDY:
+        done = m.run(rk.graf(image, seed, "avatar1_zh_baza_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]),
+                    VYKHID / ("zh-baza-s%d.png" % seed))
+        print("готово жінка база", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, "zh-baza-s%d.png" % seed)
+
+
+def dzerk(dzerkalo, fail):
+    if dzerkalo:
+        (dzerkalo / "wiki/img/test/avatar").mkdir(parents=True, exist_ok=True)
+        shutil.copy(VYKHID / fail, dzerkalo / "wiki/img/test/avatar")
+        shutil.copy(STORINKA, dzerkalo / "wiki/test.html")
+
+
 def main():
+    if "--жінка" in sys.argv:
+        dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
+            if "--дзеркало" in sys.argv else None
+        zhinka(dzerkalo)
+        return
     if "--база" in sys.argv:
         dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
             if "--дзеркало" in sys.argv else None

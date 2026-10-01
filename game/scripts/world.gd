@@ -56,6 +56,8 @@ var warehouse: Warehouse
 var trade: Trade
 ## Прикликані істоти (П-41).
 var summons: Summons
+## Речі на землі (П-160): викинуте й загублене при смерті.
+var ground := Ground.new()
 var runes: Runes
 ## Відкриті підземелля за порталами святинь (П-190).
 var dungeons: Dungeons
@@ -130,6 +132,8 @@ func _ready() -> void:
 	trade = Trade.new()
 	trade.names = _names
 	summons = Summons.new(creatures, combat, data, spawn, remove)
+	combat.ground = ground
+	actions.ground = ground
 	combat.on_bag_changed = func(me: int) -> void:
 		var a: Node = creatures.get(me)
 		if a != null:
@@ -345,6 +349,7 @@ func _physics_process(delta: float) -> void:
 		_tick_water(delta)
 		_tick_trade(delta)
 		summons.tick(delta)
+		_tick_ground(delta)
 		_tick_range(delta)
 		if store != null and store.due(delta):
 			_save_everyone()
@@ -671,7 +676,7 @@ func use_slot(slot: int, shift: bool = false) -> void:
 ## Дії, які можна класти на панель без жодного вивчення: вони є в усіх.
 const BASIC_SLOTS: Array[String] = ["", "attack", "next_player", "next_mob",
 		"next_player_corpse", "next_mob_corpse", "corpse_skill", "taunt",
-		"sit"]
+		"sit", "pick_up"]
 
 
 ## Перекласти комірку панелі (перетягуванням у вікні «Скіли»).
@@ -1496,6 +1501,7 @@ func _on_joined(id: int) -> void:
 	send_stats(id)
 	send_skills(id)
 	send_things(id)
+	rpc_id(id, "client_ground", ground.rows())
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
 
 
@@ -1697,6 +1703,95 @@ func _tell_look(id: int, a: Node) -> void:
 	var args := [id, a.race, a.sex, look_of(a)]
 	link.to_one(id, &"client_appearance", args)
 	link.to_watchers(id, &"client_appearance", args)
+
+
+# ── речі на землі (П-160) ─────────────────────────────────────────────
+
+
+## Строк лежання і роздача: щось лягло, піднялось чи зникло — новий
+## перелік усім. Речей на землі одиниці, тож шлемо весь, а не різницю.
+func _tick_ground(delta: float) -> void:
+	ground.tick(delta)
+	if ground.changed:
+		ground.changed = false
+		link.to_all(&"client_ground", [ground.rows()])
+
+
+## Викинути поодиноку річ із торби під ноги.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_drop_thing(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var title: String = a.things[at].title() \
+			if at >= 0 and at < a.things.size() else ""
+	var why := ground.drop_thing(a, at)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "викинуто: %s" % title)
+	print("[земля] %d викинув %s" % [id, title])
+	_after_bag(id, a)
+
+
+## Викинути `count` штук стосу (кількість вибирає гравець − / +).
+@rpc("any_peer", "call_remote", "reliable")
+func ask_drop_stack(name: String, count: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null or not a.is_alive():
+		return
+	var real := mini(count, int(a.items.get(name, 0)))
+	var why := ground.drop_stack(a, name, count, data.items)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "викинуто: %s ×%d" % [name, real])
+	print("[земля] %d викинув %s ×%d" % [id, name, real])
+	_after_bag(id, a)
+
+
+## Видалити річ із торби назавжди.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_destroy_thing(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var title: String = a.things[at].title() \
+			if at >= 0 and at < a.things.size() else ""
+	var why := ground.destroy_thing(a, at)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "видалено: %s" % title)
+	print("[земля] %d видалив %s" % [id, title])
+	_after_bag(id, a)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_destroy_stack(name: String, count: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var real := mini(count, int(a.items.get(name, 0)))
+	var why := ground.destroy_stack(a, name, count)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "видалено: %s ×%d" % [name, real])
+	print("[земля] %d видалив %s ×%d" % [id, name, real])
+	_after_bag(id, a)
 
 
 ## Ужити складану річ — кристал душі й таке інше.
@@ -2716,6 +2811,16 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_take_off", slot))
 		hud.wants_use.connect(func(name: String) -> void:
 				rpc_id(1, "ask_use", name))
+		# Речі на землі (П-160).
+		hud.wants_drop_thing.connect(func(at: int) -> void:
+				rpc_id(1, "ask_drop_thing", at))
+		hud.wants_drop_stack.connect(func(name: String, count: int) -> void:
+				rpc_id(1, "ask_drop_stack", name, count))
+		hud.wants_destroy_thing.connect(func(at: int) -> void:
+				rpc_id(1, "ask_destroy_thing", at))
+		hud.wants_destroy_stack.connect(
+				func(name: String, count: int) -> void:
+				rpc_id(1, "ask_destroy_stack", name, count))
 		# Крамар (П-132). Кнопка «Торгувати» й кожна комірка прилавка —
 		# це прохання до сервера, не дія: гроші й асортимент рахує він.
 		hud.wants_shop.connect(func(at: int) -> void:
@@ -2897,6 +3002,13 @@ func client_hp(id: int, hp: int) -> void:
 		creatures[id].hp = hp
 	if hud != null:
 		hud.set_hp(id, hp)
+
+
+## Що лежить на землі (П-160) — показ малює спрощені зображення.
+@rpc("authority", "call_remote", "reliable")
+func client_ground(rows: Array) -> void:
+	if view != null:
+		view.set_ground(rows)
 
 
 ## Що в торбі — для вікна «Речі».

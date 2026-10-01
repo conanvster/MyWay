@@ -18,6 +18,8 @@ var _vision: Vision
 var goods := ItemBook.new()
 var _combat: Combat
 var _link: Messenger
+## Речі на землі — для дії «підняти» (П-160). Ставить світ.
+var ground: Ground = null
 
 
 func _init(creatures: Dictionary = {}, vision: Vision = null,
@@ -112,6 +114,8 @@ func pump(me: int) -> void:
 				_corpse_skill(me)
 			"taunt":
 				_taunt(me)
+			"pick_up":
+				pick_up(me)
 			"sit":
 				# Уміння «сісти» (замовник назвав його серед умінь):
 				# відновлюєшся втричі швидше, встаєш від удару або від
@@ -128,6 +132,23 @@ func pump(me: int) -> void:
 					_combat.cast(me, action.substr(SKILL_PREFIX.length()))
 				elif action.begins_with(ITEM_PREFIX):
 					use_item(me, action.substr(ITEM_PREFIX.length()))
+
+
+## Підняти найближчу річ із землі (П-160). Стос — цілий; торбу клієнтові
+## світ дошле сам, побачивши, що вона змінилась.
+func pick_up(me: int) -> bool:
+	var a: Node = _creatures.get(me)
+	if a == null or not a.is_alive() or ground == null:
+		return false
+	var got: Dictionary = ground.pick_up(a)
+	if got.is_empty():
+		_link.notice(me, "поруч нічого не лежить")
+		return false
+	if int(got["скільки"]) > 1:
+		_link.notice(me, "піднято: %s ×%d" % [got["назва"], got["скільки"]])
+	else:
+		_link.notice(me, "піднято: %s" % got["назва"])
+	return true
 
 
 ## Ужити витратну річ (крок 4). Кристали душі повертають ману: звичайний

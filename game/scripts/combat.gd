@@ -188,6 +188,9 @@ var goods := ItemBook.new()
 ## Коваль: скільки тупиться зброя за удар, що лишає зламана (П-234) і що
 ## дає бос (21.09.2026).
 var smith := Smith.new()
+## Речі на землі (П-160): туди лягає загублене при смерті. Ставить світ;
+## без нього (проби) — зникає.
+var ground: Ground = null
 
 
 ## Застосувати скіл. Повертає true, якщо він справді спрацював.
@@ -469,12 +472,11 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		_link.notice(victim_id, "втрачено %d поваги" % lost)
 		print("[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
-		# І частина речей (друга половина П-27). Поки вони просто
-		# зникають: «на землі» вимагає предметів у світі, яких ще немає —
-		# записано в П-112.
-		var gone_all: Array = progress.lose_items(victim, goods)
+		# І частина речей (друга половина П-27). Лягають на землю біля
+		# трупа (П-160) — підняти може будь-хто.
+		var gone_all: Array = progress.lose_items(victim, goods, ground)
 		for gone: String in gone_all:
-			_link.notice(victim_id, "загублено: %s" % gone)
+			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)
 			print("[смерть] %d загубив %s" % [victim_id, gone])
 	print("[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])

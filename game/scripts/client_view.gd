@@ -917,6 +917,111 @@ func _mark(point: Vector3) -> void:
 	fade.chain().tween_callback(ring.queue_free)
 
 
+# ── речі на землі (П-160) ─────────────────────────────────────────────
+#
+# Спрощене зображення (слово замовника 01.10.2026) — значок речі без
+# тла (`tools/zemlia_znachky.py` → `assets/icons/ground/`), що стоїть на
+# землі обличчям до камери, і підпис над ним. Сервер шле весь перелік
+# щоразу, як щось лягло чи зникло; показ лише звіряє, що додати й що
+# прибрати.
+
+const GROUND_ART := "res://assets/icons/ground/"
+## Розмір речі на землі, метри: досить, щоб помітити з-за спини героя, і
+## не більше за саму річ у руках.
+const GROUND_SIZE := 0.7
+## На скільки намальована земля вища за фізичну (заміряно знімком проби
+## `ground`: на 4 см річ ховалась зовсім, на 30 см стояла).
+const GROUND_LIFT := 0.2
+
+## номер на землі -> вузол показу
+var _ground_nodes: Dictionary = {}
+
+
+func set_ground(rows: Array) -> void:
+	if _world == null:
+		return
+	var keep := {}
+	for row: Dictionary in rows:
+		var key := int(row.get("номер", 0))
+		keep[key] = true
+		if _ground_nodes.has(key):
+			continue
+		var node := _ground_piece(row)
+		_world.add_child(node)
+		_ground_nodes[key] = node
+	for key: int in _ground_nodes.keys():
+		if not keep.has(key):
+			_ground_nodes[key].queue_free()
+			_ground_nodes.erase(key)
+
+
+## Скільки речей зараз показано на землі — для проби.
+func ground_shown() -> int:
+	return _ground_nodes.size()
+
+
+## Висота видимої землі під річчю. Променем по шару «світ», як клік
+## «іти сюди»: `ground_at` — це рельєф без бруківки й підлог, і річ
+## ховалась під ними. Промінь від 3 м угору, не з неба: інакше річ,
+## викинута під дахом, лягла б на дах.
+func _ground_y(at: Vector3) -> float:
+	var query := PhysicsRayQueryParameters3D.create(
+			at + Vector3(0, 3.0, 0), at + Vector3(0, -50.0, 0))
+	query.collision_mask = 1  # шар «світ»
+	var hit: Dictionary = _world.get_world_3d().direct_space_state \
+			.intersect_ray(query)
+	if not hit.is_empty():
+		return float(hit["position"].y)
+	if _world.has_method("ground_at"):
+		return _world.ground_at(at.x, at.z)
+	return at.y
+
+
+func _ground_piece(row: Dictionary) -> Node3D:
+	var at: Vector3 = row.get("де", Vector3.ZERO)
+	var piece := Node3D.new()
+	piece.name = "НаЗемлі%d" % int(row.get("номер", 0))
+	piece.position = Vector3(at.x, _ground_y(at), at.z)
+
+	var base := str(row.get("база", row.get("назва", "")))
+	var file := GROUND_ART + base + ".png"
+	var art: Texture2D = load(file) if ResourceLoader.exists(file) else null
+	if art == null:
+		# Малюнка немає — квадрат кольору грейду, а не порожнеча: річ
+		# має бути видно, інакше її не знайти й не підняти (P3).
+		print("[земля] ‼ немає спрощеного зображення: %s" % base)
+		var plain := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+		plain.fill(ItemIcon.grade_color(str(row.get("грейд", "E"))))
+		# Квадрат удвічі менший за річ: межі всередині лишаються прозорими.
+		plain.fill_rect(Rect2i(0, 0, 32, 8), Color(0, 0, 0, 0))
+		plain.fill_rect(Rect2i(0, 24, 32, 8), Color(0, 0, 0, 0))
+		plain.fill_rect(Rect2i(0, 0, 8, 32), Color(0, 0, 0, 0))
+		plain.fill_rect(Rect2i(24, 0, 8, 32), Color(0, 0, 0, 0))
+		art = ImageTexture.create_from_image(plain)
+	# Стоїть обличчям до камери, низом на землі. Плазом річ із-за спини
+	# героя сплющувалась у риску, а намальована земля ще й вища за
+	# фізичну — плаский малюнок ховався в ній.
+	var picture := Sprite3D.new()
+	picture.texture = art
+	picture.pixel_size = GROUND_SIZE / float(maxi(1, art.get_width()))
+	picture.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
+	picture.position.y = GROUND_SIZE * 0.5 + GROUND_LIFT
+	picture.double_sided = true
+	piece.add_child(picture)
+
+	var label := Label3D.new()
+	var count := int(row.get("скільки", 1))
+	label.text = str(row.get("назва", "?")) \
+			+ (" ×%d" % count if count > 1 else "")
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.pixel_size = 0.004
+	label.font_size = 32
+	label.outline_size = 8
+	label.position.y = GROUND_SIZE + GROUND_LIFT + 0.15
+	piece.add_child(label)
+	return piece
+
+
 func id_of(node: Object) -> int:
 	for id in _creatures:
 		if _creatures[id] == node:

@@ -442,7 +442,7 @@ const SKILLS_WIDE := 250.0
 ## Рядок закладок «Скіли»/«Дії» (П-155) над підказкою.
 const SKILLS_TABS_H := 22.0
 const SKILLS_TAB_NAMES := ["Скіли", "Дії"]
-## Голі уміння (П-155): тих самих 8, що в `actions.gd`, немає де взяти
+## Голі уміння (П-155): тих самих 9, що в `actions.gd`, немає де взяти
 ## перекладу назви/примітки — це не дані з файлу, це самі правила гри,
 ## тож короткий перелік лежить тут, а не в JSON.
 const BARE_ACTIONS := [
@@ -462,6 +462,8 @@ const BARE_ACTIONS := [
 			"нота": "оживити чи підняти, залежно від класу"},
 	{"код": "sit", "назва": "сісти",
 			"нота": "утричі швидше відновлення, встаєш від удару"},
+	{"код": "pick_up", "назва": "підняти",
+			"нота": "найближчу річ із землі, до 3 м; стос — цілим"},
 ]
 
 var _skills_box: WindowBox
@@ -624,6 +626,11 @@ func _on_dropped(where: int, action: String, from: int) -> void:
 signal wants_wear(at: int, slot: String)
 signal wants_take_off(slot: String)
 signal wants_use(name: String)
+## Речі на землі (П-160): викинути під ноги чи видалити з торби назавжди.
+signal wants_drop_thing(at: int)
+signal wants_drop_stack(name: String, count: int)
+signal wants_destroy_thing(at: int)
+signal wants_destroy_stack(name: String, count: int)
 
 ## Комірка — квадрат і в тілі, і в торбі: дві різні мови в одному вікні
 ## читаються гірше за одну.
@@ -980,6 +987,62 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 				# (`bar_cell.gd`) приймає будь-яку «дію» (19.09.2026).
 				press.set_drag_forwarding(func(_at: Vector2) -> Variant:
 						return _bag_drag(press, name), Callable(), Callable())
+		# Правий клік — викинути чи видалити (П-160). Вимкнена комірка
+		# («просто лежить») мишу однаково чує: `gui_input` шле Control,
+		# а не кнопка.
+		press.tooltip_text += "\nправий клік — викинути чи видалити"
+		press.gui_input.connect(func(event: InputEvent) -> void:
+				if event is InputEventMouseButton and event.pressed \
+						and event.button_index == MOUSE_BUTTON_RIGHT:
+					_bag_menu_for(row))
+
+
+## Меню речі в торбі (П-160): «Викинути» кладе під ноги, «Видалити» —
+## назавжди. Зі стосу — скільки скажеш, − / + як у крамаря (П-164).
+var _bag_menu: PopupMenu
+var _bag_menu_row: Dictionary = {}
+const BAG_MENU_DROP := 0
+const BAG_MENU_DESTROY := 1
+
+
+func _bag_menu_for(row: Dictionary) -> void:
+	if _bag_menu == null:
+		_bag_menu = PopupMenu.new()
+		_bag_menu.name = "МенюРечі"
+		_bag_menu.add_item("Викинути", BAG_MENU_DROP)
+		_bag_menu.add_item("Видалити", BAG_MENU_DESTROY)
+		_bag_menu.id_pressed.connect(_bag_menu_chosen)
+		_root.add_child(_bag_menu)
+	_bag_menu_row = row
+	_bag_menu.position = Vector2i(get_viewport().get_mouse_position())
+	_bag_menu.popup()
+
+
+func _bag_menu_chosen(what: int) -> void:
+	bag_act(_bag_menu_row, what == BAG_MENU_DESTROY)
+
+
+## Те, що робить пункт меню. Окремо від самого меню — щоб проба могла
+## натиснути пункт без миші.
+func bag_act(row: Dictionary, destroy: bool) -> void:
+	var name := str(row.get("назва", "?"))
+	if row.has("номер"):
+		var at := int(row["номер"])
+		if destroy:
+			ask_confirm("Видалити «%s» назавжди?" % name,
+					func() -> void: wants_destroy_thing.emit(at))
+		else:
+			wants_drop_thing.emit(at)
+		return
+	ask_count(func(n: int) -> String:
+				return ("Видалити «%s» ×%d назавжди?" if destroy
+						else "Викинути «%s» ×%d на землю?") % [name, n],
+			int(row.get("скільки", 1)),
+			func(n: int) -> void:
+				if destroy:
+					wants_destroy_stack.emit(name, n)
+				else:
+					wants_drop_stack.emit(name, n))
 
 
 ## Що несе перетягування речі з торби на панель.
@@ -2988,6 +3051,7 @@ func _title(action: String) -> String:
 		"corpse_skill": return "труп"
 		"taunt": return "агресія"
 		"sit": return "сісти"
+		"pick_up": return "підняти"
 		"": return ""
 	return action
 

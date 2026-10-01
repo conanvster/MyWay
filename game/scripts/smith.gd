@@ -79,6 +79,66 @@ func repair_cost(item: Item, book: ItemBook) -> int:
 			roundi(price * float(r.get("частка ціни", 0.3)) * lost))
 
 
+## З чого річ скрафчено: «матеріал → скільки». Рецептів ще немає (П-22),
+## тож до них — «крафт заглушка»: метал грейду з таблиці зачарування.
+func craft_materials(item: Item) -> Dictionary:
+	var metal := str(rules.get("зачарування", {}).get("матеріал", {})
+			.get(item.grade, ""))
+	var count := int(rules.get("поломка", {}).get("крафт заглушка", 0))
+	return {metal: count} if metal != "" and count > 0 else {}
+
+
+## Що лишає зламана зброя (П-234, слово замовника 01.10.2026): «до
+## цілого 10% від матеріалів для крафту речі, якщо зачароване, то 20%
+## ресурсів для зачарування». До цілого — угору: з 3 металів зачарування
+## 20% — це 0,6, тобто 1. Гроші зачарування — не ресурс, не повертаються.
+func break_yield(item: Item, book: ItemBook) -> Dictionary:
+	var r: Dictionary = rules.get("поломка", {})
+	var out := {}
+	var craft := craft_materials(item)
+	for name: String in craft:
+		_add_share(out, name, int(craft[name]),
+				float(r.get("частка крафту", 0.1)))
+	if not item.rune.is_empty():
+		var needs: Dictionary = enchant_cost(item, book)["речі"]
+		for name: String in needs:
+			_add_share(out, name, int(needs[name]),
+					float(r.get("частка зачарування", 0.2)))
+	return out
+
+
+func _add_share(out: Dictionary, name: String, count: int,
+		share: float) -> void:
+	# 1e-6 — щоб 10 × 0,1 не дало 2 через похибку дробу.
+	var got := ceili(count * share - 1e-6)
+	if got > 0:
+		out[name] = int(out.get(name, 0)) + got
+
+
+## Зламати вдягнену зброю: річ зникає, у торбу лягає `break_yield`.
+## Повертає {"назва", "лишила"}; порожньо — ламати нічого.
+func break_weapon(who: Node, book: ItemBook) -> Dictionary:
+	if not who.gear.has("зброя"):
+		return {}
+	var at := int(who.gear["зброя"])
+	if at < 0 or at >= who.things.size():
+		return {}
+	var item: Item = who.things[at]
+	var left := break_yield(item, book)
+	who.drop_thing(at)
+	for name: String in left:
+		who.give_item(name, int(left[name]))
+	return {"назва": item.title(), "лишила": left}
+
+
+## Як показати, що лишилось: «залізо ×1, рунна есенція D ×1».
+static func yield_text(left: Dictionary) -> String:
+	var parts: Array = []
+	for name: String in left:
+		parts.append("%s ×%d" % [name, int(left[name])])
+	return ", ".join(parts) if not parts.is_empty() else "нічого"
+
+
 ## Що просить зачарування цієї речі: гроші й складані речі.
 func enchant_cost(item: Item, book: ItemBook) -> Dictionary:
 	var e: Dictionary = rules.get("зачарування", {})

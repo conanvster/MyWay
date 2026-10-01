@@ -87,10 +87,17 @@ func attack(me: int) -> bool:
 	_mark_fight(a, victim)
 	_try_interrupt(victim, a.target_id, hit)
 	# Зброя тупиться від кожного удару, що влучив (слово замовника
-	# 21.09.2026). Монстрів не стосується: у них речей немає.
+	# 21.09.2026), а на нулі ламається на матеріали (П-234). Монстрів не
+	# стосується: у них речей немає.
 	if me > 0 and a.wear_weapon(smith.wear_per_hit()):
-		_link.notice(me,
-				"‼ зброя затупилась — її стати не діють, неси до коваля")
+		var broke: Dictionary = smith.break_weapon(a, goods)
+		if not broke.is_empty():
+			_link.notice(me, "‼ «%s» зламалась — у торбі: %s"
+					% [broke["назва"], Smith.yield_text(broke["лишила"])])
+			print("[бій] %d зламав зброю %s, лишилось %s"
+					% [me, broke["назва"], broke["лишила"]])
+			if on_bag_changed.is_valid():
+				on_bag_changed.call(me)
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
 	if side(a.target_id) < 0 and side(me) > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
@@ -178,7 +185,8 @@ var skills := SkillBook.new()
 var progress := Progress.new()
 ## Речі: бази й афікси (крок 4).
 var goods := ItemBook.new()
-## Коваль: скільки тупиться зброя за удар і що дає бос (21.09.2026).
+## Коваль: скільки тупиться зброя за удар, що лишає зламана (П-234) і що
+## дає бос (21.09.2026).
 var smith := Smith.new()
 
 
@@ -404,6 +412,9 @@ var on_out_of_reach: Callable
 ## Скіл когось прикликав (П-41): (хто читав, {"вид","скільки","строк"}).
 ## Ставить істот світ — бій вузлів не створює.
 var on_summon: Callable
+## Торба гравця змінилась посеред бою (зброя зламалась, П-234): світ
+## шле клієнтові торбу й стати.
+var on_bag_changed: Callable
 
 
 ## Бік істоти: +1 — гравці й їхні прикликані, −1 — монстри. Раніше бік

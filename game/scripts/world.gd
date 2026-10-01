@@ -130,6 +130,10 @@ func _ready() -> void:
 	trade = Trade.new()
 	trade.names = _names
 	summons = Summons.new(creatures, combat, data, spawn, remove)
+	combat.on_bag_changed = func(me: int) -> void:
+		var a: Node = creatures.get(me)
+		if a != null:
+			_after_bag(me, a)
 	combat.on_summon = func(me: int, what: Dictionary) -> void:
 			summons.request(me, what)
 	runes = Runes.new(data.skills, data.professions)

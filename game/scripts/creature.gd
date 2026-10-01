@@ -222,8 +222,8 @@ func _gear_bonus(stat: String) -> int:
 
 
 ## Удар влучив — зброя тупиться (21.09.2026). Повертає true, коли саме
-## цим ударом міцність дійшла до нуля: тоді стати зброї більше не діють,
-## і світ має сказати про це гравцеві.
+## цим ударом міцність дійшла до нуля: тоді бій ламає зброю
+## (`Smith.break_weapon`, П-234) і каже про це гравцеві.
 func wear_weapon(amount: int) -> bool:
 	var weapon: Item = worn_in("зброя")
 	if weapon == null or weapon.durability_max <= 0 or weapon.durability <= 0:

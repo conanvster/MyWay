@@ -6,7 +6,7 @@ extends Node
 ## параметри, для фізичних більш вірогідно фізичні… ремені з грейдом —
 ## більше грейд, більше полосок».
 ##
-## Перевіряємо числами: зброя тупиться й лагодиться, ціна рахується
+## Перевіряємо числами: зброя зношується, лагодиться й ламається (П-234), ціна рахується
 ## сервером, зачарування забирає своє й кладе одну руну, ймовірності
 ## сходяться на тисячах кидків, ремінь відчиняє смуги панелі, бос дає
 ## есенцію.
@@ -119,28 +119,74 @@ func _go() -> void:
 	var at_sword: int = me.add_thing(sword)
 	me.equip(at_sword)
 	var strong: int = me.stats.strength
-	var blunted := 0
-	for _i in 1000:
-		if me.wear_weapon(1):
-			blunted += 1
-	_yes("1000 ударів тупить меч рівно один раз (%d)" % blunted,
-			blunted == 1 and sword.is_blunt())
-	_yes("тупий меч не дає сили: %d → %d" % [strong, me.stats.strength],
-			me.stats.strength == strong - int(sword.stats.get("сила", 0)))
+	for _i in 500:
+		me.wear_weapon(1)
+	_yes("500 ударів — міцність %d/%d, стати ще діють"
+			% [sword.durability, sword.durability_max],
+			sword.durability == 500 and me.stats.strength == strong)
 	var fix: int = smith.repair_cost(sword, book)
 	var price := int(book.base_of(SWORD)["ціна"])
-	_yes("ремонт тупого: %d (ціна %d × 0,3)" % [fix, price],
-			fix == maxi(5, roundi(price * 0.3)))
+	_yes("ремонт половини: %d (ціна %d × 0,3 × 0,5)" % [fix, price],
+			fix == maxi(5, roundi(price * 0.3 * 0.5)))
 	var why: String = smith.repair(me, at_sword, book)
-	_yes("без грошей не лагодить: «%s»" % why, why != "" and sword.is_blunt())
+	_yes("без грошей не лагодить: «%s»" % why,
+			why != "" and sword.durability == 500)
 	me.items = {"гроші": 1000}
 	why = smith.repair(me, at_sword, book)
 	_yes("з грошима лагодить: міцність %d, грошей %d"
 			% [sword.durability, int(me.items["гроші"])],
 			why == "" and sword.durability == 1000
 			and int(me.items["гроші"]) == 1000 - fix)
-	_yes("сила вернулась: %d" % me.stats.strength, me.stats.strength == strong)
 	_yes("цілу вдруге не лагодить", smith.repair(me, at_sword, book) != "")
+
+	# П-234, слово замовника 01.10.2026: «до цілого 10% від матеріалів
+	# для крафту речі, якщо зачароване то 20% ресурсів для зачарування».
+	print("\n— поломка —")
+	var metal := str(smith.rules["зачарування"]["матеріал"]["E"])
+	var plain: Dictionary = smith.break_yield(sword, book)
+	_yes("незачарований меч E лишає %s (чекаю {%s: 1})" % [plain, metal],
+			plain == {metal: 1})
+	var charmed: Item = book.make(SWORD)
+	charmed.set_rune({"стат": "сила", "скільки": 1})
+	var rich: Dictionary = smith.break_yield(charmed, book)
+	_yes("зачарований лишає ще й 20%% зачарування: %s" % [rich],
+			rich == {metal: 2, "рунна есенція E": 1})
+	var broke_at := -1
+	for i in 1000:
+		if me.wear_weapon(1):
+			broke_at = i + 1
+	_yes("міцність доходить до нуля рівно на 1000-му ударі (%d)" % broke_at,
+			broke_at == 1000)
+	var broke: Dictionary = smith.break_weapon(me, book)
+	_yes("меч зламався: «%s», лишив %s" % [broke.get("назва"),
+			Smith.yield_text(broke.get("лишила", {}))],
+			broke.get("лишила") == {metal: 1})
+	_yes("меча більше немає ні в руці, ні в торбі",
+			me.worn_in("зброя") == null and not me.things.has(sword))
+	_yes("у торбі %s ×%d" % [metal, int(me.items.get(metal, 0))],
+			int(me.items.get(metal, 0)) == 1)
+	_yes("сила без меча: %d → %d" % [strong, me.stats.strength],
+			me.stats.strength == strong - int(sword.stats.get("сила", 0)))
+	_yes("без зброї ламати нічого", smith.break_weapon(me, book).is_empty())
+
+	# Наскрізь через бій: удар, що звів міцність у нуль, ламає зброю.
+	var hare: Node = world.spawn(2, Vector3(1, 30, 0))
+	var axe: Item = book.make(SWORD)
+	axe.durability = 1
+	me.items = {}
+	me.equip(me.add_thing(axe))
+	me.target_id = 2
+	hare.hp = 1000000
+	# Мережі в пробі немає: замість торби клієнтові — лічильник.
+	var bag_sent: Array = []
+	world.combat.on_bag_changed = func(who: int) -> void:
+		bag_sent.append(who)
+	world.combat.attack(1)
+	_yes("удар на 1 міцності ламає зброю в бою (у торбі %s)" % [me.items],
+			me.worn_in("зброя") == null and me.items == {metal: 1})
+	_yes("світ шле торбу гравцеві %s" % [bag_sent], bag_sent == [1])
+	hare.queue_free()
+	world.creatures.erase(2)
 
 	print("\n— магічна чи фізична —")
 	var amulet: Item = book.make(AMULET)

@@ -65,6 +65,41 @@ BAZA_PROMT = (
     "style.")
 
 
+# База 2 (01.10.2026: «поломаний вигляд ніг під накидкою»): широка
+# пов'язка-спідниця злилась у Pixal3D зі стегнами в одну брилу — під нею
+# немає ніг, і в русі вона рвалась. Тепер — коротка щільна пов'язка, як
+# труси, стегна окремі й відкриті.
+BAZA2_SIDY = [211, 222, 233, 244]
+BAZA2_PROMT = (
+    "Remove all of his clothing, belt, vest, shirt, trousers and boots, "
+    "and dress him only in a short tight-fitting plain undyed linen "
+    "loincloth wrapped snugly around his hips and groin like fitted briefs, "
+    "ending high at the top of the thighs, nothing hanging down, so both "
+    "thighs are fully bare, clearly separated and visible down to the "
+    "knees. Show his bare muscular torso, bare arms, bare legs and bare "
+    "feet with natural realistic skin. Keep everything else exactly the "
+    "same: same face, same hair, same beard, same skin tone, same body "
+    "proportions and build, same strict T-pose with both arms straight out "
+    "horizontally, same legs slightly apart, same front view, same plain "
+    "light grey studio background, same soft even lighting, same "
+    "photorealistic style.")
+
+
+def baza2(dzerkalo):
+    rk.PROMT = BAZA2_PROMT
+    image = m.stage(str(BAZA_Z))
+    m.free()
+    for seed in BAZA2_SIDY:
+        done = m.run(rk.graf(image, seed, "avatar1_baza2_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]),
+                    VYKHID / ("baza2-s%d.png" % seed))
+        print("готово база2", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, "baza2-s%d.png" % seed)
+
+
 def rozdil(kadry):
     r = ['<!-- аватар -->',
          '<h2>Аватар 3D — людина, чоловік, варіант 1</h2>',
@@ -95,6 +130,8 @@ def rozdil(kadry):
                      % (seed, seed, seed))
         r.append('</div>')
     for nazva, shablon, sidy in (
+            ("База 2 — щільна коротка пов'язка (ноги окремі)",
+             "baza2-s%d.png", BAZA2_SIDY),
             ("Людина, жінка — T-поза", "zh-tpoza-s%d.png", SIDY),
             ("Людина, жінка — база: пов'язки на стегнах і на грудях",
              "zh-baza-s%d.png", BAZA_SIDY)):
@@ -147,10 +184,13 @@ ZHINKA = {
              "beard,", "Keep exactly the same woman: same face, same hair,"),
     "baza": (
         "Remove all of her clothing, belt, vest, shirt, trousers and boots, "
-        "and dress her only in two simple plain undyed linen wraps: one "
-        "wrapped around her hips as a loincloth and one wrapped tightly "
-        "around her chest covering her breasts. Show her bare shoulders, "
-        "bare arms, bare midriff, bare legs and bare feet with natural "
+        "and dress her only in two simple plain undyed linen wraps: a short "
+        "tight-fitting loincloth wrapped snugly around her hips and groin "
+        "like fitted briefs, ending high at the top of the thighs with "
+        "nothing hanging down, and a band wrapped tightly around her chest "
+        "covering her breasts. Both thighs fully bare and clearly "
+        "separated. Show her bare shoulders, bare arms, bare midriff, bare "
+        "legs and bare feet with natural "
         "realistic skin. Keep everything else exactly the same: same face, "
         "same hair, same skin tone, same body proportions and build, same "
         "strict T-pose with both arms straight out horizontally, same front "
@@ -165,6 +205,8 @@ def zhinka(dzerkalo):
     image = m.stage(str(ZHINKA["dzherelo"]))
     m.free()
     for seed in SIDY:
+        if (VYKHID / ("zh-tpoza-s%d.png" % seed)).exists():
+            continue
         done = m.run(rk.graf(image, seed, "avatar1_zh_tpoza_s%d" % seed))
         out = done["outputs"]["13"]["images"][-1]
         shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
@@ -194,6 +236,11 @@ def dzerk(dzerkalo, fail):
 
 
 def main():
+    if "--база2" in sys.argv:
+        dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
+            if "--дзеркало" in sys.argv else None
+        baza2(dzerkalo)
+        return
     if "--жінка" in sys.argv:
         dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
             if "--дзеркало" in sys.argv else None

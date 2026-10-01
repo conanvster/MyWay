@@ -163,6 +163,55 @@ def main():
             v.co.y += dy
         print("[аватар] глибина: скан зсунуто на %+.3f м по Y" % dy)
 
+    # 2б. Ноги (01.10.2026: «не правильний вигін ніг»): ноги скану стояли
+    # на 4–5 см попереду ніг манекена, ступні — ширше, і коліно брало ваги
+    # не тих граней. На висоті стегна, коліна й ступні центр смуги скану
+    # стає центром тієї ж смуги ТІЛА манекена (не кістки: пальці в обох
+    # однаково попереду кісточки); між рівнями — плавно, вище таза — нуль.
+    tilo_p = svit(tilo)
+
+    def tsentr(tochky, z, znak):
+        smuga = [c for c in tochky if abs(c.z - z) < 0.025
+                 and c.x * znak > 0.02 and abs(c.x) < 0.35]
+        if not smuga:
+            return None
+        return (sum(c.x for c in smuga) / len(smuga),
+                sum(c.y for c in smuga) / len(smuga))
+    rivni = [kist["foot_l"].z, kist["calf_l"].z, kist["thigh_l"].z - 0.1]
+    VERKH = kist["thigh_l"].z + 0.12
+    for znak in (1, -1):
+        skan_p = [v.co.copy() for v in skan.data.vertices]
+        zsuvy = []
+        for z in rivni:
+            a_, b_ = tsentr(tilo_p, z, znak), tsentr(skan_p, z, znak)
+            zsuvy.append((z, (a_[0] - b_[0], a_[1] - b_[1]) if a_ and b_
+                          else (0.0, 0.0)))
+        print("[аватар] нога %s: зсув x/y на ступні %+.3f/%+.3f, коліні "
+              "%+.3f/%+.3f, стегні %+.3f/%+.3f" % (
+                  "ліва" if znak > 0 else "права",
+                  *zsuvy[0][1], *zsuvy[1][1], *zsuvy[2][1]))
+
+        def zsuv(z):
+            if z <= zsuvy[0][0]:
+                return zsuvy[0][1]
+            for (z0, d0), (z1, d1) in zip(zsuvy, zsuvy[1:]):
+                if z <= z1:
+                    t = (z - z0) / (z1 - z0)
+                    return (d0[0] + (d1[0] - d0[0]) * t,
+                            d0[1] + (d1[1] - d0[1]) * t)
+            z0, d0 = zsuvy[-1]
+            t = max(0.0, 1.0 - (z - z0) / (VERKH - z0))
+            return (d0[0] * t, d0[1] * t)
+        for v in skan.data.vertices:
+            if v.co.x * znak <= 0 or v.co.z > VERKH or abs(v.co.x) > 0.4:
+                continue
+            # Біля середньої лінії тіла (пах, пов'язка) зсув X слабшає —
+            # дві ноги не тягнуть одну точку в різні боки.
+            vaga_x = min(1.0, abs(v.co.x) / 0.06)
+            dx, dy = zsuv(v.co.z)
+            v.co.x += dx * vaga_x
+            v.co.y += dy
+
     # 3. Ваги з тіла манекена.
     for g in tilo.vertex_groups:
         skan.vertex_groups.new(name=g.name)
@@ -181,98 +230,153 @@ def main():
     h_z, n_z = kist["Head"].z, kist["neck_01"].z
     g_head = skan.vertex_groups["Head"]
     g_neck = skan.vertex_groups["neck_01"]
+    # Від n_z − 6 см до Head − 2 см ваги манекена плавно переходять у
+    # «жорстку голову»: різка межа рвала шию (01.10.2026: «розрив на
+    # рівні шиї»). Рахується за положенням, тож шви текстури (glTF
+    # дублює там вершини) отримують однакові ваги й не розходяться.
+    niz, verkh = n_z - 0.06, h_z - 0.02
     for v in skan.data.vertices:
-        if abs(v.co.x) > 0.16 or v.co.z < n_z:
+        if abs(v.co.x) > 0.16 or v.co.z < niz:
             continue
-        t = min(1.0, (v.co.z - n_z) / max(0.01, (h_z - 0.02) - n_z))
+        t = min(1.0, (v.co.z - niz) / max(0.01, verkh - niz))
+        # Ціль: на верху смуги — уся вага Head, у середині — шия з головою.
+        tsil = {"Head": t, "neck_01": 1.0 - t} if v.co.z > n_z else \
+            {"neck_01": 1.0}
+        tsil_t = min(1.0, (v.co.z - niz) / 0.06) if v.co.z <= n_z else 1.0
+        bulo = {skan.vertex_groups[g.group].name: g.weight for g in v.groups}
+        nove = {}
+        for k_ in set(bulo) | set(tsil):
+            nove[k_] = bulo.get(k_, 0.0) * (1 - tsil_t) + tsil.get(k_, 0.0) * tsil_t
+        suma = sum(nove.values()) or 1.0
         for g in list(v.groups):
             skan.vertex_groups[g.group].remove([v.index])
-        g_head.add([v.index], t, "REPLACE")
-        if t < 1.0:
-            g_neck.add([v.index], 1.0 - t, "REPLACE")
+        for k_, w_ in nove.items():
+            if w_ / suma > 0.001:
+                skan.vertex_groups[k_].add([v.index], w_ / suma, "REPLACE")
     porozhni = sum(1 for v in skan.data.vertices if not v.groups)
     print("[аватар] вершин %d, без ваги %d" % (len(skan.data.vertices),
                                                porozhni))
 
-    # 3а. Кисті — манекенові. Pixal3D ліпить розкриту долоню в «рукавицю»
-    # (пальці злиплись, великий — обрубок), і на кістках пальців вона
-    # вивертається (01.10.2026: «бачу руки неправильної форми»). Тож кисть
-    # скану відрізається по зап'ясток, а на її місце стає кисть манекена з
-    # рідними вагами, кольором шкіри скану.
-    zapiastok = abs(kist["hand_l"].x) - 0.015
+    # 3а. Кисті й ступні — манекенові. Pixal3D ліпить розкриту долоню в
+    # «рукавицю», а ступню — грудкою без пальців, і на кістках пальців вони
+    # вивертаються (01.10.2026: «бачу руки неправильної форми», «чужі руки з
+    # розривом, та незакінчені пальці ніг»). Кінець руки й ноги скану
+    # відрізається й плавно звужується до кільця манекена, а кисть і ступня
+    # манекена заходять у нього на ЗАХІД — шва-щілини немає. Колір — власна
+    # текстура шкіри манекена (нігті, складки), помножена під тон скану.
     import bmesh
-    # Зап'ясток манекена й кінець передпліччя скану — кожен зі СВОЇМ
-    # центром (вісь руки скану не збігається з віссю кісток: перша спроба
-    # міряла від кістки й стягла передпліччя в конус).
-    def kilce(verts, znak, shyr=0.012):
-        # Манекен низькополігональний (7281 вершина): у вузькій смузі біля
-        # зрізу його кільця може не бути зовсім — йому смуга ширша.
-        smuga = [c for c in verts if c.x * znak > 0
-                 and abs(abs(c.x) - zapiastok) < shyr]
-        print("[аватар]   смуга зап'ястка %+d: вершин %d (з %d)"
-              % (znak, len(smuga), len(verts)))
+    ZAHID = 0.02
+    DOVZH = 0.08
+    zapiastok = abs(kist["hand_l"].x) - 0.015
+    kistochka = kist["foot_l"].z + 0.04
+    # Частина тіла: (чи вершина належить кисті/ступні, «вздовж» — відстань
+    # до зрізу (додатна — у бік тіла), поперечні осі, межа для манекена).
+    chastyny = [
+        ("кисть", 1, lambda c: abs(c.x) > zapiastok and c.x > 0,
+         lambda c: zapiastok - abs(c.x), ("y", "z")),
+        ("кисть", -1, lambda c: abs(c.x) > zapiastok and c.x < 0,
+         lambda c: zapiastok - abs(c.x), ("y", "z")),
+        ("ступня", 1, lambda c: c.z < kistochka and c.x > 0,
+         lambda c: c.z - kistochka, ("x", "y")),
+        ("ступня", -1, lambda c: c.z < kistochka and c.x < 0,
+         lambda c: c.z - kistochka, ("x", "y")),
+    ]
+
+    def kilce(tochky, vzdovzh, osi, shyr):
+        smuga = [c for c in tochky if 0 <= vzdovzh(c) < shyr]
         if not smuga:
             return None, 0.0
-        cy = sum(c.y for c in smuga) / len(smuga)
-        cz = sum(c.z for c in smuga) / len(smuga)
-        r = sorted(math.hypot(c.y - cy, c.z - cz) for c in smuga)
-        return (cy, cz), r[len(r) // 2]
+        a0 = sum(getattr(c, osi[0]) for c in smuga) / len(smuga)
+        a1 = sum(getattr(c, osi[1]) for c in smuga) / len(smuga)
+        r = sorted(math.hypot(getattr(c, osi[0]) - a0, getattr(c, osi[1]) - a1)
+                   for c in smuga)
+        return (a0, a1), r[len(r) // 2]
+
+    tilo_p = svit(tilo)
     bm = bmesh.new()
     bm.from_mesh(skan.data)
-    zaivi = [v for v in bm.verts if abs(v.co.x) > zapiastok]
-    bmesh.ops.delete(bm, geom=zaivi, context="VERTS")
-    DOVZH = 0.08
-    for znak in (1, -1):
-        c_m, r_m = kilce([tilo.matrix_world @ v.co
-                          for v in tilo.data.vertices], znak, 0.03)
-        c_s, r_s = kilce([v.co for v in bm.verts], znak)
+    for nazva, znak, nalezhyt, vzdovzh, osi in chastyny:
+        bik = [c for c in tilo_p if c.x * znak > 0]
+        c_m, r_m = kilce(bik, vzdovzh, osi, 0.03)
+        zaivi = [v for v in bm.verts if nalezhyt(v.co)]
+        bmesh.ops.delete(bm, geom=zaivi, context="VERTS")
+        c_s, r_s = kilce([v.co for v in bm.verts if v.co.x * znak > 0],
+                         vzdovzh, osi, 0.012)
         if c_m is None or c_s is None or r_s < 1e-4:
+            print("[аватар] ‼ %s %+d: кільця не знайдено" % (nazva, znak))
             continue
-        r_m *= 1.06
+        # Кінець скану трохи ширший за манекена — кисть сидить у ньому.
+        r_m *= 1.1
         for v in bm.verts:
             if v.co.x * znak <= 0:
                 continue
-            t = (abs(v.co.x) - (zapiastok - DOVZH)) / DOVZH
-            if t <= 0:
+            d = vzdovzh(v.co)
+            if d < 0 or d >= DOVZH:
                 continue
-            t = min(1.0, t)
+            t = 1.0 - d / DOVZH
             f = 1.0 + (r_m / r_s - 1.0) * t
-            cy = c_s[0] + (c_m[0] - c_s[0]) * t
-            cz = c_s[1] + (c_m[1] - c_s[1]) * t
-            v.co.y = cy + (v.co.y - c_s[0]) * f
-            v.co.z = cz + (v.co.z - c_s[1]) * f
-        print("[аватар] зап'ясток %s: передпліччя r %.3f → %.3f м, центр "
-              "зсунуто на %.3f м" % ("лівий" if znak > 0 else "правий",
-                                     r_s, r_m, math.hypot(c_m[0] - c_s[0],
-                                                          c_m[1] - c_s[1])))
-    kraj = [e for e in bm.edges if e.is_boundary
-            and all(abs(x.co.x) > zapiastok - 0.02 for x in e.verts)]
+            for i, os_ in enumerate(osi):
+                c0 = c_s[i] + (c_m[i] - c_s[i]) * t
+                setattr(v.co, os_, c0 + (getattr(v.co, os_) - c_s[i]) * f)
+        print("[аватар] %s %s: r %.3f → %.3f м, центр зсунуто на %.3f м"
+              % (nazva, "ліва" if znak > 0 else "права", r_s, r_m,
+                 math.hypot(c_m[0] - c_s[0], c_m[1] - c_s[1])))
+    kraj = [e for e in bm.edges if e.is_boundary and all(
+        abs(x.co.x) > zapiastok - 0.02 or x.co.z < kistochka + 0.02
+        for x in e.verts)]
     bmesh.ops.holes_fill(bm, edges=kraj, sides=0)
     bm.to_mesh(skan.data)
     bm.free()
     kolir = kolir_shkiry(skan, zapiastok)
+
     kysti = tilo.copy()
     kysti.data = tilo.data.copy()
-    kysti.name = "Кисті"
+    kysti.name = "Кисті й ступні"
     bpy.context.scene.collection.objects.link(kysti)
+    mw = kysti.matrix_world
     bm = bmesh.new()
     bm.from_mesh(kysti.data)
-    zaivi = [v for v in bm.verts if abs(v.co.x) <= zapiastok]
+    zaivi = [v for v in bm.verts
+             if not (abs((mw @ v.co).x) > zapiastok - ZAHID
+                     or (mw @ v.co).z < kistochka + ZAHID)]
     bmesh.ops.delete(bm, geom=zaivi, context="VERTS")
     bm.to_mesh(kysti.data)
     bm.free()
-    mk = bpy.data.materials.new("шкіра кистей")
-    mk.use_nodes = True
-    bsdf = mk.node_tree.nodes["Principled BSDF"]
-    # У текстуру скану запечене затінення — гладкий колір кисті без нього
-    # світліший за руку; трохи темніше.
-    bsdf.inputs["Base Color"].default_value = (*(c * 0.85 for c in kolir),
-                                               1.0)
-    bsdf.inputs["Roughness"].default_value = 0.6
+    # Рідний матеріал манекена, колір помножено під скан: glTF віддає це
+    # як baseColorFactor поверх текстури.
+    mk = tilo.data.materials[0].copy()
+    mk.name = "шкіра кистей і ступень"
+    nodes, links = mk.node_tree.nodes, mk.node_tree.links
+    bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
+    # У манекена колір = текстура × колір вершин (вузол Mix); колір
+    # вершин замінюємо множником під тон скану.
+    mix = next((l.from_node for l in bsdf.inputs["Base Color"].links
+                if l.from_node.type == "MIX"), None)
+    tex = next((l.from_node for i in (mix.inputs if mix else [])
+                for l in i.links if l.from_node.type == "TEX_IMAGE"), None)
+    if mix is not None and tex is not None:
+        sered = serednii_kolir(tex.image, kysti)
+        syri = [kolir[i] / max(sered[i], 1e-3) for i in range(3)]
+        # glTF не дає множника понад 1: якщо якийсь канал більший, ділимо
+        # усі на нього — відтінок шкіри лишається точним, лише трохи темніше
+        # (обрізання одного каналу зсувало відтінок у холодний).
+        verkh = max(1.0, max(syri))
+        mnozh = tuple(c / verkh for c in syri)
+        print("[аватар]   шкіра скану %s, текстура манекена %s"
+              % (tuple(round(c, 3) for c in kolir),
+                 tuple(round(c, 3) for c in sered)))
+        for i in mix.inputs:
+            for l in list(i.links):
+                if l.from_node.type == "VERTEX_COLOR":
+                    links.remove(l)
+                    i.default_value = (*mnozh, 1.0)
+        print("[аватар] кисті й ступні: вершин %d, текстура манекена ×%s"
+              % (len(kysti.data.vertices), tuple(round(c, 2) for c in mnozh)))
+    else:
+        print("[аватар] ‼ у матеріалі манекена не знайшлось текстури кольору")
+    mk.use_backface_culling = False
     kysti.data.materials.clear()
     kysti.data.materials.append(mk)
-    print("[аватар] кисті манекена: вершин %d, колір шкіри %s"
-          % (len(kysti.data.vertices), tuple(round(c, 3) for c in kolir)))
 
     # 4. На скелет.
     bpy.data.objects.remove(tilo)
@@ -281,6 +385,11 @@ def main():
         if not any(m.type == "ARMATURE" for m in o.modifiers):
             am = o.modifiers.new("Armature", "ARMATURE")
             am.object = arm
+    # Двобічно: на грудях і животі в скані є перевернуті грані, і крізь
+    # них було видно нутро («отвори у тулубі», 01.10.2026).
+    for m in skan.data.materials:
+        if m:
+            m.use_backface_culling = False
     for m in skan.data.materials:
         for n in (m.node_tree.nodes if m and m.use_nodes else []):
             if n.type == "TEX_IMAGE" and n.image and n.image.size[0] > 2048:
@@ -292,6 +401,21 @@ def main():
     print("[аватар] →", KUDY)
     if KADRY:
         kadry(arm, skan)
+
+
+def serednii_kolir(obraz, ob):
+    """Медіанний колір текстури під вершинами об'єкта (лінійний RGB)."""
+    import numpy as np
+    w, h = obraz.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    obraz.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    uv = ob.data.uv_layers.active.data
+    proby = [px[min(h - 1, int(uv[i].uv[1] * h)),
+                min(w - 1, int(uv[i].uv[0] * w)), :3]
+             for i in range(0, len(uv), 3)]
+    c = np.median(np.array(proby), axis=0)
+    return tuple(float(((x + 0.055) / 1.055) ** 2.4) for x in c)
 
 
 def kolir_shkiry(skan, zapiastok):

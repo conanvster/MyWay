@@ -10,7 +10,8 @@
 (Kontext, розділ 1а спеки референсів), інакше сітку не посадити на
 скелет. Сіре однотонне тло — під Pixal3D.
 
-    python3 -u tools/comfyui/avatar_ref.py [--дзеркало ~/гра-лineage]
+    python3 -u tools/comfyui/avatar_ref.py [--дзеркало ~/гра-lineage]
+    python3 -u tools/comfyui/avatar_ref.py --база [--дзеркало …]   без одягу
 
 Вхід — `wiki/img/rasy/людина-чоловік-v1.png`; вихід —
 `wiki/img/test/avatar/tpoza-s<seed>.png` і розділ «Аватар» на test.html
@@ -45,6 +46,25 @@ PROMT = (
     "trousers, leather boots), same colours, same photorealistic style.")
 
 
+# Крок 2 (слово замовника 01.10.2026): «референси T-поза seed 11
+# згенеровані під якийсь тип одягу. Бажано, щоб модель не змінювалась
+# незалежно від того, який одяг буде надягнуто, а без одягу повинна
+# залишатися пов'язка». Тож база — без одягу, лише пов'язка; одяг ляже
+# поверх окремими частинами, як у `make_races.py`. Вхід — T-поза seed 11.
+BAZA_Z = VYKHID / "tpoza-s11.png"
+BAZA_SIDY = [111, 122, 133, 144]
+BAZA_PROMT = (
+    "Remove all of his clothing, belt, vest, shirt, trousers and boots, "
+    "and dress him only in a simple plain undyed linen loincloth wrapped "
+    "around his hips. Show his bare muscular torso, bare arms, bare legs "
+    "and bare feet with natural realistic skin. Keep everything else "
+    "exactly the same: same face, same hair, same beard, same skin tone, "
+    "same body proportions and build, same strict T-pose with both arms "
+    "straight out horizontally, same front view, same plain light grey "
+    "studio background, same soft even lighting, same photorealistic "
+    "style.")
+
+
 def rozdil(kadry):
     r = ['<!-- аватар -->',
          '<h2>Аватар 3D — людина, чоловік, варіант 1</h2>',
@@ -60,7 +80,21 @@ def rozdil(kadry):
         r.append('<figure><img src="img/test/avatar/tpoza-s%d.png" '
                  'alt="T-поза, seed %d"><figcaption><b>T-поза</b>Kontext, '
                  'seed %d</figcaption></figure>' % (seed, seed, seed))
-    r += ['</div>', '<!-- /аватар -->']
+    r.append('</div>')
+    bazy = [s for s in BAZA_SIDY
+            if (VYKHID / ("baza-s%d.png" % s)).exists()]
+    if bazy:
+        r += ['<h3>База без одягу — лише пов\'язка</h3>',
+              '<p class="note">Модель не залежить від одягу: одяг ляже '
+              'поверх окремими частинами. Kontext від T-пози seed 11.</p>',
+              '<div class="compare">']
+        for seed in bazy:
+            r.append('<figure><img src="img/test/avatar/baza-s%d.png" '
+                     'alt="база, seed %d"><figcaption><b>база</b>Kontext '
+                     'від s11, seed %d</figcaption></figure>'
+                     % (seed, seed, seed))
+        r.append('</div>')
+    r.append('<!-- /аватар -->')
     return "\n".join(r)
 
 
@@ -71,7 +105,28 @@ def vpysaty(kadry):
     STORINKA.write_text(t[:a] + rozdil(kadry) + t[b:], encoding="utf-8")
 
 
+def baza(dzerkalo):
+    rk.PROMT = BAZA_PROMT
+    image = m.stage(str(BAZA_Z))
+    for seed in BAZA_SIDY:
+        done = m.run(rk.graf(image, seed, "avatar1_baza_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        kudy = VYKHID / ("baza-s%d.png" % seed)
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]), kudy)
+        vpysaty(SIDY)
+        if dzerkalo:
+            shutil.copy(kudy, dzerkalo / "wiki/img/test/avatar")
+            shutil.copy(STORINKA, dzerkalo / "wiki/test.html")
+        print("готово база", seed, flush=True)
+
+
 def main():
+    if "--база" in sys.argv:
+        dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
+            if "--дзеркало" in sys.argv else None
+        baza(dzerkalo)
+        return
     dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
         if "--дзеркало" in sys.argv else None
     VYKHID.mkdir(parents=True, exist_ok=True)

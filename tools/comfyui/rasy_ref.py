@@ -94,8 +94,21 @@ STATI = [("чоловік", "male", "чоловік"), ("жінка", "female", 
 SIDY = [1, 2, 3]
 
 
-def promt(rasa, stat):
-    _, _, _, tilo = rasa
+# Кадри, що лишились із першого прогону, коли опис ельфа був іншим (до
+# слова «біле довге волосся, невеликі вуха»): ім'я -> опис тіла, яким їх
+# справді зроблено. Без цього промт на сторінці рас брехав би.
+STARE_TILO = {
+    "ельф-чоловік-v1": "an elf: pale skin, slender and thinner than a "
+                       "human, about 1.85 m tall, long pointed ears, light "
+                       "agile and perceptive but fragile",
+    "ельф-жінка-v2": "an elf: pale skin, slender and thinner than a "
+                     "human, about 1.85 m tall, long pointed ears, light "
+                     "agile and perceptive but fragile",
+}
+
+
+def promt(rasa, stat, tilo=None):
+    tilo = tilo or rasa[3]
     eng = stat[1]
     odiag = ODIAG + (", fully clothed, modest attire" if eng == "female"
                      else "")
@@ -205,11 +218,13 @@ def vybir():
                 neg = NEG_ZHIN if stat[1] == "female" else NEG
                 if rasa[0] == "ельф":
                     neg += NEG_ELF
-                prompt = promt(rasa, stat)
+                imia = "%s-%s-v%d" % (rasa[0], stat[0], v)
+                prompt = promt(rasa, stat, STARE_TILO.get(imia))
+                if imia in STARE_TILO:
+                    neg = NEG_ZHIN if stat[1] == "female" else NEG
                 if (rasa[0], stat[1]) in OSOBLYVI:
                     prompt, neg = OSOBLYVI[(rasa[0], stat[1])]
-                out.append(("%s-%s-v%d" % (rasa[0], stat[0], v),
-                            prompt, seed_of(ri, si, v), neg))
+                out.append((imia, prompt, seed_of(ri, si, v), neg))
     for _, riady in DODATKOVI.values():
         out.extend(riady)
     return out

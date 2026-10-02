@@ -29,14 +29,31 @@ import math
 import os
 import sys
 
+import functools
+
 import bpy
 from mathutils import Vector
+
+print = functools.partial(print, flush=True)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MANEKEN = os.path.join(ROOT, "game/models/player/Superhero_Male_FullBody.gltf")
 RUKHY = os.path.join(ROOT, "game/models/player/animations/UAL1_Standard.glb")
 PERED = -1
 ARGS = sys.argv[sys.argv.index("--") + 1:]
+REF = REF_MASKA = None
+if "--референс" in ARGS:
+    i_ = ARGS.index("--референс")
+    REF, REF_MASKA = ARGS[i_ + 1], ARGS[i_ + 2]
+    del ARGS[i_:i_ + 3]
+PO_RYADKAKH = False
+# Прив'язка проєкції (02.10.2026, перебір): осі «однаково» чи «окремо»,
+# уточнення «підбір» чи «ні». Задається ключем --прив'язка осі,уточнення.
+PRYVIAZKA_OSI, PRYVIAZKA = "однаково", "ні"
+if "--прив'язка" in ARGS:
+    i_ = ARGS.index("--прив'язка")
+    PRYVIAZKA_OSI, PRYVIAZKA = ARGS[i_ + 1].split(",")
+    del ARGS[i_:i_ + 2]
 PERUKA = None
 if "--перука" in ARGS:
     PERUKA = ARGS[ARGS.index("--перука") + 1]
@@ -133,29 +150,27 @@ def main():
         v.co = (v.co - tsentr) * k
     print("[аватар] зріст скану %.3f → %.3f м (×%.3f), перед %+d"
           % (hi.z - lo.z, t_hi.z - t_lo.z, k, pered_manekena))
+    if REF:
+        proektsiia(skan, pered_manekena)
 
-    # 2. Руки: плече манекена → кінчик пальців.
+    # 2. Руки: плече манекена → кінчик пальців. Числа рахуються тут, а
+    # застосовуються в 2в — до СКЕЛЕТА й тіла манекена, не до скану
+    # (02.10.2026: скан, деформований під манекен, втрачав силует
+    # референсу; рухи UAL1 гра тепер ставить на скелет без доріжок
+    # положення, `skinned_model.gd`).
     plече = abs(kist["upperarm_l"].x)
     kinets_m = t_hi.x
     p = svit(skan)
     lo, hi = mezhi(p)
     kinets_s = max(hi.x, -lo.x)
     ruka_z_m = (kist["upperarm_l"].z + kist["hand_l"].z) / 2
-    # Висота руки скану — середня Z вершин далеко від тулуба.
-    dal = [q.z for q in p if abs(q.x) > plече + (kinets_s - plече) * 0.5]
+    dal = [q.z for q in p if abs(q.x) > plече + (kinets_s - plече) * 0.5
+           and q.z > 1.1]
     ruka_z_s = sorted(dal)[len(dal) // 2] if dal else ruka_z_m
-    kx = (kinets_m - plече) / max(0.01, kinets_s - plече)
-    for v in skan.data.vertices:
-        ax = abs(v.co.x)
-        if ax <= plече:
-            continue
-        znak = 1 if v.co.x > 0 else -1
-        # Вага переходу: 0 біля плеча, 1 за 12 см від нього — тулуб на місці.
-        w = min(1.0, (ax - plече) / 0.12)
-        v.co.x = znak * (plече + (ax - plече) * (1 + (kx - 1) * w))
-        v.co.z += (ruka_z_m - ruka_z_s) * w
-    print("[аватар] руки: кінчики %.3f → %.3f м (×%.3f), висота руки "
-          "%.3f → %.3f м" % (kinets_s, kinets_m, kx, ruka_z_s, ruka_z_m))
+    k_inv = (kinets_s - plече) / max(0.01, kinets_m - plече)
+    print("[аватар] руки: кінчики скану %.3f, манекена %.3f (скелет ×%.3f), "
+          "висота руки %.3f / %.3f м" % (kinets_s, kinets_m, k_inv, ruka_z_s,
+                                         ruka_z_m))
 
     # 2а. Глибина (Y): скан центровано за габаритом, а кістки манекена
     # лежать на своїй Y — передпліччя стояло на 14 см убік від зап'ястка,
@@ -170,11 +185,8 @@ def main():
             v.co.y += dy
         print("[аватар] глибина: скан зсунуто на %+.3f м по Y" % dy)
 
-    # 2б. Ноги (01.10.2026: «не правильний вигін ніг»): ноги скану стояли
-    # на 4–5 см попереду ніг манекена, ступні — ширше, і коліно брало ваги
-    # не тих граней. На висоті стегна, коліна й ступні центр смуги скану
-    # стає центром тієї ж смуги ТІЛА манекена (не кістки: пальці в обох
-    # однаково попереду кісточки); між рівнями — плавно, вище таза — нуль.
+    # 2б. Ноги: центр смуги на висоті ступні, коліна й стегна — скан
+    # проти тіла манекена (не кістки: пальці в обох однаково попереду).
     tilo_p = svit(tilo)
 
     def tsentr(tochky, z, znak):
@@ -186,38 +198,140 @@ def main():
                 sum(c.y for c in smuga) / len(smuga))
     rivni = [kist["foot_l"].z, kist["calf_l"].z, kist["thigh_l"].z - 0.1]
     VERKH = kist["thigh_l"].z + 0.12
+    zsuvy = {}
+    skan_p = [v.co.copy() for v in skan.data.vertices]
     for znak in (1, -1):
-        skan_p = [v.co.copy() for v in skan.data.vertices]
-        zsuvy = []
+        zs = []
         for z in rivni:
             a_, b_ = tsentr(tilo_p, z, znak), tsentr(skan_p, z, znak)
-            zsuvy.append((z, (a_[0] - b_[0], a_[1] - b_[1]) if a_ and b_
-                          else (0.0, 0.0)))
-        print("[аватар] нога %s: зсув x/y на ступні %+.3f/%+.3f, коліні "
-              "%+.3f/%+.3f, стегні %+.3f/%+.3f" % (
+            # Скільки треба зсунути МАНЕКЕН, щоб він став на скан.
+            zs.append((z, (b_[0] - a_[0], b_[1] - a_[1]) if a_ and b_
+                       else (0.0, 0.0)))
+        zsuvy[znak] = zs
+        print("[аватар] нога %s: манекен → скан x/y на ступні %+.3f/%+.3f, "
+              "коліні %+.3f/%+.3f, стегні %+.3f/%+.3f" % (
                   "ліва" if znak > 0 else "права",
-                  *zsuvy[0][1], *zsuvy[1][1], *zsuvy[2][1]))
+                  *zs[0][1], *zs[1][1], *zs[2][1]))
 
-        def zsuv(z):
-            if z <= zsuvy[0][0]:
-                return zsuvy[0][1]
-            for (z0, d0), (z1, d1) in zip(zsuvy, zsuvy[1:]):
-                if z <= z1:
-                    t = (z - z0) / (z1 - z0)
-                    return (d0[0] + (d1[0] - d0[0]) * t,
-                            d0[1] + (d1[1] - d0[1]) * t)
-            z0, d0 = zsuvy[-1]
-            t = max(0.0, 1.0 - (z - z0) / (VERKH - z0))
-            return (d0[0] * t, d0[1] * t)
-        for v in skan.data.vertices:
-            if v.co.x * znak <= 0 or v.co.z > VERKH or abs(v.co.x) > 0.4:
-                continue
-            # Біля середньої лінії тіла (пах, пов'язка) зсув X слабшає —
-            # дві ноги не тягнуть одну точку в різні боки.
-            vaga_x = min(1.0, abs(v.co.x) / 0.06)
-            dx, dy = zsuv(v.co.z)
-            v.co.x += dx * vaga_x
-            v.co.y += dy
+    def zsuv(znak, z):
+        zs = zsuvy[znak]
+        if z <= zs[0][0]:
+            return zs[0][1]
+        for (z0, d0), (z1, d1) in zip(zs, zs[1:]):
+            if z <= z1:
+                t = (z - z0) / (z1 - z0)
+                return (d0[0] + (d1[0] - d0[0]) * t,
+                        d0[1] + (d1[1] - d0[1]) * t)
+        z0, d0 = zs[-1]
+        t = max(0.0, 1.0 - (z - z0) / (VERKH - z0))
+        return (d0[0] * t, d0[1] * t)
+
+    # Вісь руки скану (ітерація 8): на кадрі руки йдуть трохи вгору до
+    # кистей, а скелет стояв горизонтально — кисті манекена опинялись
+    # нижче кистей референсу. Медіана Y/Z вершин руки в 48 смугах по X.
+    import numpy as np
+    sp = np.array([(c.x, c.y, c.z) for c in skan_p])
+    os_ruky = {}
+    for znak in (1, -1):
+        r_ = sp[(sp[:, 0] * znak > plече) & (sp[:, 2] > 1.1)]
+        xs_ = np.linspace(plече, kinets_s, 48)
+        cy, cz = [], []
+        for x0 in xs_:
+            sm = r_[np.abs(np.abs(r_[:, 0]) - x0) < 0.02]
+            cy.append(np.median(sm[:, 1]) if len(sm) else np.nan)
+            cz.append(np.median(sm[:, 2]) if len(sm) else np.nan)
+        cy, cz = np.array(cy), np.array(cz)
+        for a_ in (cy, cz):
+            ok_ = ~np.isnan(a_)
+            a_[~ok_] = np.interp(np.where(~ok_)[0], np.where(ok_)[0], a_[ok_])
+        os_ruky[znak] = (xs_, np.convolve(np.pad(cy, 3, "edge"),
+                                          np.ones(7) / 7, "valid"),
+                         np.convolve(np.pad(cz, 3, "edge"), np.ones(7) / 7,
+                                     "valid"))
+        print("[аватар] вісь руки %s: плече z %.3f → кінчики z %.3f"
+              % ("ліва" if znak > 0 else "права", cz[0], cz[-1]))
+    plече_m = kist["upperarm_l"]
+    kysty_m = kist["hand_l"]
+
+    # Ступні скану: довжина й кут (головна вісь точок нижче кісточки).
+    stopy = {}
+    for znak in (1, -1):
+        f_ = sp[(sp[:, 0] * znak > 0.03) & (sp[:, 2] < 0.1)]
+        fm = np.array([(c.x, c.y, c.z) for c in tilo_p
+                       if c.x * znak > 0.03 and c.z < 0.1])
+        def vis(pts):
+            c = pts[:, :2].mean(0)
+            u_, s_, vt = np.linalg.svd(pts[:, :2] - c, full_matrices=False)
+            d = vt[0] if vt[0][1] * (-1 if pered_manekena < 0 else 1) >= 0 \
+                else -vt[0]
+            proj = (pts[:, :2] - c) @ d
+            return c, d, proj.max() - proj.min()
+        if len(f_) > 50 and len(fm) > 20:
+            cs, ds, ls = vis(f_)
+            cm, dm, lm = vis(fm)
+            kut = math.atan2(ds[1], ds[0]) - math.atan2(dm[1], dm[0])
+            kut = (kut + math.pi) % (2 * math.pi) - math.pi
+            stopy[znak] = (kut, ls / lm)
+            print("[аватар] ступня %s: кут %+.1f°, довжина ×%.2f"
+                  % ("ліва" if znak > 0 else "права", math.degrees(kut),
+                     ls / lm))
+
+    def maneken_na_skan(q):
+        """Точка манекена → де вона на скані (руки й ноги)."""
+        q = q.copy()
+        ax = abs(q.x)
+        if ax > plече and q.z > 1.1:
+            znak = 1 if q.x > 0 else -1
+            xs_, cy, cz = os_ruky[znak]
+            t = (ax - plече) / max(0.01, kinets_m - plече)
+            x_s = plече + t * (kinets_s - plече)
+            # Центр руки манекена тут — лінія плече→кисть його кісток.
+            tm = min(1.0, (ax - plече) / max(0.01, abs(kysty_m.x) - plече))
+            my = plече_m.y + (kysty_m.y - plече_m.y) * tm
+            mz = plече_m.z + (kysty_m.z - plече_m.z) * tm
+            sy = float(np.interp(x_s, xs_, cy))
+            sz = float(np.interp(x_s, xs_, cz))
+            w = min(1.0, (ax - plече) / 0.12)
+            q.x = znak * (plече + (ax - plече) * (1 + (k_inv - 1) * w))
+            q.y += (sy - my) * w
+            q.z += (sz - mz) * w
+        if q.z < VERKH and abs(q.x) < 0.4 and abs(q.x) > 1e-6:
+            znak = 1 if q.x > 0 else -1
+            vaga_x = min(1.0, abs(q.x) / 0.06)
+            # Ступня: кут і довжина як у скану, навколо кісточки.
+            if znak in stopy and q.z < kist["foot_l"].z + 0.05:
+                kut, dl = stopy[znak]
+                kis = kist["foot_l" if znak > 0 else "foot_r"]
+                vx, vy = q.x - kis.x, q.y - kis.y
+                vx, vy = vx * dl, vy * dl
+                c_, s_ = math.cos(kut), math.sin(kut)
+                q.x = kis.x + vx * c_ - vy * s_
+                q.y = kis.y + vx * s_ + vy * c_
+            dx, dy = zsuv(znak, q.z)
+            q.x += dx * vaga_x
+            q.y += dy
+        return q
+
+    # 2в. Скелет і тіло манекена — на скан.
+    mw = tilo.matrix_world
+    mwi = mw.inverted()
+    for v in tilo.data.vertices:
+        v.co = mwi @ maneken_na_skan(mw @ v.co)
+    bpy.context.view_layer.objects.active = arm
+    for x in bpy.context.selected_objects:
+        x.select_set(False)
+    arm.select_set(True)
+    bpy.ops.object.mode_set(mode="EDIT")
+    am_ = arm.matrix_world
+    ami = am_.inverted()
+    for eb in arm.data.edit_bones:
+        eb.head = ami @ maneken_na_skan(am_ @ eb.head)
+        eb.tail = ami @ maneken_na_skan(am_ @ eb.tail)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for b_ in arm.data.bones:
+        kist[b_.name] = arm.matrix_world @ b_.head_local
+    print("[аватар] скелет на скані: кисть %.3f м, ступня %.3f/%.3f"
+          % (kist["hand_l"].x, kist["foot_l"].x, kist["foot_l"].y))
 
     # 3. Ваги з тіла манекена.
     for g in tilo.vertex_groups:
@@ -263,6 +377,9 @@ def main():
     porozhni = sum(1 for v in skan.data.vertices if not v.groups)
     print("[аватар] вершин %d, без ваги %d" % (len(skan.data.vertices),
                                                porozhni))
+
+    if REF:
+        zapekty(skan)
 
     # 3а. Кисті й ступні — манекенові. Pixal3D ліпить розкриту долоню в
     # «рукавицю», а ступню — грудкою без пальців, і на кістках пальців вони
@@ -372,11 +489,24 @@ def main():
         print("[аватар]   шкіра скану %s, текстура манекена %s"
               % (tuple(round(c, 3) for c in kolir),
                  tuple(round(c, 3) for c in sered)))
-        for i in mix.inputs:
-            for l in list(i.links):
-                if l.from_node.type == "VERTEX_COLOR":
-                    links.remove(l)
-                    i.default_value = (*mnozh, 1.0)
+        # Тон — прямо в картинку: множник вузлом бачив Godot, але не
+        # Workbench (оцінка) і не кожен експорт.
+        import numpy as np
+        src = tex.image
+        w_, h_ = src.size
+        px = np.empty(w_ * h_ * 4, dtype=np.float32)
+        src.pixels.foreach_get(px)
+        px = px.reshape(-1, 4)
+        lin = np.where(px[:, :3] <= 0.04045, px[:, :3] / 12.92,
+                       ((px[:, :3] + 0.055) / 1.055) ** 2.4) * np.array(mnozh)
+        px[:, :3] = np.where(lin <= 0.0031308, lin * 12.92,
+                             1.055 * np.power(np.maximum(lin, 0), 1 / 2.4) - 0.055)
+        nove = bpy.data.images.new("шкіра-кистей", w_, h_)
+        nove.pixels.foreach_set(px.ravel())
+        nove.pack()
+        tex.image = nove
+        links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+        nodes.remove(mix)
         print("[аватар] кисті й ступні: вершин %d, текстура манекена ×%s"
               % (len(kysti.data.vertices), tuple(round(c, 2) for c in mnozh)))
     else:
@@ -411,6 +541,334 @@ def main():
     print("[аватар] →", KUDY)
     if KADRY:
         kadry(arm, skan)
+
+
+def proektsiia(skan, pered):
+    """Друга розгортка «Проєкція» — піксель референсу, з якого видно кожну
+    вершину спереду, і «Видимість» — наскільки грань дивиться на камеру.
+
+    Pixal3D будує сітку саме з цього кадру, тож у сирій формі (до підгонки
+    рук і ніг під манекен) габарит сітки спереду лягає на габарит фігури
+    на кадрі. Колір звідси, а не з розмитої текстури Pixal3D — обличчя,
+    пасма спереду, тон шкіри й тканина (02.10.2026, «схожою на референс
+    не менш як на 95%»)."""
+    import numpy as np
+    skan.data.update()
+    m = bpy.data.images.load(os.path.abspath(REF_MASKA))
+    w, h = m.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    m.pixels.foreach_get(px)
+    maska = px.reshape(h, w, 4)[..., 0] > 0.5     # рядок 0 — низ кадру
+    # Звужена маска: на краю фігури проєкція брала пікселі тла (сірі
+    # смуги по силуету, ітерація 1).
+    vuzka = maska.copy()
+    for _ in range(5):
+        vuzka = vuzka & np.roll(vuzka, 1, 0) & np.roll(vuzka, -1, 0) \
+            & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
+    ys, xs = np.where(maska)
+    u0, u1 = xs.min() / w, (xs.max() + 1) / w
+    v0, v1 = ys.min() / h, (ys.max() + 1) / h
+    me = skan.data
+    lo, hi = mezhi([v.co for v in me.vertices])
+    if PRYVIAZKA_OSI != "однаково":
+        pass
+    # Однаковий масштаб по обох осях (ітерація 9): кадр і ортопроєкція
+    # зберігають пропорції, а ширину габариту задають кінчики пальців —
+    # розчепірені на кадрі й злиплі в скані, і розтягнення ширини окремо
+    # стискало все по X. Масштаб — з висоти, центр по X — з габариту.
+    if PRYVIAZKA_OSI == "однаково":
+        px_na_m = (v1 - v0) * h / (hi.z - lo.z)
+        shyr_u = (hi.x - lo.x) * px_na_m / w
+        cu = (u0 + u1) / 2
+        u0, u1 = cu - shyr_u / 2, cu + shyr_u / 2
+    # Прив'язка по рядках (ітерація 3) — ВИМКНЕНА: на висоті рук «краї» —
+    # кінчики пальців, а розчепірені на кадрі й злиплі в скані пальці різної
+    # ширини, і груди розтягувало (71,6% проти 74,8%). Лінійна проєкція
+    # спереду й ортокамера лінійні обидві — проєкція відтворює кадр.
+    ryadky = 512
+    def gladko(a_):
+        k_ = 5
+        p_ = np.pad(a_, k_, mode="edge")
+        return np.convolve(p_, np.ones(2 * k_ + 1) / (2 * k_ + 1), "valid")
+    rL = np.full(ryadky, np.nan)
+    rR = np.full(ryadky, np.nan)
+    for i in range(ryadky):
+        y = int(v0 * h + (i + 0.5) / ryadky * (v1 - v0) * h)
+        xs_ = np.where(maska[min(h - 1, y)])[0]
+        if xs_.size:
+            rL[i], rR[i] = xs_.min() / w, (xs_.max() + 1) / w
+    sL = np.full(ryadky, np.nan)
+    sR = np.full(ryadky, np.nan)
+    for v in me.vertices:
+        i = min(ryadky - 1, int((v.co.z - lo.z) / (hi.z - lo.z) * ryadky))
+        x = (v.co.x - lo.x) / (hi.x - lo.x)
+        if pered > 0:
+            x = 1.0 - x
+        sL[i] = x if np.isnan(sL[i]) else min(sL[i], x)
+        sR[i] = x if np.isnan(sR[i]) else max(sR[i], x)
+    for a_ in (rL, rR, sL, sR):
+        ok_ = ~np.isnan(a_)
+        a_[~ok_] = np.interp(np.where(~ok_)[0], np.where(ok_)[0], a_[ok_])
+    rL, rR, sL, sR = gladko(rL), gladko(rR), gladko(sL), gladko(sR)
+    # Точна прив'язка (ітерація 6): габарит сітки Pixal3D після згладження
+    # трохи більший за фігуру на кадрі, тож масштаб і зсув «габарит →
+    # маска» хибили на кілька пікселів (найбільше на обличчі). Підбираємо
+    # окремо по кожній осі: профіль заповнення рядків (стовпців) точками
+    # сітки проти профілю маски.
+    N = 1024
+    tochky = np.array([((v.co.x - lo.x) / (hi.x - lo.x),
+                        (v.co.z - lo.z) / (hi.z - lo.z))
+                       for v in me.vertices])
+    if pered > 0:
+        tochky[:, 0] = 1.0 - tochky[:, 0]
+    # Профіль форми: на кожному рядку — ширина фігури (крайній правий −
+    # крайній лівий піксель), на кожному стовпці — висота. Голова, плечі,
+    # руки, талія, ноги дають різну ширину, і на ній видно зсув і масштаб.
+    def rozmah(m2, vis):
+        any_ = m2.any(axis=vis)
+        perv = np.argmax(m2, axis=vis)
+        ost = m2.shape[vis] - 1 - np.argmax(np.flip(m2, axis=vis), axis=vis)
+        return np.where(any_, ost - perv, 0).astype(float) / m2.shape[vis]
+    # Лише центральна смуга ±20% ширини фігури: розчепірені пальці кадру й
+    # злиплі кисті скану різної ширини і тягли масштаб u в межу (ітер. 6).
+    cx = (u0 + u1) / 2
+    pol = (u1 - u0) * 0.2
+    smuga_m = maska.copy()
+    kol = np.arange(w) / w
+    smuga_m[:, (kol < cx - pol) | (kol > cx + pol)] = False
+    shyr_ref = rozmah(smuga_m, 1)
+    vys_ref = rozmah(smuga_m, 0)
+    tsentralni = np.abs(tochky[:, 0] - 0.5) < 0.2
+    tochky = tochky[tsentralni]
+
+    def pidbir(t, a0, a1, inshi, i0, i1, prof):
+        """t — координата вздовж осі, inshi — поперечна (вже в кадрі)."""
+        best = (1e9, 1.0, 0.0)
+        c = (a0 + a1) / 2
+        for sk in np.arange(0.95, 1.0501, 0.0025):
+            for zs in np.arange(-0.02, 0.0201, 0.001):
+                k = c + ((a0 + t * (a1 - a0)) - c) * sk + zs
+                idx = np.clip((k * N).astype(int), 0, N - 1)
+                mn = np.full(N, np.inf)
+                mx = np.full(N, -np.inf)
+                np.minimum.at(mn, idx, inshi)
+                np.maximum.at(mx, idx, inshi)
+                ye = np.isfinite(mn)
+                prof_s = np.where(ye, mx - mn, 0.0)
+                vazh = prof > 0
+                err = np.abs(prof_s - prof)[vazh].mean()
+                if err < best[0]:
+                    best = (err, sk, zs)
+        return best
+    inshi_u = v0 + tochky[:, 1] * (v1 - v0)     # поперечна для стовпців — v
+    inshi_v = u0 + tochky[:, 0] * (u1 - u0)     # для рядків — u
+    bv = pidbir(tochky[:, 1], v0, v1, inshi_v, u0, u1, shyr_ref)
+    bu = pidbir(tochky[:, 0], u0, u1, inshi_u, v0, v1, vys_ref)
+    # Профільний підбір лише друкується: ітерація 9 з ним гірша за 8 без
+    # нього; точну прив'язку дає оптичний потік нижче.
+    # Потік DIS між розмитою текстурою Pixal3D і чітким кадром хаотичний
+    # (середній 8 px навіть після згладження) — вимкнено.
+    potik = None
+    if PRYVIAZKA == "підбір":
+        cu, cv = (u0 + u1) / 2, (v0 + v1) / 2
+        u0, u1 = cu + (u0 - cu) * bu[1] + bu[2], cu + (u1 - cu) * bu[1] + bu[2]
+        v0, v1 = cv + (v0 - cv) * bv[1] + bv[2], cv + (v1 - cv) * bv[1] + bv[2]
+    print("[аватар] прив'язка: u ×%.4f %+.4f (похибка %.4f), v ×%.4f %+.4f (%.4f)"
+          % (bu[1], bu[2], bu[0], bv[1], bv[2], bv[0]))
+    uv = me.uv_layers.new(name="Проєкція")
+    vyd = me.color_attributes.new("Видимість", "FLOAT_COLOR", "CORNER")
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            v = me.vertices[me.loops[li].vertex_index]
+            tz = (v.co.z - lo.z) / (hi.z - lo.z)
+            i = min(ryadky - 1, max(0, int(tz * ryadky)))
+            tx = (v.co.x - lo.x) / (hi.x - lo.x)
+            if pered > 0:
+                tx = 1.0 - tx
+            uu = u0 + tx * (u1 - u0)
+            vv = v0 + tz * (v1 - v0)
+            if potik is not None:
+                # Пікселі: x — зліва, y — ЗВЕРХУ (як у кадрі й потоці).
+                px_ = min(w - 1, max(0, int(uu * w)))
+                py_ = min(h - 1, max(0, int((1.0 - vv) * h)))
+                fx, fy = potik[py_, px_]
+                uu += fx / w
+                vv -= fy / h
+            uv.data[li].uv = (uu, vv)
+            f = v.normal.y * pered
+            # Усе, що хоч трохи повернуте до камери, на кадрі видно саме
+            # так — повна вага вже з 0,15 (суміш із розмитим Pixal3D на
+            # опуклостях давала двоїння, ітерація 2–3).
+            ww = max(0.0, min(1.0, f / 0.15))
+            if not vuzka[min(h - 1, max(0, int(vv * h))),
+                         min(w - 1, max(0, int(uu * w)))]:
+                ww = 0.0
+            vyd.data[li].color = (ww, ww, ww, 1.0)
+    me.uv_layers.active = me.uv_layers["UVMap"] if "UVMap" in me.uv_layers \
+        else me.uv_layers[0]
+    print("[аватар] проєкція: кадр u %.3f–%.3f, v %.3f–%.3f" % (u0, u1, v0, v1))
+
+
+def optychnyi_potik(skan, pered, lo, hi, u0, u1, v0, v1, w, h):
+    """Рендер сирого скану з текстурою Pixal3D у ТІЙ САМІЙ прив'язці, що й
+    проєкція, і потік від нього до кадру (`tools/potik.py`)."""
+    import subprocess
+    import numpy as np
+    sc = bpy.context.scene
+    stari = {o: o.hide_render for o in bpy.data.objects}
+    for o in bpy.data.objects:
+        o.hide_render = o is not skan
+    sc.render.engine = "BLENDER_WORKBENCH"
+    sc.display.shading.light = "FLAT"
+    sc.display.shading.color_type = "TEXTURE"
+    sc.render.film_transparent = True
+    sc.view_settings.view_transform = "Standard"
+    sc.render.resolution_x, sc.render.resolution_y = w, h
+    kam = bpy.data.objects.new("камера-потоку", bpy.data.cameras.new("кп"))
+    sc.collection.objects.link(kam)
+    sc.camera = kam
+    kam.data.type = "ORTHO"
+    shyr_m = (hi.x - lo.x) / (u1 - u0)          # метрів на всю ширину кадру
+    kam.data.ortho_scale = shyr_m
+    # Центр кадру (u = v = 0,5) у світі.
+    tx_c = (0.5 - u0) / (u1 - u0)
+    if pered > 0:
+        tx_c = 1.0 - tx_c
+    x_c = lo.x + tx_c * (hi.x - lo.x)
+    z_c = lo.z + (0.5 - v0) / (v1 - v0) * (hi.z - lo.z)
+    kam.location = (x_c, pered * 10.0, z_c)
+    kam.rotation_euler = (Vector((x_c, 0, z_c)) - Vector(kam.location)) \
+        .to_track_quat("-Z", "Y").to_euler()
+    kam.data.clip_end = 30
+    tut = os.path.join(os.path.dirname(os.path.abspath(REF_MASKA)))
+    kadr = os.path.join(tut, "potik-render.png")
+    sc.render.filepath = kadr
+    bpy.ops.render.render(write_still=True)
+    for o, b_ in stari.items():
+        o.hide_render = b_
+    bpy.data.objects.remove(kam)
+    npy = os.path.join(tut, "potik.npy")
+    venv = os.path.expanduser("~/Програми/cv-venv/bin/python")
+    r = subprocess.run([venv, os.path.join(ROOT, "tools", "potik.py"),
+                        os.path.abspath(REF), os.path.abspath(REF_MASKA),
+                        kadr, npy], capture_output=True, text=True)
+    print(r.stdout.strip() or r.stderr[-500:])
+    if r.returncode != 0:
+        print("[аватар] ‼ потік не пораховано — лінійна прив'язка")
+        return None
+    return np.load(npy)
+
+
+def zapekty(skan):
+    """Запікання: спереду — референс, ззаду — Pixal3D під тон референсу."""
+    import numpy as np
+    me = skan.data
+    mat = me.materials[0]
+    nt = mat.node_tree
+    nodes, links = nt.nodes, nt.links
+    bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
+    tex_p = next(l.from_node for l in bsdf.inputs["Base Color"].links)
+    ref = bpy.data.images.load(os.path.abspath(REF))
+    # Тон Pixal3D → тон референсу: медіани на добре видимих спереду кутах.
+    def pikseli(obraz):
+        w, h = obraz.size
+        px = np.empty(w * h * 4, dtype=np.float32)
+        obraz.pixels.foreach_get(px)
+        return px.reshape(h, w, 4)
+    pp, pr = pikseli(tex_p.image), pikseli(ref)
+    uv_p, uv_r = me.uv_layers["UVMap"].data, me.uv_layers["Проєкція"].data
+    vyd = me.color_attributes["Видимість"].data
+    a_, b_ = [], []
+    for li in range(0, len(me.loops), 7):
+        if vyd[li].color[0] < 0.9:
+            continue
+        u, v = uv_p[li].uv
+        a_.append(pp[min(pp.shape[0] - 1, int(v * pp.shape[0])),
+                     min(pp.shape[1] - 1, int(u * pp.shape[1])), :3])
+        u, v = uv_r[li].uv
+        b_.append(pr[min(pr.shape[0] - 1, int(v * pr.shape[0])),
+                     min(pr.shape[1] - 1, int(u * pr.shape[1])), :3])
+    gain = np.median(np.array(b_), 0) / np.maximum(np.median(np.array(a_), 0),
+                                                    1e-3)
+    gain = np.clip(gain, 0.3, 3.0)
+    print("[аватар] тон Pixal3D → референс: ×%s" % np.round(gain, 3))
+    uvp = nodes.new("ShaderNodeUVMap")
+    uvp.uv_map = "UVMap"
+    links.new(uvp.outputs["UV"], tex_p.inputs["Vector"])
+    mnozh = nodes.new("ShaderNodeMix")
+    mnozh.data_type, mnozh.blend_type = "RGBA", "MULTIPLY"
+    mnozh.inputs["Factor"].default_value = 1.0
+    links.new(tex_p.outputs["Color"], mnozh.inputs[6])
+    mnozh.inputs[7].default_value = (*[float(x) for x in gain], 1.0)
+    uvr = nodes.new("ShaderNodeUVMap")
+    uvr.uv_map = "Проєкція"
+    tex_r = nodes.new("ShaderNodeTexImage")
+    tex_r.image = ref
+    tex_r.extension = "EXTEND"
+    links.new(uvr.outputs["UV"], tex_r.inputs["Vector"])
+    attr = nodes.new("ShaderNodeVertexColor")
+    attr.layer_name = "Видимість"
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    links.new(attr.outputs["Color"], mix.inputs["Factor"])
+    links.new(mnozh.outputs[2], mix.inputs[6])
+    links.new(tex_r.outputs["Color"], mix.inputs[7])
+    links.new(mix.outputs[2], bsdf.inputs["Base Color"])
+    # Метал — геть ДО запікання: прохід «колір дифузії» Cycles = колір ×
+    # (1 − метал), і металевість Pixal3D темнила все на ~25% (ітерація 4:
+    # торс 0,76 від референсу; Workbench сам передає колір точно).
+    for k_ in ("Metallic", "Roughness"):
+        for l in list(bsdf.inputs[k_].links):
+            links.remove(l)
+    bsdf.inputs["Metallic"].default_value = 0.0
+    bsdf.inputs["Roughness"].default_value = 0.6
+    cil = bpy.data.images.new("аватар-колір", 2048, 2048)
+    tex_c = nodes.new("ShaderNodeTexImage")
+    tex_c.image = cil
+    nodes.active = tex_c
+    sc = bpy.context.scene
+    sc.render.engine = "CYCLES"
+    # На відеокарті: на процесорі запікання 2048² з ~150 тис. граней ішло
+    # пів години.
+    try:
+        pr = bpy.context.preferences.addons["cycles"].preferences
+        for typ in ("OPTIX", "CUDA"):
+            try:
+                pr.compute_device_type = typ
+                pr.get_devices()
+                if any(d.type == typ for d in pr.devices):
+                    for d in pr.devices:
+                        d.use = d.type == typ
+                    sc.cycles.device = "GPU"
+                    print("[аватар] запікання на %s" % typ)
+                    break
+            except TypeError:
+                continue
+    except Exception as e:
+        print("[аватар] ‼ GPU для запікання недоступна: %s" % e)
+    sc.cycles.samples = 1
+    sc.render.bake.margin = 8
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    skan.select_set(True)
+    bpy.context.view_layer.objects.active = skan
+    me.uv_layers["UVMap"].active = True
+    me.uv_layers["UVMap"].active_render = True
+    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+    cil.pack()
+    # Матеріал: запечений колір, нормаль Pixal3D, без металу (метал
+    # темнив і червонив шкіру в Godot).
+    for n in (mix, mnozh, tex_r, uvr, attr):
+        nodes.remove(n)
+    links.new(tex_c.outputs["Color"], bsdf.inputs["Base Color"])
+    links.new(uvp.outputs["UV"], tex_c.inputs["Vector"])
+    for k_ in ("Metallic", "Roughness"):
+        for l in list(bsdf.inputs[k_].links):
+            links.remove(l)
+    bsdf.inputs["Metallic"].default_value = 0.0
+    bsdf.inputs["Roughness"].default_value = 0.6
+    me.uv_layers.remove(me.uv_layers["Проєкція"])
+    print("[аватар] запечено: %s" % (cil.size[:],))
 
 
 def zrobyty_peruku(shliakh, skan, kist):
@@ -559,6 +1017,34 @@ def kolir_shkiry(skan, zapiastok):
     return tuple(float(((x + 0.055) / 1.055) ** 2.4) for x in c)
 
 
+def fcurves_of(action):
+    """Криві дії і в старому API, і в шаруватому Blender 5."""
+    if hasattr(action, "fcurves") and action.fcurves is not None:
+        try:
+            return list(action.fcurves)
+        except Exception:
+            pass
+    out = []
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                out.extend(bag.fcurves)
+    return out
+
+
+def remove_fcurve(action, fc):
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                if fc in list(bag.fcurves):
+                    bag.fcurves.remove(fc)
+                    return
+    try:
+        action.fcurves.remove(fc)
+    except Exception:
+        pass
+
+
 def kadry(arm, skan):
     sc = bpy.context.scene
     sc.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in [
@@ -597,6 +1083,13 @@ def kadry(arm, skan):
     bpy.ops.import_scene.gltf(filepath=RUKHY)
     for o in set(bpy.data.objects) - stari:
         o.hide_render = True
+    # Як у грі (`skinned_model.gd:_rotations_only`): положення лише root і
+    # pelvis, інакше кістки скелета-під-скан стрибали б на манекенові місця.
+    for a_ in bpy.data.actions:
+        for fc in list(fcurves_of(a_)):
+            if fc.data_path.endswith(".location") and not any(
+                    '"%s"' % k in fc.data_path for k in ("root", "pelvis")):
+                remove_fcurve(a_, fc)
     arm.animation_data_create()
     for imia, kadr in PEREVIRKA:
         dii = [a for a in bpy.data.actions if a.name.startswith(imia)]

@@ -46,6 +46,17 @@ const REVERSED_MOUNTS := {
 ## вище. Щоб кожну нову модель не дописувати в перелік, уся тека
 ## розвертається сама.
 const OWN_DIR := "res://models/own/"
+## Аватари зі сканів (02.10.2026, `tools/blender/avatar_build.py`):
+## скелет манекена з тими самими назвами кісток, але суглоби зсунуті туди,
+## де вони в скані, — так сітка лишається такою, як на референсі. Рухи UAL1
+## задають і ПОЛОЖЕННЯ кожної кістки й повертали б суглоби на манекенові
+## місця, тож для цих моделей доріжки положення лишаються лише в `root` і
+## `pelvis` (переміщення тіла); решта — тільки повороти.
+const OWN_SKELETON_DIR := "res://models/own/avatary/"
+const KEEP_POSITION := ["root", "pelvis"]
+## Очищені бібліотеки рухів, щоб не дублювати 43 рухи на кожен аватар:
+## шлях рухів -> {ім'я бібліотеки -> AnimationLibrary}.
+static var _own_moves: Dictionary = {}
 
 ## Одяг на моделі гравця (19.09.2026, слово замовника: «моделі
 ## роздягнені, і коли в інвентарі вдягаю одяг — та частина, яку вдягаю,
@@ -118,6 +129,8 @@ func build() -> void:
 	if _player == null and anim_path != "" \
 			and ResourceLoader.exists(anim_path):
 		_player = _borrow_player(body, anim_path)
+		if _player != null and path.begins_with(OWN_SKELETON_DIR):
+			_rotations_only(_player)
 	_skeleton = body.find_child("*Skeleton3D*", true, false)
 	if _skeleton == null:
 		for child in body.find_children("*", "Skeleton3D", true, false):
@@ -168,6 +181,29 @@ func _hold(what: Dictionary) -> void:
 ## (тут — `".."`, тобто «батько програвача»). Переставивши сам вузол
 ## програвача на те саме місце в НОВОМУ дереві, шляхи лишаються
 ## правильними без жодної ручної підміни.
+func _rotations_only(player: AnimationPlayer) -> void:
+	if not _own_moves.has(anim_path):
+		var libs := {}
+		for lib_name: StringName in player.get_animation_library_list():
+			var lib := player.get_animation_library(lib_name)
+			var clean := AnimationLibrary.new()
+			for move: StringName in lib.get_animation_list():
+				var anim: Animation = lib.get_animation(move).duplicate(true)
+				for t in range(anim.get_track_count() - 1, -1, -1):
+					if anim.track_get_type(t) != Animation.TYPE_POSITION_3D:
+						continue
+					var bone := str(anim.track_get_path(t).get_concatenated_subnames())
+					if not KEEP_POSITION.has(bone):
+						anim.remove_track(t)
+				clean.add_animation(move, anim)
+			libs[lib_name] = clean
+		_own_moves[anim_path] = libs
+	var ready: Dictionary = _own_moves[anim_path]
+	for lib_name: StringName in ready:
+		player.remove_animation_library(lib_name)
+		player.add_animation_library(lib_name, ready[lib_name])
+
+
 func _borrow_player(body: Node, from_path: String) -> AnimationPlayer:
 	var scene: PackedScene = load(from_path)
 	if scene == null:

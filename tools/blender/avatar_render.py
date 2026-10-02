@@ -14,13 +14,46 @@ from mathutils import Vector
 
 ARGS = sys.argv[sys.argv.index("--") + 1:]
 MODEL, KUDY = ARGS[0], ARGS[1]
+T_POZA = "--т-поза" in ARGS
+ARGS = [a for a in ARGS if a != "--т-поза"]
 VYD = ARGS[2] if len(ARGS) > 2 else "перед"
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=MODEL)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+KUT = 90.0
+try:
+    import json as _j
+    KUT = float(_j.load(open(MODEL + ".підбір.json")).get("кут рук", 90.0))
+except Exception:
+    pass
+if T_POZA:
+    # Руки горизонтально, як на кадрі (модель MPFB стоїть в А-позі).
+    for bik in ("l", "r"):
+        pb = arm.pose.bones.get("upperarm_" + bik)
+        if pb is None:
+            continue
+        pb.rotation_mode = "QUATERNION"
+        hd = arm.matrix_world @ pb.head
+        tl = arm.matrix_world @ pb.tail
+        s_ = 1 if tl.x > hd.x else -1
+        tsil = Vector((math.sin(math.radians(KUT)) * s_, 0,
+                       -math.cos(math.radians(KUT))))
+        r = (tl - hd).normalized().rotation_difference(tsil)
+        m = pb.matrix.copy()
+        t = m.translation.copy()
+        m = r.to_matrix().to_4x4() @ m
+        m.translation = t
+        pb.matrix = m
+    bpy.context.view_layer.update()
 sitky = [o for o in bpy.data.objects if o.type == "MESH"]
-tochky = [o.matrix_world @ v.co for o in sitky for v in o.data.vertices]
+dg = bpy.context.evaluated_depsgraph_get()
+tochky = []
+for o in sitky:
+    ev = o.evaluated_get(dg)
+    me_ = ev.to_mesh()
+    tochky += [o.matrix_world @ v.co for v in me_.vertices]
+    ev.to_mesh_clear()
 lo = Vector([min(p[i] for p in tochky) for i in range(3)])
 hi = Vector([max(p[i] for p in tochky) for i in range(3)])
 # Перед — за ступнями скелета (як у avatar_build): пальці попереду кісточки.
@@ -31,6 +64,35 @@ sc = bpy.context.scene
 sc.render.engine = "BLENDER_WORKBENCH"
 sc.display.shading.light = "FLAT"
 sc.display.shading.color_type = "TEXTURE"
+# Workbench передає пікселі точно (EEVEE розмивав: тіло 0,79 → 0,62), але
+# прозорості не знає — рогівка очей MPFB (прозорий шар) затуляла райдужку.
+# Лише для оцінки: грані очей з прозорою текстурою геть.
+import bmesh
+import numpy as _np
+for o in [x for x in bpy.data.objects if x.type == "MESH"]:
+    mats = [m for m in o.data.materials if m and m.use_nodes]
+    tex = [n.image for m in mats for n in m.node_tree.nodes
+           if n.type == "TEX_IMAGE" and n.image]
+    if not tex or not tex[0].name.lower().endswith(("_eye", "eye.png", "brown_eye")) and "_eye" not in tex[0].name.lower():
+        continue
+    im = tex[0]
+    w_, h_ = im.size
+    px = _np.empty(w_ * h_ * 4, dtype=_np.float32)
+    im.pixels.foreach_get(px)
+    alfa = px.reshape(h_, w_, 4)[..., 3]
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    uvl = bm.loops.layers.uv.active
+    geth = []
+    for f in bm.faces:
+        u = sum(l[uvl].uv[0] for l in f.loops) / len(f.loops)
+        v = sum(l[uvl].uv[1] for l in f.loops) / len(f.loops)
+        if alfa[min(h_ - 1, int(v * h_)) % h_, min(w_ - 1, int(u * w_)) % w_] < 0.5:
+            geth.append(f)
+    bmesh.ops.delete(bm, geom=geth, context="FACES")
+    bm.to_mesh(o.data)
+    bm.free()
+    print("[рендер] рогівка геть: %d граней" % len(geth))
 sc.render.film_transparent = True
 sc.render.resolution_x = sc.render.resolution_y = 1024
 sc.view_settings.view_transform = "Standard"

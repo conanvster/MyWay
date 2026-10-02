@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import uniform_filter
 
-W, H = 384, 768
+W, H = 640, 640   # квадрат: у T-позі руки з кистями ширші за 0,5 висоти
 
 
 def obrizaty(rgb, maska):
@@ -121,7 +121,7 @@ def main():
     sira = lambda x: x @ np.array([0.299, 0.587, 0.114])
     tilo = ssim(sira(a), sira(b), spilne)
     holova = np.zeros_like(spilne)
-    holova[: int(H * 0.13), int(W * 0.3): int(W * 0.7)] = True
+    holova[: int(H * 0.13), int(W * 0.42): int(W * 0.58)] = True
     oblychchia = ssim(sira(a), sira(b), spilne & holova)
     pidsumok = 0.25 * (iou + kolir + tilo + oblychchia)
     rez = {"силует": round(float(iou), 3), "колір": round(float(kolir), 3),

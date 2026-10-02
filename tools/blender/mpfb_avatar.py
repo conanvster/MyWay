@@ -1001,6 +1001,7 @@ def perenapravyty(arm):
     # зміщена вперед - треба її трохи вирівняти»). Тепер: манекен — перший
     # кадр `A_TPose`; MPFB — спокій, лише руки горизонтально й прямі
     # (плече, передпліччя, кисть уздовж). C = R_манекена⁻¹ · R_MPFB.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import mpfb_pidbir as pb_
     tpoza = next((a for a in bpy.data.actions
                   if a.name.split("|")[-1].startswith("A_TPose")), None)

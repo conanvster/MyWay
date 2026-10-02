@@ -21,6 +21,13 @@ VYD = ARGS[2] if len(ARGS) > 2 else "перед"
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=MODEL)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+# Модель із рухами: імпорт вішає першу дію на скелет, і вона перекривала
+# позу оцінки (m30: 64,9% замість ~86%).
+for _o in bpy.data.objects:
+    _o.animation_data_clear()
+for _pb in arm.pose.bones:
+    _pb.matrix_basis.identity()
+bpy.context.view_layer.update()
 KUT, KUT_NIH, KUT_LIKTIA, STOPY = 90.0, 0.0, 0.0, 18.0
 KLIUCH = KOLINO = 0.0
 try:
@@ -44,7 +51,22 @@ if T_POZA:
     _P.STOPY[0] = STOPY
     _P.KLIUCH[0] = KLIUCH
     _P.KOLINO[0] = KOLINO
-    _P.postavyty_ruky(arm, KUT)
+    # Профіль Kontext малює руками вниз — модель так само (MPFB, KUT_BIK).
+    _P.postavyty_ruky(arm, _P.KUT_BIK if VYD == "бік" else KUT)
+# Центр очних яблук (сітка з текстурою «…_eye») — до того, як рогівку
+# приберуть: за ним оцінка збоку й ззаду дорівнює масштаб (точок обличчя
+# там немає).
+_dg = bpy.context.evaluated_depsgraph_get()
+_ochi = []
+for _o in [x for x in bpy.data.objects if x.type == "MESH"]:
+    _t = [n.image.name.lower() for m in _o.data.materials if m and m.use_nodes
+          for n in m.node_tree.nodes if n.type == "TEX_IMAGE" and n.image]
+    if any("_eye" in t for t in _t):
+        _e = _o.evaluated_get(_dg)
+        _me = _e.to_mesh()
+        _ochi += [_o.matrix_world @ v.co for v in _me.vertices]
+        _e.to_mesh_clear()
+OKO_SVIT = sum(_ochi, Vector()) / len(_ochi) if _ochi else None
 sitky = [o for o in bpy.data.objects if o.type == "MESH"]
 dg = bpy.context.evaluated_depsgraph_get()
 tochky = []
@@ -107,4 +129,11 @@ kam.location = c + napr
 kam.rotation_euler = (c - kam.location).to_track_quat("-Z", "Y").to_euler()
 sc.render.filepath = KUDY
 bpy.ops.render.render(write_still=True)
+if OKO_SVIT is not None:
+    from bpy_extras.object_utils import world_to_camera_view
+    import json as _js
+    _p = world_to_camera_view(sc, kam, OKO_SVIT)
+    R_ = sc.render.resolution_x
+    with open(KUDY + ".json", "w") as _f:
+        _js.dump({"око": [_p.x * R_, (1 - _p.y) * R_]}, _f)
 print("[рендер] →", KUDY)

@@ -85,7 +85,7 @@ def maska_krop():
     return kudy
 
 
-def graf_maska(image, maska, seed, prefix):
+def graf_maska(image, maska, seed, prefix, denoise=0.85):
     return {
         "1": {"class_type": "UnetLoaderGGUF",
               "inputs": {"unet_name": "flux1-dev-Q4_K_S.gguf"}},
@@ -113,7 +113,7 @@ def graf_maska(image, maska, seed, prefix):
                           "cfg": 1.0, "sampler_name": "euler",
                           "scheduler": "simple", "positive": ["9", 0],
                           "negative": ["10", 0], "latent_image": ["7", 0],
-                          "denoise": 0.85}},
+                          "denoise": denoise}},
         "12": {"class_type": "VAEDecode",
                "inputs": {"samples": ["11", 0], "vae": ["3", 0]}},
         "13": {"class_type": "SaveImage",

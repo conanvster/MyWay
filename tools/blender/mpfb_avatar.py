@@ -44,6 +44,11 @@ if "--референс" in ARGS:
     i_ = ARGS.index("--референс")
     REF = (ARGS[i_ + 1], ARGS[i_ + 2])
     del ARGS[i_:i_ + 3]
+VYDY = None           # (бік, маска боку, зад, маска заду) для проєкції
+if "--види" in ARGS:
+    i_ = ARGS.index("--види")
+    VYDY = tuple(ARGS[i_ + 1:i_ + 5])
+    del ARGS[i_:i_ + 5]
 RUKHY = None          # None — усі; інакше перелік назв
 if "--рухи" in ARGS:
     i_ = ARGS.index("--рухи")
@@ -357,11 +362,83 @@ def proektsiia(h, arm, ref, maska):
     me.uv_layers.active = me.uv_layers[0]
     print("[mpfb] проєкція: видно спереду %.0f%% вершин"
           % (100 * (vaga > 0.5).mean()))
-    zapekty(h, ref)
+    dodatkovi = []
+    if VYDY:
+        # Спина й боки (замовник 02.10.2026: «модель залишилась без плавок»).
+        # Масштаб — пікселі на метр спереду × відношення висот фігур (та
+        # сама людина з зачіскою), центр — медіана тулуба, як спереду.
+        bik, m_bik, zad, m_zad = [os.path.abspath(x) for x in VYDY]
+        H_m = vys / k
+        # Профіль — руками вниз, як на кадрі збоку (`mpfb_pidbir.KUT_BIK`).
+        pb_.postavyty_ruky(arm, pb_.KUT_BIK)
+        co_b, nrm_b = pb_.vershyny_bez_masky(h)
+        pb_.postavyty_ruky(arm, KUT_RUK[0])
+        for imia, kadr, mk_p, c_, n_, hor_i, dz_i, gl_i, zn_h, zn_d, zn_g in (
+                # ззаду (камера на +Y, праворуч у кадрі −X)
+                ("zad", zad, m_zad, co, nrm, 0, 1, 1, -1, 1, 1),
+                # бік зліва (камера на +X, праворуч у кадрі +Y)
+                ("bik-l", bik, m_bik, co_b, nrm_b, 1, 0, 0, 1, 1, 1),
+                # правий бік — той самий профіль (тіло симетричне)
+                ("bik-r", bik, m_bik, co_b, nrm_b, 1, 0, 0, 1, -1, -1)):
+            uu, vv, vg = proektsiia_vydu(
+                c_, vidymi, zn_h * c_[:, hor_i], None, zn_d * n_[:, dz_i],
+                zn_g * c_[:, gl_i], mk_p, H_m, z0, z1)
+            uvl = me.uv_layers.new(name="Проєкція-" + imia)
+            vat = me.color_attributes.new("Видимість-" + imia, "FLOAT_COLOR",
+                                          "CORNER")
+            for li, l in enumerate(me.loops):
+                i = l.vertex_index
+                uvl.data[li].uv = (uu[i], vv[i])
+                vat.data[li].color = (vg[i],) * 3 + (1.0,)
+            print("[mpfb] проєкція %s: видно %.0f%% вершин"
+                  % (imia, 100 * (vg > 0.5).mean()))
+            dodatkovi.append(("Проєкція-" + imia, "Видимість-" + imia, kadr))
+        me.uv_layers.active = me.uv_layers[0]
+    zapekty(h, ref, dodatkovi)
     me.uv_layers.remove(me.uv_layers["Проєкція"])
+    for uvn, vn, _ in dodatkovi:
+        me.uv_layers.remove(me.uv_layers[uvn])
     for p_ in arm.pose.bones:
         p_.matrix_basis.identity()
     bpy.context.view_layer.update()
+
+
+def proektsiia_vydu(co, vidymi, hor, cmed, dzer, glyb, maska, H_m, z0, z1):
+    """Вершини → (u, v, вага) для кадру збоку чи ззаду. `hor` — координата
+    вершин уздовж «праворуч у кадрі», `dzer` — складова нормалі на камеру,
+    `glyb` — глибина до камери (більше — ближче). Заслонені вершини (рука
+    перед тулубом у профіль) — вага 0: груба карта глибин у клітинках."""
+    import numpy as np
+    img = bpy.data.images.load(maska, check_existing=True)
+    w, hh = img.size
+    px = np.empty(w * hh * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    mk = px.reshape(hh, w, 4)[..., 0] > 0.5
+    ys, xs = np.where(mk)
+    y0, y1 = ys.min(), ys.max() + 1
+    vys = y1 - y0
+    tul = (ys > y1 - 0.45 * vys) & (ys < y1 - 0.30 * vys)
+    cx_r = float(np.median(xs[tul]))
+    k = vys / H_m
+    z = co[:, 2]
+    zz = co[vidymi, 2]
+    tulm = (zz > z1 - 0.45 * (z1 - z0)) & (zz < z1 - 0.30 * (z1 - z0))
+    cm = float(np.median(hor[vidymi][tulm]))
+    u = (cx_r + (hor - cm) * k) / w
+    v = (y0 + (z - z0) * k) / hh
+    kl = 4
+    iu = np.clip((u * w).astype(int), 0, w - 1)
+    iv = np.clip((v * hh).astype(int), 0, hh - 1)
+    cu, cv = iu // kl, iv // kl
+    zb = np.full(((hh + kl - 1) // kl, (w + kl - 1) // kl), -1e9)
+    np.maximum.at(zb, (cv[vidymi], cu[vidymi]), glyb[vidymi])
+    vydno = glyb >= zb[cv, cu] - 0.025
+    vuzka = mk.copy()
+    for _ in range(5):
+        vuzka = vuzka & np.roll(vuzka, 1, 0) & np.roll(vuzka, -1, 0) \
+            & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
+    vaga = np.clip(dzer / 0.15, 0, 1) * vuzka[iv, iu] * vydno * vidymi
+    return u, v, vaga
 
 
 def vidobrazhennia(h, maska):
@@ -504,7 +581,7 @@ def vyrivniaty_oblychchia(h, ref, maska, u, v, w, hh, cx_r, cx_m, y0, z0, k):
     return Q[:, 0] / w, 1.0 - Q[:, 1] / hh
 
 
-def zapekty(h, ref):
+def zapekty(h, ref, dodatkovi=()):
     import numpy as np
     me = h.data
     mat = me.materials[0]
@@ -550,10 +627,30 @@ def zapekty(h, ref):
     links.new(uv_b.outputs["UV"], tr.inputs["Vector"])
     at = nodes.new("ShaderNodeVertexColor")
     at.layer_name = "Видимість"
+    # Спершу боки й спина поверх шкіри, перед — останнім (де видно спереду,
+    # він головний).
+    osnova = mn.outputs[2]
+    tymch = []
+    for uvn, vn, kadr in dodatkovi:
+        ub = nodes.new("ShaderNodeUVMap")
+        ub.uv_map = uvn
+        tb = nodes.new("ShaderNodeTexImage")
+        tb.image = bpy.data.images.load(kadr, check_existing=True)
+        tb.extension = "EXTEND"
+        links.new(ub.outputs["UV"], tb.inputs["Vector"])
+        vb = nodes.new("ShaderNodeVertexColor")
+        vb.layer_name = vn
+        mb = nodes.new("ShaderNodeMix")
+        mb.data_type = "RGBA"
+        links.new(vb.outputs["Color"], mb.inputs["Factor"])
+        links.new(osnova, mb.inputs[6])
+        links.new(tb.outputs["Color"], mb.inputs[7])
+        osnova = mb.outputs[2]
+        tymch += [ub, tb, vb, mb]
     mx = nodes.new("ShaderNodeMix")
     mx.data_type = "RGBA"
     links.new(at.outputs["Color"], mx.inputs["Factor"])
-    links.new(mn.outputs[2], mx.inputs[6])
+    links.new(osnova, mx.inputs[6])
     links.new(tr.outputs["Color"], mx.inputs[7])
     links.new(mx.outputs[2], bsdf.inputs["Base Color"])
     for k_ in ("Metallic",):
@@ -585,7 +682,7 @@ def zapekty(h, ref):
     me.uv_layers[0].active_render = True
     bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
     cil.pack()
-    for n in (mx, mn, tr, uv_b, at):
+    for n in [mx, mn, tr, uv_b, at] + tymch:
         nodes.remove(n)
     links.new(tc.outputs["Color"], bsdf.inputs["Base Color"])
     links.new(uv_a.outputs["UV"], tc.inputs["Vector"])

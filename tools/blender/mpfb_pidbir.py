@@ -31,7 +31,13 @@ TSILI = ["torso/torso-scale-horiz", "torso/torso-vshape",
          "head/head-scale-horiz", "head/head-scale-vert",
          "legs/measure-thigh-circ", "legs/measure-calf-circ",
          "torso/measure-waist-circ", "torso/measure-bust-circ",
-         "arms/measure-upperarm-circ", "torso/torso-muscle-dorsi"]
+         "arms/measure-upperarm-circ", "torso/torso-muscle-dorsi",
+         # Постава голови — видно лише в профіль («голова зміщена вперед -
+         # треба її трохи вирівняти», замовник 02.10.2026).
+         "head/head-trans", "neck/neck-trans"]
+# Полюси цілей, що звуться не incr/decr: (додатний, від'ємний).
+POLIUSY = {"head/head-trans": ("backward", "forward"),
+           "neck/neck-trans": ("backward", "forward")}
 # Парні (лівий і правий разом): довжина й товщина рук — підбір їх не бачив,
 # поки з міри відрізали бічні стовпці, і руки MPFB лишались довшими й
 # тоншими за кадр.
@@ -72,6 +78,15 @@ def maska_ref(shliakh, oko_y=None):
     ok = (ny >= 0) & (ny < N) & (nx >= 0) & (nx < N)
     out[ny[ok], nx[ok]] = True
     return out
+
+
+def _vys_masky(shliakh):
+    img = bpy.data.images.load(shliakh, check_existing=True)
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    ys = np.where((px.reshape(h, w, 4)[..., 0] > 0.5).any(1))[0]
+    return ys.min(), ys.max() + 1
 
 
 def maska_modeli(tochky, vis_x, oko_z=None):
@@ -348,8 +363,9 @@ class Povzunky:
         self.h = h
         self.kl = {}
         for t in TSILI:
-            for kinets in ("incr", "decr"):
-                imia = "%s-%s" % (t.split("/")[-1], kinets)
+            for kinets, polius in zip(("incr", "decr"),
+                                      POLIUSY.get(t, ("incr", "decr"))):
+                imia = "%s-%s" % (t.split("/")[-1], polius)
                 try:
                     shl = TargetService.target_full_path(imia)
                 except Exception:
@@ -402,12 +418,78 @@ class Povzunky:
 PROKHODY = int(os.environ.get("PROKHODY", "3"))
 
 
+# Профіль Kontext ставить руки вниз уздовж тіла (T-позу збоку він малює
+# на три чверті, s911) — тож для профілю й модель так само.
+KUT_BIK = 6.0
+# Що видно лише збоку: постава голови й шиї, глибина тулуба, стегон, шиї.
+TSILI_BIK = ["head/head-trans", "neck/neck-trans", "torso/torso-scale-depth",
+             "hip/hip-scale-depth", "neck/neck-scale-depth",
+             "head/head-scale-depth"]
+
+
+def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
+    """Другий етап: модель руками вниз, міра — силует у профіль; повзунки
+    лише ті, що спереду не видно (силует спереду вони не міняють)."""
+    postavyty_ruky(arm, KUT_BIK)
+
+    def otsinka_b():
+        p = tochky_tila(h)
+        mb_ = maska_modeli(p, 1, oko_modeli(h) if z_okom else None)
+        return max(iou(mb_, m_b), iou(np.fliplr(mb_), m_b))
+    naikr = otsinka_b()
+    print("[підбір] профіль, початок: %.4f" % naikr, flush=True)
+    imena = [t for t in TSILI_BIK if t in pv.znach]
+    for krok in (0.25, 0.12, 0.06, 0.03):
+        for _prokhid in range(PROKHODY):
+            bulo = naikr
+            for imia in imena:
+                lo, hi = pv.mezhi(imia)
+                for znak in (1, -1):
+                    v0 = pv.znach[imia]
+                    v1 = min(hi, max(lo, v0 + znak * krok))
+                    if v1 == v0:
+                        continue
+                    pv.postavyty(imia, v1)
+                    s_ = otsinka_b()
+                    if s_ > naikr + 1e-4:
+                        naikr = s_
+                        break
+                    pv.postavyty(imia, v0)
+            if naikr <= bulo + 1e-4:
+                break
+    print("[підбір] профіль: %.4f; %s" % (naikr, {t: round(pv.znach[t], 2)
+                                                 for t in imena}), flush=True)
+    if NAKLADKA:
+        p = tochky_tila(h)
+        mb_ = maska_modeli(p, 1, oko_modeli(h) if z_okom else None)
+        if iou(np.fliplr(mb_), m_b) > iou(mb_, m_b):
+            mb_ = np.fliplr(mb_)
+        img = np.zeros((N, N, 4), np.float32)
+        img[..., 3] = 1
+        img[..., 0], img[..., 2], img[..., 1] = m_b, mb_, m_b & mb_
+        im = bpy.data.images.new("накладка-бік", N, N)
+        im.pixels.foreach_set(img.ravel())
+        im.filepath_raw = NAKLADKA.replace(".png", "-бік.png")
+        im.file_format = "PNG"
+        im.save()
+    postavyty_ruky(arm, kut_ruk)
+    return naikr
+
+
 def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
               oko_y=None):
     """`kut_ruk` — кут рук від вертикалі на кадрі (90 — T-поза); `oko_y` —
     рівень очей на кадрі спереду, пікселі знизу."""
     m_p = maska_ref(maska_pered, oko_y)
-    m_b = maska_ref(maska_bik) if maska_bik else None
+    # Профіль — у тому ж масштабі, що й перед: очей збоку MediaPipe певно
+    # не бачить, тож їхній рівень — та сама частка висоти з зачіскою, що
+    # спереду (та сама людина, той самий кадр Kontext).
+    oko_b = None
+    if maska_bik and oko_y is not None:
+        y0f, y1f = _vys_masky(maska_pered)
+        y0b, y1b = _vys_masky(maska_bik)
+        oko_b = y0b + (oko_y - y0f) * (y1b - y0b) / (y1f - y0f)
+    m_b = maska_ref(maska_bik, oko_b) if maska_bik else None
     postavyty_ruky(arm, kut_ruk)
     pv = Povzunky(h)
 
@@ -415,10 +497,6 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
         p = tochky_tila(h)
         oz = oko_modeli(h) if oko_y is not None else None
         s = iou(maska_modeli(p, 0, oz), m_p)
-        if m_b is not None:
-            # Профіль: камера збоку — глибина (Y) по горизонталі.
-            s = 0.5 * s + 0.5 * max(iou(maska_modeli(p, 1), m_b),
-                                    iou(np.fliplr(maska_modeli(p, 1)), m_b))
         return s
 
     stan = {"kut": kut_ruk}
@@ -491,6 +569,8 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
             if naikr <= bulo + 1e-4:
                 break
         print("[підбір] крок %.2f: %.4f" % (krok, naikr), flush=True)
+    if m_b is not None:
+        pidibraty_profil(h, arm, pv, m_b, oko_y is not None, kut_ruk)
     print("[підбір] повзунки: %s" % {k: round(v, 3) for k, v in pv.znach.items()
                                       if abs(v) > 1e-3}, flush=True)
     # Накладка масок для ока: червоне — лише кадр, синє — лише модель,

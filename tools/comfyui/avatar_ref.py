@@ -167,7 +167,9 @@ def rozdil(kadry):
              "baza2-s%d.png", BAZA2_SIDY),
             ("Людина, жінка — T-поза", "zh-tpoza-s%d.png", SIDY),
             ("Людина, жінка — база: пов'язки на стегнах і на грудях",
-             "zh-baza-s%d.png", BAZA_SIDY)):
+             "zh-baza-s%d.png", BAZA_SIDY),
+            ("Людина, жінка — купальник (під 3D, як у прикладі замовника)",
+             "zh-kupalnyk-s%d.png", KUPALNYK_SIDY + KUPALNYK2_SIDY)):
         ye = [s for s in sidy if (VYKHID / (shablon % s)).exists()]
         if not ye:
             continue
@@ -177,6 +179,26 @@ def rozdil(kadry):
                      '<b>%s</b>Kontext, seed %d</figcaption></figure>'
                      % (shablon % seed, nazva, nazva.split(" — ")[1], seed))
         r.append('</div>')
+    if (VYKHID / "mpfb-porivniannia-m29.png").exists():
+        r += ['<h3>Результат: 3D-модель MPFB — людина, чоловік (86,1%)</h3>',
+              '<p class="note">Параметрична модель MPFB/MakeHuman, підбір '
+              'повзунків тіла й обличчя під референс, текстура — проєкція '
+              'референсу спереду. Схожість 86,1% за '
+              '<code>tools/avatar_ocinka2.py</code> (без зачіски й шортів — '
+              'це окремі накладки). Референс виправлено: ступні — вид '
+              'спереду, кадр симетричний (віддзеркалена права половина). '
+              'Рухи: <code>./run.sh --рухи-людини --модель '
+              'res://models/own/avatary/mpfb/людина-чоловік-mpfb.gltf</code>. '
+              'Спина й боки поки без проєкції (лише шкіра MakeHuman).</p>',
+              '<div class="compare">',
+              '<figure><img src="img/test/avatar/mpfb-referens-sym.png" '
+              'alt="референс"><figcaption><b>референс</b>ступні спереду, '
+              'симетричний</figcaption></figure>',
+              '<figure style="flex:3"><img src="img/test/avatar/'
+              'mpfb-porivniannia-m29.png" alt="порівняння m29"><figcaption>'
+              '<b>ітерація m29</b>був кадр · новий · модель · силует '
+              '(червоне — лише референс, зелене — модель)</figcaption>'
+              '</figure>', '</div>']
     r.append('<!-- /аватар -->')
     return "\n".join(r)
 
@@ -261,6 +283,69 @@ def zhinka(dzerkalo):
         dzerk(dzerkalo, "zh-baza-s%d.png" % seed)
 
 
+# Купальник (слово замовника 02.10.2026: «створи референс для 3d людини
+# жінки Людина, жінка — варіант 1 у купальнику як в прикладі» — приклад:
+# чорний роздільний, бюстгальтер на кісточках із тонкими бретелями й чорні
+# трусики з високим вирізом). Як плавки в чоловіка: щільний одяг, щоб
+# підбір фігури й проєкція бачили тіло. Від T-пози s11.
+KUPALNYK_SIDY = (611, 622, 633)
+KUPALNYK = (
+    "Replace all of her clothing (shirt, vest, belt, trousers and boots) "
+    "with a simple black two-piece swimsuit: a black underwire bikini top "
+    "with thin shoulder straps and smooth moulded cups, and black high-cut "
+    "bikini briefs sitting at the hips; she is barefoot. Show her bare "
+    "shoulders, bare arms, bare midriff, bare legs and bare feet with "
+    "natural realistic skin. Keep exactly the same woman: same face, same "
+    "hair, same skin tone, same natural feminine figure and body "
+    "proportions, same strict T-pose with both arms straight out "
+    "horizontally, same front view, same plain light grey studio "
+    "background, same soft even lighting, same photorealistic style.")
+
+
+# Перший крок дав шорти замість трусиків (з брюк) — другий міняє лише низ,
+# від s611 (верх найближчий до прикладу).
+KUPALNYK2_SIDY = (641, 652, 663)
+KUPALNYK2 = (
+    "Change only her black shorts into black high-cut bikini briefs like "
+    "classic swimsuit bottoms: a smooth black triangle at the front, the "
+    "leg openings cut high up to her hip bones, the whole thighs, the "
+    "outer hips and the groin crease fully bare. Keep everything else "
+    "exactly the same: same woman, same face, same hair, same black bikini "
+    "top, same body, same strict T-pose with both arms straight out, same "
+    "front view, same plain light grey background, same lighting, same "
+    "photorealistic style.")
+
+
+def kupalnyk(dzerkalo):
+    rk.PROMT = KUPALNYK
+    image = m.stage(str(VYKHID / "zh-tpoza-s11.png"))
+    m.free()
+    for seed in KUPALNYK_SIDY:
+        kudy = VYKHID / ("zh-kupalnyk-s%d.png" % seed)
+        if kudy.exists():
+            continue
+        done = m.run(rk.graf(image, seed, "avatar1_zh_kupalnyk_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]), kudy)
+        print("готово жінка купальник", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, kudy.name)
+    rk.PROMT = KUPALNYK2
+    image = m.stage(str(VYKHID / "zh-kupalnyk-s611.png"))
+    for seed in KUPALNYK2_SIDY:
+        kudy = VYKHID / ("zh-kupalnyk-s%d.png" % seed)
+        if kudy.exists():
+            continue
+        done = m.run(rk.graf(image, seed, "avatar1_zh_kupalnyk_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]), kudy)
+        print("готово жінка купальник, низ", seed, flush=True)
+        vpysaty(SIDY)
+        dzerk(dzerkalo, kudy.name)
+
+
 def dzerk(dzerkalo, fail):
     if dzerkalo:
         (dzerkalo / "wiki/img/test/avatar").mkdir(parents=True, exist_ok=True)
@@ -278,6 +363,11 @@ def main():
         dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
             if "--дзеркало" in sys.argv else None
         baza2(dzerkalo)
+        return
+    if "--купальник" in sys.argv:
+        dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \
+            if "--дзеркало" in sys.argv else None
+        kupalnyk(dzerkalo)
         return
     if "--жінка" in sys.argv:
         dzerkalo = Path(sys.argv[sys.argv.index("--дзеркало") + 1]) \

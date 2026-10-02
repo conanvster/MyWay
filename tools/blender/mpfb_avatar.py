@@ -218,6 +218,20 @@ def main():
         if hasattr(m, "surface_render_method"):
             m.surface_render_method = "DITHERED"
         m.blend_method = "OPAQUE" if hasattr(m, "blend_method") else None
+    # PREDTSILI="ціль=вага,…" — форма до всіх підборів (шия жінки: замовник
+    # «побачив некрасиву шию»; після підбору обличчя вона підіймала голову,
+    # і проєкція обличчя з'їжджала).
+    pt = os.environ.get("PREDTSILI", "")
+    if pt:
+        from bl_ext.blender_org.mpfb.services.targetservice import \
+            TargetService as _TS
+        for par in pt.split(","):
+            n_, v_ = par.split("=")
+            _TS.load_target(h, _TS.target_full_path(n_), weight=float(v_),
+                            name=n_)
+        h.data.update()
+        bpy.context.view_layer.update()
+        print("[mpfb] форма до підбору: %s" % pt)
     if REF:
         OKO_REF[0] = oko_kadru(os.path.abspath(REF[0]), os.path.abspath(REF[1]))
         if OKO_REF[0] is not None:
@@ -269,6 +283,12 @@ def main():
             h, arm, KUT_RUK[0], os.path.abspath(REF[0]),
             os.path.abspath(REF[1]), *[os.path.abspath(x) for x in VYDY],
             OKO_REF[0])
+    if REF and VYDY and os.environ.get("PROFIL_HOLOVY", "") not in ("", "0"):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import mpfb_kontur
+        mpfb_kontur.pidibraty_profil_holovy(
+            h, arm, KUT_RUK[0], os.path.abspath(VYDY[0]),
+            os.path.abspath(VYDY[1]), OKO_REF[0])
     # Форма грудей (замовник 02.10.2026: «вирівняй груди», приклад —
     # округлий піднятий профіль): GRUDY="ціль=вага,…" — цілі MakeHuman
     # поверх підбору й контурів.

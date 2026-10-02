@@ -550,7 +550,10 @@ def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
     if "cupsize" not in pv.znach:
         pv.znach["cupsize"] = float(HumanObjectProperties.get_value(
             "cupsize", entity_reference=h))
-    imena = [t for t in TSILI_BIK if t in pv.znach]
+    # BIK_BEZ — цілі поза профільним підбором (жінка: постава голови й шиї
+    # з профілю псувала шию — «некрасиву шию та форму голови»).
+    bez_ = os.environ.get("BIK_BEZ", "").split(",")
+    imena = [t for t in TSILI_BIK if t in pv.znach and t not in bez_]
     for krok in (0.25, 0.12, 0.06, 0.03):
         for _prokhid in range(PROKHODY):
             bulo = naikr

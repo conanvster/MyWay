@@ -26,7 +26,7 @@ blender -b -P tools/blender/mpfb_avatar.py -- \
     "${pidbir[@]}" "${vydy[@]}" \
     --референс "$D/$R.png" "$D/maska-$R.png" "$@" \
     "$o/$n/avatar.gltf" "$o/$n/kadry" 2>&1 \
-    | grep -E '^\[(mpfb|підбір|обличчя|контури|ширина)\]|‼|Traceback|Error' | grep -vE 'крок 0\.(25|12|06)|кісток|сітки|модифікатори' || true
+    | grep -E '^\[(mpfb|підбір|обличчя|контури|ширина|профіль голови)\]|‼|Traceback|Error' | grep -vE 'крок 0\.(25|12|06)|кісток|сітки|модифікатори' || true
 for vyd in перед бік зад; do
     [ "$vyd" != перед ] && [ -z "$BIK" ] && continue
     sfx=$([ "$vyd" = перед ] && echo "" || echo "-$vyd")

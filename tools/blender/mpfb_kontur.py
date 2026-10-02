@@ -168,6 +168,13 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
                 c_ = co0[s_].mean(0)
                 d_ = np.linalg.norm(co0 - c_, axis=1)
                 hrudy = np.maximum(hrudy, np.clip(1.6 - d_ / 0.07, 0, 1))
+        # уся передня частина грудної клітки — від ключиць до-під груди
+        # (зл9: над грудьми контур профілю видавлював западину)
+        zs_ = co0[sosky, 2].mean() if sosky.any() else 0
+        sp = (co0[:, 1] < -0.02) & (co0[:, 2] > zs_ - 0.10) & \
+            (co0[:, 2] < zs_ + 0.22) & (np.abs(co0[:, 0]) < 0.19)
+        hrudy = np.maximum(hrudy, sp.astype(float))
+        hrudy = np.clip(hrudy, 0, 1)
         tiahnuty = tiahnuty * (1 - hrudy)
         tiahnuty_x = tiahnuty_x * (1 - hrudy)
     mk_p = _maska(m_pered)

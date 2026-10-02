@@ -38,6 +38,10 @@ TSILI = ["torso/torso-scale-horiz", "torso/torso-vshape",
          # Об'єм спереду-ззаду — видно в профіль (жінка: на кадрі збоку
          # повніша за модель, і підбір довертав профіль до 30°, MPFB-ж4).
          "buttocks/buttocks-volume", "stomach/stomach-pregnant"]
+# TSILI_BEZ="a/b,c/d" — цілі поза підбором (жінка: обхват грудей стискав
+# груди, замовник: «моделі грудей якісні але незмогли відтворити»).
+TSILI = [t for t in TSILI if t not in
+         os.environ.get("TSILI_BEZ", "").split(",")]
 # Полюси цілей, що звуться не incr/decr: (додатний, від'ємний).
 POLIUSY = {"head/head-trans": ("backward", "forward"),
            "neck/neck-trans": ("backward", "forward")}
@@ -394,7 +398,8 @@ def _tochky_tila(h):
 MEZHI_TILA = {"stomach/stomach-pregnant": (-1.0, 0.2),
               "buttocks/buttocks-volume": (-1.0, 0.5),
               "hip/hip-scale-depth": (-1.0, 0.5),
-              "torso/torso-scale-depth": (-1.0, 0.6)}
+              # −0,87 сплющувало груди й грудну клітку (зл8, зл9)
+              "torso/torso-scale-depth": (-0.3, 0.6)}
 # Межі макро з оточення: MEZHI_MAKRO="muscle=0.3:0.55,weight=0.4:0.7".
 # Жінка: підбір спереду гнав «muscle» до 0,75 — руки й ноги виходили
 # атлетичні, на кадрі — м'яка статура (замовник: «статури не схожі»).

@@ -510,7 +510,10 @@ def proektsiia(h, arm, ref, maska):
                 # долоні (замовник: «розвернутими долонями назад - це не
                 # правильно»), і долоня лягала б на тильний бік кисті. Тильний
                 # бік — шкіра MakeHuman під тон кадру.
-                w_ = w_ * np.clip(1 - 2 * kysti, 0, 1)
+                # KYSTI_ZZADU=1 — кадр ззаду з тильним боком кистей (руки
+                # вклеєні від ліктя, `tools/avatar_ref_ruky.py`): беремо.
+                if os.environ.get("KYSTI_ZZADU", "") in ("", "0"):
+                    w_ = w_ * np.clip(1 - 2 * kysti, 0, 1)
             uvl = me.uv_layers.new(name="Проєкція-" + imia)
             for li, l in enumerate(me.loops):
                 uvl.data[li].uv = (uu[l.vertex_index], vv[l.vertex_index])

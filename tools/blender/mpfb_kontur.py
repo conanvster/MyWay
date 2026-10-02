@@ -171,9 +171,13 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
         # уся передня частина грудної клітки — від ключиць до-під груди
         # (зл9: над грудьми контур профілю видавлював западину)
         zs_ = co0[sosky, 2].mean() if sosky.any() else 0
-        sp = (co0[:, 1] < -0.02) & (co0[:, 2] > zs_ - 0.10) & \
-            (co0[:, 2] < zs_ + 0.22) & (np.abs(co0[:, 0]) < 0.19)
-        hrudy = np.maximum(hrudy, sp.astype(float))
+        # Плавно (замовник: «нижче грудей зявився якийсь злам» — різка межа
+        # захисту давала сходинку): згасання 8 см униз і вбоки.
+        sp = (co0[:, 1] < -0.02) * \
+            np.clip(1 - (zs_ - 0.06 - co0[:, 2]) / 0.08, 0, 1) * \
+            np.clip(1 - (co0[:, 2] - zs_ - 0.22) / 0.08, 0, 1) * \
+            np.clip(1 - (np.abs(co0[:, 0]) - 0.17) / 0.06, 0, 1)
+        hrudy = np.maximum(hrudy, sp)
         hrudy = np.clip(hrudy, 0, 1)
         if __import__("os").environ.get("KONTURY_BEZ_SHYI", "") not in ("", "0"):
             # шия й трапеції — не тягнути (форма — повзунками, варіант 1)
@@ -471,3 +475,40 @@ def pidibraty_profil_holovy(h, arm, kut_ruk, bik, m_bik, oko_ref_y):
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
     bpy.context.view_layer.update()
+
+
+def trykutnyky(h):
+    """Трикутники базової сітки (без модифікатора MASK — номери вершин як у
+    `vershyny_bez_masky`)."""
+    mm = [m for m in h.modifiers if m.type == "MASK"]
+    for m in mm:
+        m.show_viewport = False
+    bpy.context.view_layer.update()
+    ev = h.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    me = ev.to_mesh()
+    me.calc_loop_triangles()
+    t = np.array([x.vertices[:] for x in me.loop_triangles])
+    ev.to_mesh_clear()
+    for m in mm:
+        m.show_viewport = True
+    return t
+
+
+def pidtiahnuty_uv(u, v, tris, vidymi, mk, prokhody=3):
+    """Текстура під форму моделі (замовник 03.10.2026: «гарно і
+    пропорціонально розфарбувати з рендеру модель 100-8»): не модель під
+    кадр, а розгортка під модель — контур моделі в пікселях кадру
+    тягнеться до контуру кадру, розмите поле зсувів зсуває UV. Маска `mk` —
+    рядки знизу, як u, v."""
+    hh, w = mk.shape
+    for _ in range(prokhody):
+        px, py = u * w, v * hh
+        m_mod = _syluet(px, py, tris, vidymi, w, hh)
+        Fx, Fy = _pole(m_mod, mk, np.zeros((hh, w), bool))
+        ix = np.clip(px.astype(int), 0, w - 1)
+        iy = np.clip(py.astype(int), 0, hh - 1)
+        u = u + Fx[iy, ix] / w
+        v = v + Fy[iy, ix] / hh
+        iou = (m_mod & mk).sum() / max(1, (m_mod | mk).sum())
+    print("[uv] збіг силуету розгортки з кадром: %.3f" % iou, flush=True)
+    return u, v

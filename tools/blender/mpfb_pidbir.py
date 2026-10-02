@@ -818,6 +818,11 @@ PARY_SHYR = [
     ("chin-triangle", "chin-triangle", None, False),
     # Вуха моделі сиділи на ~10 px нижче й ширше за кадрові (мочки ширили
     # обрис на рівні щік).
+    # Череп над бровами (лиса голова — тепер видно; замовник: «голова все
+    # ще не схожа на референс» — на кадрі вищий лоб і більший череп).
+    ("forehead-scale-vert", "forehead-scale-vert-incr",
+     "forehead-scale-vert-decr", False),
+    ("head-round", "head-round", None, False),
     ("ear-trans-v", "ear-trans-up", "ear-trans-down", True),
     ("ear-scale", "ear-scale-incr", "ear-scale-decr", True),
     ("ear-wing", "ear-wing-incr", "ear-wing-decr", True),
@@ -826,6 +831,8 @@ PARY_SHYR = [
 
 
 _DBG = [False]
+MEZHI_SHYR = {"head-fat": -0.3, "chin-bones": -0.4, "cheek-volume": 0.0,
+              "cheek-inner": -0.2, "chin-width": -0.4}
 
 
 def pidibraty_shyrynu(h, arm, kut_ruk, proekt, maska_ref, L_ref):
@@ -840,8 +847,10 @@ def pidibraty_shyrynu(h, arm, kut_ruk, proekt, maska_ref, L_ref):
     m_ref = (px.reshape(hh, w, 4)[..., 0] > 0.5)[::-1]       # y зверху
     y_oko = (L_ref[33, 1] + L_ref[263, 1]) / 2
     y_b = int(L_ref[152, 1]) + 2
-    # від верху вух (≈ на третину відстані очі—підборіддя вище очей)
-    y_a = int(y_oko - 0.35 * (y_b - y_oko))
+    # від маківки (кадр лисий: зачіска — окрема накладка)
+    ys_m = np.where(m_ref.any(1))[0]
+    y_a = int(ys_m.min()) if os.environ.get("SHYRYNA_MAKIVKA") else \
+        int(y_oko - 0.35 * (y_b - y_oko))
     cx = float(L_ref[1, 0])
     pol = 1.4 * float(L_ref[454, 0] - L_ref[234, 0]) / 2
     smuha = np.zeros((hh, w), bool)
@@ -898,6 +907,9 @@ def pidibraty_shyrynu(h, arm, kut_ruk, proekt, maska_ref, L_ref):
     for krok in (0.3, 0.3, 0.15, 0.15, 0.07):
         for imia in list(pv.znach):
             lo = 0.0 if imia in pv.odnopol else -1.0
+            # Не виснажувати обличчя (замовник: «голова все ще не схожа» —
+            # head-fat −0,82 і chin-bones −0,97 давали запалі щоки).
+            lo = max(lo, MEZHI_SHYR.get(imia, lo))
             for znak in (1, -1):
                 v0 = pv.znach[imia]
                 v1 = min(1.0, max(lo, v0 + znak * krok))

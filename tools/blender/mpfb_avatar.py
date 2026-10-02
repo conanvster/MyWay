@@ -395,6 +395,11 @@ def proektsiia(h, arm, ref, maska):
     # 3D-очах), 0 — чиста проєкція (вид спереду точно як на кадрі).
     # 0,5 — найкраще: 1 → обличчя 0,768, 0 → 0,787 і вухо в плямі,
     # 0,5 → 0,789 (MPFB-24, 28, 29); очі на 3/4 сидять в обох.
+    UVK = os.environ.get("UV_KONTUR", "") not in ("", "0")
+    if UVK:
+        import mpfb_kontur as _mk
+        _tr = _mk.trykutnyky(h)
+        u, v = _mk.pidtiahnuty_uv(u, v, _tr, vidymi, mk)
     vaga_w = float(os.environ.get("WARP", "0.5"))
     if vaga_w > 0:
         uw, vw = vyrivniaty_oblychchia(h, ref, maska, u, v, w, hh, cx_r,
@@ -561,6 +566,14 @@ def proektsiia(h, arm, ref, maska):
                 c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
                 mk_p, H_m, z0, z1, kadr=kadr, z_volossia=z_volossia,
                 ruky=ruky if boky else None)
+            if UVK:
+                im_q = bpy.data.images.load(mk_p, check_existing=True)
+                pq = np.empty(im_q.size[0] * im_q.size[1] * 4, np.float32)
+                im_q.pixels.foreach_get(pq)
+                mq = pq.reshape(im_q.size[1], im_q.size[0], 4)[..., 0] > 0.5
+                # лише видимий бік: вершини, що дивляться на цю камеру
+                vid_q = vidymi & (dz > 0)
+                uu, vv = _mk.pidtiahnuty_uv(uu, vv, _tr, vid_q, mq)
             # Вухо кадру збоку — на вухо моделі (замовник: «підтягни
             # зображення вуха до вуха моделі»). VUKHO_BIK="x,y" — центр вуха
             # на кадрі збоку, px (y зверху).

@@ -254,6 +254,16 @@ def main():
         if o.name.startswith("Icosphere"):
             bpy.data.objects.remove(o)
     arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+    # Підтягнути контури під три кадри (замовник 02.10.2026: «спробуй
+    # підтягнути модель щоб співпадала по контурах в 3х проекціях»). Лише
+    # коли кадри збоку й ззаду вирівняні за висотою під перед.
+    if REF and VYDY and os.environ.get("KONTURY", "") not in ("", "0"):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import mpfb_kontur
+        mpfb_kontur.pidtiahnuty(
+            h, arm, KUT_RUK[0], os.path.abspath(REF[0]),
+            os.path.abspath(REF[1]), *[os.path.abspath(x) for x in VYDY],
+            OKO_REF[0])
     if REF:
         proektsiia(h, arm, os.path.abspath(REF[0]), os.path.abspath(REF[1]))
     sitky = [o for o in bpy.data.objects if o.type == "MESH"]

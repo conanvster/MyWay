@@ -29,7 +29,7 @@ for _pb in arm.pose.bones:
     _pb.matrix_basis.identity()
 bpy.context.view_layer.update()
 KUT, KUT_NIH, KUT_LIKTIA, STOPY = 90.0, 0.0, 0.0, 18.0
-KLIUCH = KOLINO = 0.0
+KLIUCH = KOLINO = PROFIL = 0.0
 try:
     import json as _j
     _p = _j.load(open(MODEL + ".підбір.json"))
@@ -39,6 +39,7 @@ try:
     STOPY = float(_p.get("стопи", 18.0))
     KLIUCH = float(_p.get("ключиці", 0.0))
     KOLINO = float(_p.get("коліна", 0.0))
+    PROFIL = float(_p.get("кут профілю", 0.0))
 except Exception:
     pass
 if T_POZA:
@@ -124,6 +125,9 @@ kam.data.type = "ORTHO"
 kam.data.ortho_scale = max(hi.x - lo.x, hi.z - lo.z) * 1.06
 c = (lo + hi) / 2
 kut = {"перед": 0.0, "бік": math.pi / 2, "зад": math.pi}[VYD]
+if VYD == "бік":
+    # Профіль кадру повернутий на «кут профілю» (підбір, `mpfb_pidbir`).
+    kut += pered * math.radians(PROFIL)
 napr = Vector((math.sin(kut), pered * math.cos(kut), 0)) * 6
 kam.location = c + napr
 kam.rotation_euler = (c - kam.location).to_track_quat("-Z", "Y").to_euler()

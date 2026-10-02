@@ -179,26 +179,23 @@ def rozdil(kadry):
                      '<b>%s</b>Kontext, seed %d</figcaption></figure>'
                      % (shablon % seed, nazva, nazva.split(" — ")[1], seed))
         r.append('</div>')
-    if (VYKHID / "mpfb-porivniannia-m29.png").exists():
-        r += ['<h3>Результат: 3D-модель MPFB — людина, чоловік (86,1%)</h3>',
-              '<p class="note">Параметрична модель MPFB/MakeHuman, підбір '
-              'повзунків тіла й обличчя під референс, текстура — проєкція '
-              'референсу спереду. Схожість 86,1% за '
-              '<code>tools/avatar_ocinka2.py</code> (без зачіски й шортів — '
-              'це окремі накладки). Референс виправлено: ступні — вид '
-              'спереду, кадр симетричний (віддзеркалена права половина). '
-              'Рухи: <code>./run.sh --рухи-людини --модель '
-              'res://models/own/avatary/mpfb/людина-чоловік-mpfb.gltf</code>. '
-              'Спина й боки поки без проєкції (лише шкіра MakeHuman).</p>',
-              '<div class="compare">',
-              '<figure><img src="img/test/avatar/mpfb-referens-sym.png" '
-              'alt="референс"><figcaption><b>референс</b>ступні спереду, '
-              'симетричний</figcaption></figure>',
-              '<figure style="flex:3"><img src="img/test/avatar/'
-              'mpfb-porivniannia-m29.png" alt="порівняння m29"><figcaption>'
-              '<b>ітерація m29</b>був кадр · новий · модель · силует '
-              '(червоне — лише референс, зелене — модель)</figcaption>'
-              '</figure>', '</div>']
+    # Результати MPFB з трьох боків (замовник 02.10.2026: «ненадали вигляду
+    # з боку та з заду і не порівняли»). Аркуші й числа пише
+    # `vypysaty_mpfb()` у mpfb-rezultaty.json.
+    import json as _j
+    rez_p = VYKHID / "mpfb-rezultaty.json"
+    if rez_p.exists():
+        for khto, d in _j.loads(rez_p.read_text(encoding="utf-8")).items():
+            r += ['<h3>Результат: 3D-модель MPFB — %s (%s)</h3>'
+                  % (khto, d["разом"]),
+                  '<p class="note">%s</p>' % d["примітка"],
+                  '<div class="compare">',
+                  '<figure style="flex:3"><img src="img/test/avatar/%s" '
+                  'alt="%s з трьох боків"><figcaption><b>спереду %s · збоку '
+                  '%s · ззаду %s</b>у кожному ряду: референс · модель · силует '
+                  '(червоне — лише референс, зелене — модель)</figcaption>'
+                  '</figure>' % (d["аркуш"], khto, d["спереду"], d["збоку"],
+                                 d["ззаду"]), '</div>']
     r.append('<!-- /аватар -->')
     return "\n".join(r)
 

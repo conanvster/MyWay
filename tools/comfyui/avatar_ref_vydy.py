@@ -70,7 +70,38 @@ def promt_bik2(khto, vin, yoho, odiah):
         "%s. %s" % (khto, vin, yoho, yoho, yoho, yoho, odiah, SPILNE))
 
 
+# Жінка: довге розпущене волосся ззаду й збоку закривало спину й плечі, і
+# проєкція клала його чорне на лису модель (MPFB-ж1). Волосся — окрема
+# перука, тож для спини й профілю — те саме, але з волоссям у тугому
+# високому пучку.
+PUCHOK = ("Tie her long hair up into a tight high bun on the top of her "
+          "head so that her neck, shoulders and whole back are completely "
+          "bare and visible. Keep everything else exactly the same: same "
+          "woman, same pose, same view, same black two-piece swimsuit, same "
+          "body, same background, same lighting, same photorealistic style.")
+SIDY_PUCHOK = (971, 982)
+
+
+def puchok():
+    for dzh, imia in (("zh-zad-sym-s911", "zh-zad-puchok"),
+                      ("zh-bik2-sym-s931", "zh-bik-puchok")):
+        rk.PROMT = PUCHOK
+        image = m.stage(str(A / (dzh + ".png")))
+        for seed in SIDY_PUCHOK:
+            kudy = A / ("%s-s%d.png" % (imia, seed))
+            if kudy.exists():
+                continue
+            done = m.run(rk.graf(image, seed, "avatar_%s_s%d" % (imia, seed)))
+            out = done["outputs"]["13"]["images"][-1]
+            shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                     out["filename"]), kudy)
+            print("готово", imia, seed, flush=True)
+
+
 def main():
+    if "--пучок" in sys.argv:
+        m.free()
+        return puchok()
     m.free()
     khto_vsi = [k for k, f in (("чоловік", "--чоловік"), ("жінка", "--жінка"))
                 if f in sys.argv] or list(LYUDY)

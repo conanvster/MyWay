@@ -34,7 +34,10 @@ TSILI = ["torso/torso-scale-horiz", "torso/torso-vshape",
          "arms/measure-upperarm-circ", "torso/torso-muscle-dorsi",
          # Постава голови — видно лише в профіль («голова зміщена вперед -
          # треба її трохи вирівняти», замовник 02.10.2026).
-         "head/head-trans", "neck/neck-trans"]
+         "head/head-trans", "neck/neck-trans",
+         # Об'єм спереду-ззаду — видно в профіль (жінка: на кадрі збоку
+         # повніша за модель, і підбір довертав профіль до 30°, MPFB-ж4).
+         "buttocks/buttocks-volume", "stomach/stomach-pregnant"]
 # Полюси цілей, що звуться не incr/decr: (додатний, від'ємний).
 POLIUSY = {"head/head-trans": ("backward", "forward"),
            "neck/neck-trans": ("backward", "forward")}
@@ -392,7 +395,7 @@ class Povzunky:
 
     def postavyty(self, imia, v):
         self.znach[imia] = v
-        if imia in MAKRO:
+        if imia in MAKRO or imia == "cupsize":
             HumanObjectProperties.set_value(imia, v, entity_reference=self.h)
             TargetService.reapply_macro_details(self.h)
             return
@@ -408,7 +411,8 @@ class Povzunky:
             kb[self.kl[(imia, "decr")]].value = max(0.0, -v)
 
     def mezhi(self, imia):
-        return (0.0, 1.0) if imia in MAKRO else (-1.0, 1.0)
+        return (0.0, 1.0) if imia in MAKRO or imia == "cupsize" \
+            else (-1.0, 1.0)
 
 
 # Проходів на крок. Один — повзунок від нуля сягав лише 0,46; п'ять і
@@ -424,7 +428,25 @@ KUT_BIK = 6.0
 # Що видно лише збоку: постава голови й шиї, глибина тулуба, стегон, шиї.
 TSILI_BIK = ["head/head-trans", "neck/neck-trans", "torso/torso-scale-depth",
              "hip/hip-scale-depth", "neck/neck-scale-depth",
-             "head/head-scale-depth"]
+             "head/head-scale-depth", "buttocks/buttocks-volume",
+             "stomach/stomach-pregnant", "cupsize"]
+
+
+PROFIL_KUT = [0.0]   # на скільки «профіль» кадру не рівно 90°, градуси
+# Зсув профілю, метри «праворуч у кадрі»: центр за тулубом у профіль
+# збивала рука (на кадрі жінки вона висить позаду, у моделі — посередині;
+# модель стояла на ~10 px лівіше, MPFB-ж5).
+PROFIL_ZSUV = [0.0]
+_ZSUV_PX = [0]
+
+
+def povernuty_profil(p, kut):
+    """Точки → (x, «праворуч у кадрі», z) для камери збоку, поверненої на
+    `kut`° (0 — рівно на +X). Kontext малює профіль із доворотом до
+    глядача на 15–20° — без цього тулуб на кадрі «глибший» за модель."""
+    t = math.radians(kut)
+    hor = p[:, 0] * math.sin(t) + p[:, 1] * math.cos(t)
+    return np.stack([p[:, 0], hor, p[:, 2]], 1)
 
 
 def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
@@ -432,12 +454,37 @@ def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
     лише ті, що спереду не видно (силует спереду вони не міняють)."""
     postavyty_ruky(arm, KUT_BIK)
 
-    def otsinka_b():
-        p = tochky_tila(h)
+    def otsinka_b(z_poshukom=False):
+        p = povernuty_profil(tochky_tila(h), PROFIL_KUT[0])
         mb_ = maska_modeli(p, 1, oko_modeli(h) if z_okom else None)
-        return max(iou(mb_, m_b), iou(np.fliplr(mb_), m_b))
-    naikr = otsinka_b()
-    print("[підбір] профіль, початок: %.4f" % naikr, flush=True)
+        # Без дзеркала: обидва профілі дивляться ліворуч кадру (так рахує й
+        # проєкція), і знак кута має значення.
+        if z_poshukom:
+            kr = max((iou(np.roll(mb_, dx, 1), m_b), dx)
+                     for dx in range(-16, 17, 2))
+            _ZSUV_PX[0] = kr[1]
+            return kr[0]
+        return iou(np.roll(mb_, _ZSUV_PX[0], 1), m_b)
+    naikr, krashchyi = -1, 0.0
+    # Лише доворот грудьми до глядача (камера зміщується до −Y, перед
+    # моделі): силует сам знака не розрізняє — m33 вибрав −10°, і на бік
+    # лягла спина замість грудей (у Kontext профіль завжди трохи грудьми).
+    # Не далі 15°: на 30° модель жінки виходила на три чверті, хоча кадр —
+    # майже рівний профіль (підбір довертав замість об'єму, MPFB-ж4).
+    zs = 0
+    for kut in np.arange(0, 15.1, 2.5):
+        PROFIL_KUT[0] = kut
+        s_ = otsinka_b(True)
+        if s_ > naikr:
+            naikr, krashchyi, zs = s_, kut, _ZSUV_PX[0]
+    PROFIL_KUT[0] = krashchyi
+    _ZSUV_PX[0] = zs
+    pv.znach["кут профілю"] = krashchyi
+    print("[підбір] профіль: кут %+.1f°, початок: %.4f" % (krashchyi, naikr),
+          flush=True)
+    if "cupsize" not in pv.znach:
+        pv.znach["cupsize"] = float(HumanObjectProperties.get_value(
+            "cupsize", entity_reference=h))
     imena = [t for t in TSILI_BIK if t in pv.znach]
     for krok in (0.25, 0.12, 0.06, 0.03):
         for _prokhid in range(PROKHODY):
@@ -457,11 +504,20 @@ def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
                     pv.postavyty(imia, v0)
             if naikr <= bulo + 1e-4:
                 break
-    print("[підбір] профіль: %.4f; %s" % (naikr, {t: round(pv.znach[t], 2)
-                                                 for t in imena}), flush=True)
+    # Зсув у пікселях маски → метри (маска: N·OKO пікселів від ступень до
+    # очей).
+    p_ = tochky_tila(h)
+    k_n = N * OKO / (oko_modeli(h) - p_[:, 2].min()) if z_okom else \
+        N * 0.92 / (p_[:, 2].max() - p_[:, 2].min())
+    PROFIL_ZSUV[0] = _ZSUV_PX[0] / k_n
+    pv.znach["зсув профілю"] = PROFIL_ZSUV[0]
+    print("[підбір] профіль: %.4f, зсув %+d px; %s"
+          % (naikr, _ZSUV_PX[0], {t: round(pv.znach[t], 2) for t in imena}),
+          flush=True)
     if NAKLADKA:
-        p = tochky_tila(h)
-        mb_ = maska_modeli(p, 1, oko_modeli(h) if z_okom else None)
+        p = povernuty_profil(tochky_tila(h), PROFIL_KUT[0])
+        mb_ = np.roll(maska_modeli(p, 1, oko_modeli(h) if z_okom else None),
+                      _ZSUV_PX[0], 1)
         if iou(np.fliplr(mb_), m_b) > iou(mb_, m_b):
             mb_ = np.fliplr(mb_)
         img = np.zeros((N, N, 4), np.float32)

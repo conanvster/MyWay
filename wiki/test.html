@@ -23,10 +23,6 @@
 <h1>Тест генерації</h1>
 <p class="lead">Робоча сторінка для порівняння варіантів перед тим, як вони йдуть у вікі чи гру. Нічого звідси не лінкується з основних сторінок.</p>
 <!-- аватар -->
-<h3>3D-модель проти референсу — ітерація 8 (86%)</h3>
-<p class="note">Ліворуч референс, посередині рендер моделі спереду, праворуч різниця (темніше — ближче). Силует 0,921 · колір 0,967 · тіло 0,780 · обличчя 0,774.</p>
-<figure><img src="img/test/avatar/porivniannia-08.png" alt="модель проти референсу" style="max-width:100%"></figure>
-
 <h2>Аватар 3D — людина, чоловік, варіант 1</h2>
 <p class="note">Чисті референси під 3D-модель: та сама людина з <a href="rasy.html">варіанта 1</a>, Kontext ставить її в T-позу манекена (на його скелет лягають рухи <code>./run.sh --рухи-людини</code>), сіре тло — під Pixal3D. Вибери, з якого будувати.</p>
 <div class="compare">
@@ -69,6 +65,25 @@
 <figure><img src="img/test/avatar/zh-baza-s122.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 122</figcaption></figure>
 <figure><img src="img/test/avatar/zh-baza-s133.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 133</figcaption></figure>
 <figure><img src="img/test/avatar/zh-baza-s144.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 144</figcaption></figure>
+</div>
+<h3>Людина, жінка — купальник (під 3D, як у прикладі замовника)</h3>
+<div class="compare">
+<figure><img src="img/test/avatar/zh-kupalnyk-s611.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 611</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s622.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 622</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s633.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 633</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s641.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 641</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s652.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 652</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s663.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 663</figcaption></figure>
+</div>
+<h3>Результат: 3D-модель MPFB — людина, чоловік (81.9%)</h3>
+<p class="note">Референси: спереду — симетричний, ступні спереду; збоку — профіль руками вниз (Kontext s931); ззаду — s911. Модель: <code>./run.sh --рухи-людини --модель res://models/own/avatary/mpfb/людина-чоловік-mpfb.gltf</code>. Постава в рухах виправлена (горб і голова вперед — від перенаправлення рухів).</p>
+<div class="compare">
+<figure style="flex:3"><img src="img/test/avatar/mpfb-cholovik-3vydy.png" alt="людина, чоловік з трьох боків"><figcaption><b>спереду 86.7% · збоку 71.0% · ззаду 88.1%</b>у кожному ряду: референс · модель · силует (червоне — лише референс, зелене — модель)</figcaption></figure>
+</div>
+<h3>Результат: 3D-модель MPFB — людина, жінка (79.2%)</h3>
+<p class="note">Референси: спереду — купальник s622, симетричний; збоку й ззаду — волосся в пучку (розпущене лягало на спину). Модель: <code>./run.sh --рухи-людини --модель res://models/own/avatary/mpfb-zhinka/людина-жінка-mpfb.gltf</code>. Низ купальника — шорти (Kontext не переробив на трусики).</p>
+<div class="compare">
+<figure style="flex:3"><img src="img/test/avatar/mpfb-zhinka-3vydy.png" alt="людина, жінка з трьох боків"><figcaption><b>спереду 85.1% · збоку 69.2% · ззаду 83.2%</b>у кожному ряду: референс · модель · силует (червоне — лише референс, зелене — модель)</figcaption></figure>
 </div>
 <!-- /аватар -->
 <!-- дерева -->

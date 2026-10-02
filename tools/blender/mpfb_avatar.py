@@ -44,6 +44,11 @@ if "--референс" in ARGS:
     i_ = ARGS.index("--референс")
     REF = (ARGS[i_ + 1], ARGS[i_ + 2])
     del ARGS[i_:i_ + 3]
+SHKIRA = "middleage_caucasian_male"   # шкіра MakeHuman (жінці — інша)
+if "--шкіра" in ARGS:
+    i_ = ARGS.index("--шкіра")
+    SHKIRA = ARGS[i_ + 1]
+    del ARGS[i_:i_ + 2]
 VYDY = None           # (бік, маска боку, зад, маска заду) для проєкції
 if "--види" in ARGS:
     i_ = ARGS.index("--види")
@@ -198,8 +203,8 @@ def main():
         HumanService.add_mhclo_asset(shliakh, h, asset_type=typ,
                                      material_type="GAMEENGINE")
     HumanService.set_character_skin(
-        asset("skins", "middleage_caucasian_male",
-              "middleage_caucasian_male.mhmat"), h, skin_type="GAMEENGINE")
+        asset("skins", SHKIRA, SHKIRA + ".mhmat"), h,
+        skin_type="GAMEENGINE")
     # Шкіра MPFB «GAMEENGINE» має ще й картинку прозорості на Alpha — у
     # експорті тіло ставало клаптями напівпрозорим. Шкірі прозорість не
     # потрібна (бровам і віям — так, їх не чіпаємо).
@@ -373,16 +378,48 @@ def proektsiia(h, arm, ref, maska):
         pb_.postavyty_ruky(arm, pb_.KUT_BIK)
         co_b, nrm_b = pb_.vershyny_bez_masky(h)
         pb_.postavyty_ruky(arm, KUT_RUK[0])
-        for imia, kadr, mk_p, c_, n_, hor_i, dz_i, gl_i, zn_h, zn_d, zn_g in (
+        # Руки збоку не беремо: у профіль вони лежать на шортах, і де рука
+        # моделі на волосину не там, вона брала їхній колір (смуги на
+        # передпліччях, MPFB-31) — рукам вистачає переду й заду.
+        ruky = np.zeros(len(co))
+        for vg_ in h.vertex_groups:
+            if vg_.name.split("_")[0] in ("upperarm", "lowerarm", "hand",
+                                          "thumb", "index", "middle", "ring",
+                                          "pinky"):
+                gi_ = vg_.index
+                for v_ in me.vertices:
+                    for g_ in v_.groups:
+                        if g_.group == gi_:
+                            ruky[v_.index] += g_.weight
+        ne_ruky = np.clip(1 - 2 * ruky, 0, 1)
+        # Порядок шарів: боки, тоді спина поверх, перед — останнім. Боки —
+        # лише де поверхня справді дивиться вбік (поріг 0,35): на ковзних
+        # кутах вони лягали на сідниці смугами шкіри (MPFB-31).
+        # Камера профілю — на +X, повернута на кут, знайдений підбором
+        # (Kontext малює профіль із доворотом): праворуч у кадрі
+        # x·sinθ + y·cosθ, на камеру — x·cosθ − y·sinθ. Правий бік — дзеркало
+        # по X на свого лівого двійника (тіло симетричне).
+        t_ = math.radians(pb_.PROFIL_KUT[0])
+        dz_m = np.array([-1.0, 1.0, 1.0])
+
+        def bik_osi(c_, n_):
+            hor = c_[:, 0] * math.sin(t_) + c_[:, 1] * math.cos(t_)
+            gl = c_[:, 0] * math.cos(t_) - c_[:, 1] * math.sin(t_)
+            dz = n_[:, 0] * math.cos(t_) - n_[:, 1] * math.sin(t_)
+            return hor, (dz - 0.35) * 0.15 / 0.3, gl
+        for imia, kadr, mk_p, osi in (
+                ("bik-l", bik, m_bik, bik_osi(co_b, nrm_b)),
+                ("bik-r", bik, m_bik, bik_osi(co_b * dz_m, nrm_b * dz_m)),
                 # ззаду (камера на +Y, праворуч у кадрі −X)
-                ("zad", zad, m_zad, co, nrm, 0, 1, 1, -1, 1, 1),
-                # бік зліва (камера на +X, праворуч у кадрі +Y)
-                ("bik-l", bik, m_bik, co_b, nrm_b, 1, 0, 0, 1, 1, 1),
-                # правий бік — той самий профіль (тіло симетричне)
-                ("bik-r", bik, m_bik, co_b, nrm_b, 1, 0, 0, 1, -1, -1)):
+                ("zad", zad, m_zad, (-co[:, 0], nrm[:, 1], co[:, 1]))):
+            boky = imia.startswith("bik")
+            hor, dz, gl = osi
+            c_ = co_b if boky else co
             uu, vv, vg = proektsiia_vydu(
-                c_, vidymi, zn_h * c_[:, hor_i], None, zn_d * n_[:, dz_i],
-                zn_g * c_[:, gl_i], mk_p, H_m, z0, z1)
+                c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
+                mk_p, H_m, z0, z1)
+            if boky:
+                vg = vg * ne_ruky
             uvl = me.uv_layers.new(name="Проєкція-" + imia)
             vat = me.color_attributes.new("Видимість-" + imia, "FLOAT_COLOR",
                                           "CORNER")
@@ -403,7 +440,7 @@ def proektsiia(h, arm, ref, maska):
     bpy.context.view_layer.update()
 
 
-def proektsiia_vydu(co, vidymi, hor, cmed, dzer, glyb, maska, H_m, z0, z1):
+def proektsiia_vydu(co, vidymi, hor, zsuv, dzer, glyb, maska, H_m, z0, z1):
     """Вершини → (u, v, вага) для кадру збоку чи ззаду. `hor` — координата
     вершин уздовж «праворуч у кадрі», `dzer` — складова нормалі на камеру,
     `glyb` — глибина до камери (більше — ближче). Заслонені вершини (рука
@@ -423,7 +460,7 @@ def proektsiia_vydu(co, vidymi, hor, cmed, dzer, glyb, maska, H_m, z0, z1):
     z = co[:, 2]
     zz = co[vidymi, 2]
     tulm = (zz > z1 - 0.45 * (z1 - z0)) & (zz < z1 - 0.30 * (z1 - z0))
-    cm = float(np.median(hor[vidymi][tulm]))
+    cm = float(np.median(hor[vidymi][tulm])) - (zsuv or 0.0)
     u = (cx_r + (hor - cm) * k) / w
     v = (y0 + (z - z0) * k) / hh
     kl = 4
@@ -717,15 +754,49 @@ def perenapravyty(arm):
         if sb:
             pary.append((b.name, sb))
     print("[mpfb] кісток у парі: %d з %d" % (len(pary), len(arm.data.bones)))
-    # Поправка C на спокої.
+    # Поправка C — за ВІДПОВІДНОЮ позою, не за спокоєм: спокій манекена й
+    # MPFB різні (у MPFB А-поза з природними вигинами хребта), і поправка за
+    # напрямами кісток у спокої гнула хребет — у T-позі груди вперед, у
+    # Idle й Walk горб і голова вперед (замовник 02.10.2026: «голова
+    # зміщена вперед - треба її трохи вирівняти»). Тепер: манекен — перший
+    # кадр `A_TPose`; MPFB — спокій, лише руки горизонтально й прямі
+    # (плече, передпліччя, кисть уздовж). C = R_манекена⁻¹ · R_MPFB.
+    import mpfb_pidbir as pb_
+    tpoza = next((a for a in bpy.data.actions
+                  if a.name.split("|")[-1].startswith("A_TPose")), None)
+    src.animation_data_create()
+    if tpoza is not None:
+        src.animation_data.action = tpoza
+        if hasattr(src.animation_data, "action_slot") and tpoza.slots:
+            src.animation_data.action_slot = tpoza.slots[0]
+        bpy.context.scene.frame_set(int(tpoza.frame_range[0]))
+    else:
+        print("[mpfb] ‼ немає A_TPose — поправка за спокоєм манекена")
+    bpy.context.view_layer.update()
+    for pb in arm.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    for bik, znak in (("l", 1), ("r", -1)):
+        if "upperarm_" + bik not in arm.pose.bones:
+            continue
+        nazovni = Vector((znak, 0, 0))
+        pb_._napryamyty(arm, "upperarm_" + bik,
+                        lambda b=bik: pb_._holova(arm, "lowerarm_" + b),
+                        nazovni)
+        pb_._napryamyty(arm, "lowerarm_" + bik,
+                        lambda b=bik: pb_._holova(arm, "hand_" + b), nazovni)
+        pb_._napryamyty(arm, "hand_" + bik,
+                        lambda b=bik: pb_._holova(arm, "middle_01_" + b),
+                        nazovni)
     C = {}
     for tb, sb in pary:
-        r_t = (arm.matrix_world @ arm.data.bones[tb].matrix_local).to_quaternion()
-        r_s = (src.matrix_world @ src.data.bones[sb].matrix_local).to_quaternion()
-        d_t = r_t @ Vector((0, 1, 0))
-        d_s = r_s @ Vector((0, 1, 0))
-        r_al = d_t.rotation_difference(d_s) @ r_t
-        C[tb] = r_s.inverted() @ r_al
+        r_t = (arm.matrix_world @ arm.pose.bones[tb].matrix).to_quaternion()
+        r_s = (src.matrix_world @ src.pose.bones[sb].matrix).to_quaternion()
+        C[tb] = r_s.inverted() @ r_t
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
     vys_t = (arm.matrix_world @ arm.data.bones["pelvis"].head_local).z
     vys_s = (src.matrix_world @ src.data.bones[po_nazvi["pelvis"]].head_local).z
     k_vys = vys_t / max(vys_s, 1e-3)

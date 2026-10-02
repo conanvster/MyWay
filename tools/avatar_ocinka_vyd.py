@@ -59,6 +59,11 @@ def main():
     a, ma = norm(ref, mref, oko_ref)
     b, mb = norm(rnd, mrnd, oko_rnd)
     a[~ma] = 0.5
+    # Грубий зсув по горизонталі ±30 px (у профіль центр за тулубом збиває
+    # рука), тоді звичне точне дорівнювання.
+    dx = max(range(-30, 31, 2), key=lambda d: (ma & np.roll(mb, d, 1)).sum()
+             / max(1, (ma | np.roll(mb, d, 1)).sum()))
+    b, mb = np.roll(b, dx, 1), np.roll(mb, dx, 1)
     b, mb, _ = O.pidihnaty(a, ma, b, mb, np.zeros((478, 2)))
     bez = np.ones((S, S), bool)
     bez[: int(S * 0.20 - 0.05 * S), :] = False        # зачіска

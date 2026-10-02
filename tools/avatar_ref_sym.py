@@ -16,7 +16,9 @@
 
     ~/Програми/cv-venv/bin/python tools/avatar_ref_sym.py <кадр.png>
         <маска.png> <точки.npy> <ступні_кроп.png> <маска_кропу.png> <тека>
-→ <тека>/plavky-stopy-s411.png, plavky-sym-l-s411.png, plavky-sym-r-s411.png
+        [<ім'я>]
+→ <тека>/plavky-stopy-s411.png, <ім'я>-l.png, <ім'я>-r.png
+  (ступні: «-» замість кропу — без них; ім'я типово «plavky-sym»)
 """
 import sys
 
@@ -80,16 +82,18 @@ def dzerkalo(img, a, b, zlivoi):
 
 def main():
     kadr, maska, tochky, krop, krop_m, teka = sys.argv[1:7]
+    imia = sys.argv[7] if len(sys.argv) > 7 else "plavky-sym"
     img = cv2.imread(kadr)
-    img = vklejity_stupni(img, krop, krop_m)
-    cv2.imwrite(teka + "/plavky-stopy-s411.png", img)
+    if krop != "-":               # «-» — ступні не перемальовувались
+        img = vklejity_stupni(img, krop, krop_m)
+        cv2.imwrite(teka + "/plavky-stopy-s411.png", img)
     m = cv2.imread(maska, 0) > 127
     L = np.load(tochky)
     a, b = vis(m, L)
     print("вісь: x = %.4f·y + %.1f (нахил %.2f°)"
           % (a, b, np.degrees(np.arctan(a))))
-    for imia, zl in (("l", True), ("r", False)):
-        cv2.imwrite(teka + "/plavky-sym-%s-s411.png" % imia,
+    for bik, zl in (("l", True), ("r", False)):
+        cv2.imwrite("%s/%s-%s.png" % (teka, imia, bik),
                     dzerkalo(img, a, b, zl))
 
 

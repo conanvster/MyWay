@@ -127,6 +127,23 @@ KROKY = {
                    "forward away from the camera. The entire figure from the "
                    "top of the head to the floor is in frame with margin. "
                    + SPILNE.replace("the same tight high bun, ", "")),
+    # Замовник: «спина трохи нерівна - спробуй зробити вигляд із заду
+    # заново». Рівна спина: стоїть прямо, хребет вертикальний, плечі на
+    # одному рівні.
+    "--лиса-зад2": ("zh-lysa-vybir.png", "zh-lysa-zad2",
+                    (2111, 2122, 2133, 2144),
+                    "Rotate the same woman 180 degrees so she is seen exactly "
+                    "from behind, perfectly symmetrical: she stands straight "
+                    "and upright, her spine is vertical, her shoulders and "
+                    "hips are level, her weight is evenly on both feet, the "
+                    "back of her smooth bald head, her smooth bare back, the "
+                    "black swimsuit from behind with straight shoulder "
+                    "straps, the backs of her legs and her heels on the "
+                    "floor. The same strict T-pose with both arms straight "
+                    "out horizontally to the sides at shoulder height. The "
+                    "entire figure from the top of the head to the floor is "
+                    "in frame with margin. "
+                    + SPILNE.replace("the same tight high bun, ", "")),
 }
 
 

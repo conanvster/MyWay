@@ -218,6 +218,20 @@ def main():
         if hasattr(m, "surface_render_method"):
             m.surface_render_method = "DITHERED"
         m.blend_method = "OPAQUE" if hasattr(m, "blend_method") else None
+    # PREDTSILI="ціль=вага,…" — форма до всіх підборів (шия жінки: замовник
+    # «побачив некрасиву шию»; після підбору обличчя вона підіймала голову,
+    # і проєкція обличчя з'їжджала).
+    pt = os.environ.get("PREDTSILI", "")
+    if pt:
+        from bl_ext.blender_org.mpfb.services.targetservice import \
+            TargetService as _TS
+        for par in pt.split(","):
+            n_, v_ = par.split("=")
+            _TS.load_target(h, _TS.target_full_path(n_), weight=float(v_),
+                            name=n_)
+        h.data.update()
+        bpy.context.view_layer.update()
+        print("[mpfb] форма до підбору: %s" % pt)
     if REF:
         OKO_REF[0] = oko_kadru(os.path.abspath(REF[0]), os.path.abspath(REF[1]))
         if OKO_REF[0] is not None:
@@ -245,6 +259,11 @@ def main():
                 h, arm0, None, None, KUT_RUK[0],
                 lambda hh_: render_tochky(hh_, os.path.abspath(REF[1])),
                 L_ref, OKO_REF[0], None)
+            if os.environ.get("SHYRYNA", "") not in ("", "0"):
+                proekt_, _ = vidobrazhennia(h, os.path.abspath(REF[1]))
+                rez["ширина обличчя"] = mpfb_pidbir.pidibraty_shyrynu(
+                    h, arm0, KUT_RUK[0], proekt_, os.path.abspath(REF[1]),
+                    L_ref)
         os.makedirs(os.path.dirname(os.path.abspath(KUDY)), exist_ok=True)
         with open(KUDY + ".підбір.json", "w") as f:
             json.dump(rez, f, ensure_ascii=False, indent=1)
@@ -264,6 +283,25 @@ def main():
             h, arm, KUT_RUK[0], os.path.abspath(REF[0]),
             os.path.abspath(REF[1]), *[os.path.abspath(x) for x in VYDY],
             OKO_REF[0])
+    if REF and VYDY and os.environ.get("PROFIL_HOLOVY", "") not in ("", "0"):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import mpfb_kontur
+        mpfb_kontur.pidibraty_profil_holovy(
+            h, arm, KUT_RUK[0], os.path.abspath(VYDY[0]),
+            os.path.abspath(VYDY[1]), OKO_REF[0])
+    # Форма грудей (замовник 02.10.2026: «вирівняй груди», приклад —
+    # округлий піднятий профіль): GRUDY="ціль=вага,…" — цілі MakeHuman
+    # поверх підбору й контурів.
+    gr = os.environ.get("GRUDY", "")
+    if gr:
+        from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+        for par in gr.split(","):
+            n_, v_ = par.split("=")
+            TargetService.load_target(h, TargetService.target_full_path(n_),
+                                      weight=float(v_), name=n_)
+        h.data.update()
+        bpy.context.view_layer.update()
+        print("[mpfb] груди: %s" % gr)
     if REF:
         proektsiia(h, arm, os.path.abspath(REF[0]), os.path.abspath(REF[1]))
     sitky = [o for o in bpy.data.objects if o.type == "MESH"]
@@ -357,6 +395,11 @@ def proektsiia(h, arm, ref, maska):
     # 3D-очах), 0 — чиста проєкція (вид спереду точно як на кадрі).
     # 0,5 — найкраще: 1 → обличчя 0,768, 0 → 0,787 і вухо в плямі,
     # 0,5 → 0,789 (MPFB-24, 28, 29); очі на 3/4 сидять в обох.
+    UVK = os.environ.get("UV_KONTUR", "") not in ("", "0")
+    if UVK:
+        import mpfb_kontur as _mk
+        _tr = _mk.trykutnyky(h)
+        u, v = _mk.pidtiahnuty_uv(u, v, _tr, vidymi, mk)
     vaga_w = float(os.environ.get("WARP", "0.5"))
     if vaga_w > 0:
         uw, vw = vyrivniaty_oblychchia(h, ref, maska, u, v, w, hh, cx_r,
@@ -421,6 +464,39 @@ def proektsiia(h, arm, ref, maska):
     # кожну ділянку веде вид, що дивиться на неї найпряміше.
     STEP = 4
     w_pered = np.clip(f, 0, 1) ** STEP * (vaga > 0)
+    # Вуха — лише з профілю (замовник: «невдалося ідеально сумістити обличча
+    # (бачу 4 вуха)»): спереду вухо видно ребром, і його розтягнута копія
+    # лягала поруч зі справжнім із кадру збоку.
+    vushka = np.zeros(len(co))
+    if "ears" in h.vertex_groups:
+        gi_v = h.vertex_groups["ears"].index
+        for v_ in me.vertices:
+            for g_ in v_.groups:
+                if g_.group == gi_v:
+                    vushka[v_.index] = g_.weight
+    # Голова (крім вух) — перед головний: тінь під щелепою з кадру збоку
+    # лягала на кути щелепи темними плямами й ширила обличчя (замовник:
+    # «не таке широке»). Перед — квадрат замість четвертого степеня.
+    holova_v = np.zeros(len(co))
+    if "head" in h.vertex_groups:
+        gi_h = h.vertex_groups["head"].index
+        for v_ in me.vertices:
+            for g_ in v_.groups:
+                if g_.group == gi_h:
+                    holova_v[v_.index] = g_.weight
+    holova_v = np.clip(holova_v - vushka, 0, 1)
+    # Кути щелепи поза овалом обличчя кадру (нижче очей) — не з кадрів:
+    # там на кадрі вже шия в тіні, і вона темніла плямами на щелепі
+    # (зл6). Шкіра MakeHuman під тон кадру.
+    poza_ovalom = np.zeros(len(co), bool)
+    if OKO_REF[0] is not None and "v_ovali" in dir():
+        poza_ovalom = (holova_v > 0.3) & ~v_ovali & (co[:, 2] < oz)
+    w_pered = w_pered * (1 - holova_v) + \
+        np.clip(f, 0, 1) ** 2 * (vaga > 0) * holova_v
+    w_pered = w_pered * ~poza_ovalom
+    print("[mpfb] поза овалом обличчя: %d вершин" % poza_ovalom.sum())
+    if VYDY:
+        w_pered = w_pered * np.clip(1 - 2 * vushka, 0, 1)
     vagy = []
     print("[mpfb] проєкція: видно спереду %.0f%% вершин"
           % (100 * (vaga > 0.5).mean()))
@@ -490,15 +566,49 @@ def proektsiia(h, arm, ref, maska):
                 c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
                 mk_p, H_m, z0, z1, kadr=kadr, z_volossia=z_volossia,
                 ruky=ruky if boky else None)
+            if UVK:
+                im_q = bpy.data.images.load(mk_p, check_existing=True)
+                pq = np.empty(im_q.size[0] * im_q.size[1] * 4, np.float32)
+                im_q.pixels.foreach_get(pq)
+                mq = pq.reshape(im_q.size[1], im_q.size[0], 4)[..., 0] > 0.5
+                # лише видимий бік: вершини, що дивляться на цю камеру
+                vid_q = vidymi & (dz > 0)
+                uu, vv = _mk.pidtiahnuty_uv(uu, vv, _tr, vid_q, mq)
+            # Вухо кадру збоку — на вухо моделі (замовник: «підтягни
+            # зображення вуха до вуха моделі»). VUKHO_BIK="x,y" — центр вуха
+            # на кадрі збоку, px (y зверху).
+            vk = os.environ.get("VUKHO_BIK", "")
+            if boky and vk and "ears" in h.vertex_groups:
+                im_ = bpy.data.images.load(mk_p, check_existing=True)
+                wq, hq = im_.size
+                rx, ry = (float(t) for t in vk.split(","))
+                ry = hq - ry
+                c_bik = co_b * (dz_m if imia == "bik-r" else 1)
+                na_kameru = c_bik[:, 0] > 0
+                v_e = (vushka > 0.5) & na_kameru
+                if v_e.any():
+                    mx = float(np.mean(uu[v_e] * wq))
+                    my = float(np.mean(vv[v_e] * hq))
+                    tsentr_v = c_bik[v_e].mean(0)
+                    d3 = np.linalg.norm(c_bik - tsentr_v, axis=1)
+                    vplyv = np.exp(-0.5 * (d3 / 0.035) ** 2) * na_kameru
+                    uu = uu + vplyv * (rx - mx) / wq
+                    vv = vv + vplyv * (ry - my) / hq
+                    print("[mpfb] вухо %s: зсув %+.1f/%+.1f px"
+                          % (imia, rx - mx, ry - my))
             w_ = vg ** STEP
             if boky:
-                w_ = 0.35 * w_ * ne_ruky
+                w_ = (0.35 + 0.65 * vushka) * w_ * ne_ruky * \
+                    (1 - 0.8 * holova_v) * ~poza_ovalom
             else:
                 # Кисті ззаду — не з кадру: Kontext малює ззаду розкриті
                 # долоні (замовник: «розвернутими долонями назад - це не
                 # правильно»), і долоня лягала б на тильний бік кисті. Тильний
                 # бік — шкіра MakeHuman під тон кадру.
-                w_ = w_ * np.clip(1 - 2 * kysti, 0, 1)
+                # KYSTI_ZZADU=1 — кадр ззаду з тильним боком кистей (руки
+                # вклеєні від ліктя, `tools/avatar_ref_ruky.py`): беремо.
+                if os.environ.get("KYSTI_ZZADU", "") in ("", "0"):
+                    w_ = w_ * np.clip(1 - 2 * kysti, 0, 1)
             uvl = me.uv_layers.new(name="Проєкція-" + imia)
             for li, l in enumerate(me.loops):
                 uvl.data[li].uv = (uu[l.vertex_index], vv[l.vertex_index])
@@ -904,6 +1014,7 @@ def perenapravyty(arm):
     # зміщена вперед - треба її трохи вирівняти»). Тепер: манекен — перший
     # кадр `A_TPose`; MPFB — спокій, лише руки горизонтально й прямі
     # (плече, передпліччя, кисть уздовж). C = R_манекена⁻¹ · R_MPFB.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import mpfb_pidbir as pb_
     tpoza = next((a for a in bpy.data.actions
                   if a.name.split("|")[-1].startswith("A_TPose")), None)

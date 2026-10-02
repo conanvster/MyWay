@@ -41,7 +41,7 @@ echo "спереду: $pered" | tee -a "$o/journal.txt"
 [ -z "$BIK" ] && exit 0
 bik=$(~/Програми/cv-venv/bin/python tools/avatar_ocinka_vyd.py "$D/$BIK.png" \
     "$D/maska-$BIK.png" "$o/render-$n-бік.png" "$o/arkush-$n-бік.png" \
-    "$D/maska-$R.png" "$D/tochky-ref.npy")
+    "$D/maska-$R.png" "$D/tochky-ref.npy" --бік)
 zad=$(~/Програми/cv-venv/bin/python tools/avatar_ocinka_vyd.py "$D/$ZAD.png" \
     "$D/maska-$ZAD.png" "$o/render-$n-зад.png" "$o/arkush-$n-зад.png" \
     "$D/maska-$R.png" "$D/tochky-ref.npy")

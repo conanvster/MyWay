@@ -230,6 +230,8 @@ def main():
             os.makedirs(KADRY, exist_ok=True)
             mpfb_pidbir.NAKLADKA = os.path.join(KADRY, "накладка.png")
         arm0 = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+        if VYDY:
+            mpfb_pidbir.KADR_BIK[0] = os.path.abspath(VYDY[0])
         _, rez = mpfb_pidbir.pidibraty(
             h, arm0, os.path.abspath(PIDBIR[0]),
             os.path.abspath(PIDBIR[1]) if PIDBIR[1] else None,
@@ -357,14 +359,55 @@ def proektsiia(h, arm, ref, maska):
             & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
     iu = np.clip((u * w).astype(int), 0, w - 1)
     iv = np.clip((v * hh).astype(int), 0, hh - 1)
-    vaga = np.clip(f / 0.15, 0, 1) * vuzka[iv, iu]
+    # Плавний перехід між видами (ж9: смуги й шви на трьох чвертях — види
+    # мішались майже «так/ні»): перед набирає вагу на нормалях 0…0,45.
+    vaga = np.clip(f / 0.45, 0, 1) * vuzka[iv, iu]
+    # Зачіска спереду (темне вище брів) — теж не на лису голову: інакше
+    # спереду волосся намальоване, а ззаду й збоку (там його тепер
+    # відсіюємо) — гола шкіра. Зачіска — окрема накладка.
+    if OKO_REF[0] is not None:
+        ki = bpy.data.images.load(ref, check_existing=True)
+        kp = np.empty(ki.size[0] * ki.size[1] * 4, dtype=np.float32)
+        ki.pixels.foreach_get(kp)
+        yask = kp.reshape(ki.size[1], ki.size[0], 4)[..., :3].max(-1)
+        iu_ = np.clip((u * ki.size[0]).astype(int), 0, ki.size[0] - 1)
+        iv_ = np.clip((v * ki.size[1]).astype(int), 0, ki.size[1] - 1)
+        vaga = vaga * ~((yask[iv_, iu_] < 0.22) & (co[:, 2] > oz + 0.03))
+        # Розпущене волосся обабіч обличчя й шиї (нижче брів): темне вище
+        # лінії плечей і поза овалом обличчя (точки MediaPipe) — брови й очі
+        # в овалі лишаються. Жінка ж8: темна пляма за вухом.
+        L_ = np.load(os.path.join(os.path.dirname(os.path.abspath(maska)),
+                                  "tochky-ref.npy"))
+        oval = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+                397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+                172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
+        poly = L_[oval]
+        px_ = u * ki.size[0]
+        py_ = (1 - v) * ki.size[1]          # точки — y зверху
+        v_ovali = np.zeros(len(u), bool)
+        for i_ in range(len(poly)):
+            x1_, y1_ = poly[i_]
+            x2_, y2_ = poly[i_ - 1]
+            perekh = (y1_ > py_) != (y2_ > py_)
+            xp = x1_ + (py_ - y1_) * (x2_ - x1_) / (y2_ - y1_ + 1e-12)
+            v_ovali ^= perekh & (px_ < xp)
+        z_pl = float((arm.matrix_world @ arm.data.bones["upperarm_l"]
+                      .head_local).z)
+        vaga = vaga * ~((yask[iv_, iu_] < 0.22) & (co[:, 2] > z_pl) &
+                        ~v_ovali)
     uvp = me.uv_layers.new(name="Проєкція")
     vyd = me.color_attributes.new("Видимість", "FLOAT_COLOR", "CORNER")
     for li, l in enumerate(me.loops):
-        i = l.vertex_index
-        uvp.data[li].uv = (u[i], v[i])
-        vyd.data[li].color = (vaga[i],) * 3 + (1.0,)
+        uvp.data[li].uv = (u[l.vertex_index], v[l.vertex_index])
     me.uv_layers.active = me.uv_layers[0]
+    # Ваги видів — нормоване середнє (жінка ж10: шви й смуги на трьох
+    # чвертях, коли види лягали шарами «останній перемагає»): вага виду —
+    # квадрат того, наскільки поверхня дивиться на його камеру (боки ×0,6),
+    # помножений на видимість; шкіра MakeHuman — 0,04 там, де жоден не
+    # бачить. Шарові змішування в запіканні дають саме середнє, якщо
+    # множник шару i — w_i / (w0 + Σ w_j, j ≤ i).
+    w_pered = np.clip(f, 0, 1) ** 2 * (vaga > 0)
+    vagy = []
     print("[mpfb] проєкція: видно спереду %.0f%% вершин"
           % (100 * (vaga > 0.5).mean()))
     dodatkovi = []
@@ -392,6 +435,9 @@ def proektsiia(h, arm, ref, maska):
                         if g_.group == gi_:
                             ruky[v_.index] += g_.weight
         ne_ruky = np.clip(1 - 2 * ruky, 0, 1)
+        # Лінія бюстгальтера / пахви: плечовий суглоб − 8 см.
+        z_volossia = float((arm.matrix_world @ arm.data.bones["upperarm_l"]
+                            .head_local).z) - 0.08
         # Порядок шарів: боки, тоді спина поверх, перед — останнім. Боки —
         # лише де поверхня справді дивиться вбік (поріг 0,35): на ковзних
         # кутах вони лягали на сідниці смугами шкіри (MPFB-31).
@@ -406,31 +452,41 @@ def proektsiia(h, arm, ref, maska):
             hor = c_[:, 0] * math.sin(t_) + c_[:, 1] * math.cos(t_)
             gl = c_[:, 0] * math.cos(t_) - c_[:, 1] * math.sin(t_)
             dz = n_[:, 0] * math.cos(t_) - n_[:, 1] * math.sin(t_)
-            return hor, (dz - 0.35) * 0.15 / 0.3, gl
+            # proektsiia_vydu ділить на 0,15 — тоді vg = clip(dz)·маски
+            return hor, dz * 0.15, gl
         for imia, kadr, mk_p, osi in (
                 ("bik-l", bik, m_bik, bik_osi(co_b, nrm_b)),
                 ("bik-r", bik, m_bik, bik_osi(co_b * dz_m, nrm_b * dz_m)),
                 # ззаду (камера на +Y, праворуч у кадрі −X)
-                ("zad", zad, m_zad, (-co[:, 0], nrm[:, 1], co[:, 1]))):
+                ("zad", zad, m_zad, (-co[:, 0], nrm[:, 1] * 0.15,
+                                     co[:, 1]))):
             boky = imia.startswith("bik")
             hor, dz, gl = osi
             c_ = co_b if boky else co
             uu, vv, vg = proektsiia_vydu(
                 c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
-                mk_p, H_m, z0, z1)
+                mk_p, H_m, z0, z1, kadr=kadr, z_volossia=z_volossia,
+                ruky=ruky if boky else None)
+            w_ = vg ** 2
             if boky:
-                vg = vg * ne_ruky
+                w_ = 0.6 * w_ * ne_ruky
             uvl = me.uv_layers.new(name="Проєкція-" + imia)
-            vat = me.color_attributes.new("Видимість-" + imia, "FLOAT_COLOR",
-                                          "CORNER")
             for li, l in enumerate(me.loops):
-                i = l.vertex_index
-                uvl.data[li].uv = (uu[i], vv[i])
-                vat.data[li].color = (vg[i],) * 3 + (1.0,)
+                uvl.data[li].uv = (uu[l.vertex_index], vv[l.vertex_index])
+            vagy.append(("Видимість-" + imia, w_))
             print("[mpfb] проєкція %s: видно %.0f%% вершин"
-                  % (imia, 100 * (vg > 0.5).mean()))
+                  % (imia, 100 * (w_ > 0.25).mean()))
             dodatkovi.append(("Проєкція-" + imia, "Видимість-" + imia, kadr))
         me.uv_layers.active = me.uv_layers[0]
+    vagy.append(("Видимість", w_pered))
+    cum = np.full(len(co), 0.04)
+    for vn, w_ in vagy:
+        cum = cum + w_
+        mn_ = w_ / cum
+        at_ = me.color_attributes.get(vn) or me.color_attributes.new(
+            vn, "FLOAT_COLOR", "CORNER")
+        for li, l in enumerate(me.loops):
+            at_.data[li].color = (mn_[l.vertex_index],) * 3 + (1.0,)
     zapekty(h, ref, dodatkovi)
     me.uv_layers.remove(me.uv_layers["Проєкція"])
     for uvn, vn, _ in dodatkovi:
@@ -440,7 +496,8 @@ def proektsiia(h, arm, ref, maska):
     bpy.context.view_layer.update()
 
 
-def proektsiia_vydu(co, vidymi, hor, zsuv, dzer, glyb, maska, H_m, z0, z1):
+def proektsiia_vydu(co, vidymi, hor, zsuv, dzer, glyb, maska, H_m, z0, z1,
+                    kadr=None, z_volossia=None, ruky=None):
     """Вершини → (u, v, вага) для кадру збоку чи ззаду. `hor` — координата
     вершин уздовж «праворуч у кадрі», `dzer` — складова нормалі на камеру,
     `glyb` — глибина до камери (більше — ближче). Заслонені вершини (рука
@@ -475,6 +532,25 @@ def proektsiia_vydu(co, vidymi, hor, zsuv, dzer, glyb, maska, H_m, z0, z1):
         vuzka = vuzka & np.roll(vuzka, 1, 0) & np.roll(vuzka, -1, 0) \
             & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
     vaga = np.clip(dzer / 0.15, 0, 1) * vuzka[iv, iu] * vydno * vidymi
+    # Волосся кадру (жінка 02.10.2026: «дефекти скіна» — чорні мазки на шиї й
+    # плечах): темні пікселі вище лінії бюстгальтера — не шкіра лисої моделі.
+    if kadr is not None and z_volossia is not None:
+        ki = bpy.data.images.load(kadr, check_existing=True)
+        kp = np.empty(w * hh * 4, dtype=np.float32)
+        ki.pixels.foreach_get(kp)
+        yask = kp.reshape(hh, w, 4)[..., :3].max(-1)
+        vaga = vaga * ~((yask[iv, iu] < 0.22) & (z > z_volossia))
+    # Біля рук (лише боки): на кадрі рука лежить на боці тулуба й стегні в
+    # іншому місці, ніж у моделі, — там тулуб брав шкіру руки й кисті
+    # (мазки на стегні й біля плеча). Слід рук моделі, розширений на ~24 px.
+    if ruky is not None:
+        slid = np.zeros_like(zb, dtype=bool)
+        r_ = (ruky > 0.5) & vidymi
+        slid[cv[r_], cu[r_]] = True
+        for _ in range(6):
+            slid = slid | np.roll(slid, 1, 0) | np.roll(slid, -1, 0) \
+                | np.roll(slid, 1, 1) | np.roll(slid, -1, 1)
+        vaga = vaga * ~(slid[cv, cu] & (ruky <= 0.5))
     return u, v, vaga
 
 
@@ -637,7 +713,7 @@ def zapekty(h, ref, dodatkovi=()):
     vyd = me.color_attributes["Видимість"].data
     a_, b_ = [], []
     for li in range(0, len(me.loops), 5):
-        if vyd[li].color[0] < 0.95:
+        if vyd[li].color[0] < 0.85:   # нормоване змішування: найбільше ≈0,96
             continue
         uu, vv = uv0[li].uv
         a_.append(ps[min(ps.shape[0] - 1, int(vv * ps.shape[0])),
@@ -675,13 +751,48 @@ def zapekty(h, ref, dodatkovi=()):
         tb.image = bpy.data.images.load(kadr, check_existing=True)
         tb.extension = "EXTEND"
         links.new(ub.outputs["UV"], tb.inputs["Vector"])
+        # Тон виду — під перед (світло кадрів Kontext різне, і на межі видів
+        # лишалась смуга): медіани кольорів на спільних вершинах.
+        pe = pikseli(tb.image)
+        uve, vye = me.uv_layers[uvn].data, me.color_attributes[vn].data
+        f_, e_ = [], []
+        for li in range(0, len(me.loops), 3):
+            if vyd[li].color[0] < 0.25 or vye[li].color[0] < 0.25:
+                continue
+            uu, vv = uvr[li].uv
+            f_.append(pr[min(pr.shape[0] - 1, max(0, int(vv * pr.shape[0]))),
+                         min(pr.shape[1] - 1, max(0, int(uu * pr.shape[1]))),
+                         :3])
+            uu, vv = uve[li].uv
+            e_.append(pe[min(pe.shape[0] - 1, max(0, int(vv * pe.shape[0]))),
+                         min(pe.shape[1] - 1, max(0, int(uu * pe.shape[1]))),
+                         :3])
+        gain_e = np.ones(3)
+        # Лише шкіра в обох (ж10: чорний купальник в одному виді проти шкіри
+        # в іншому давав ×1,6 — боки вийшли висвітлені).
+        if f_:
+            f_, e_ = np.array(f_), np.array(e_)
+            shk = (f_.max(1) > 0.3) & (e_.max(1) > 0.3)
+            f_, e_ = list(f_[shk]), list(e_[shk])
+        if len(f_) > 50:
+            gain_e = np.clip(np.median(np.array(f_), 0) /
+                             np.maximum(np.median(np.array(e_), 0), 1e-3),
+                             0.6, 1.6)
+        print("[mpfb] тон %s → перед: ×%s (%d спільних)"
+              % (uvn, np.round(gain_e, 3), len(f_)))
+        mg = nodes.new("ShaderNodeMix")
+        mg.data_type, mg.blend_type = "RGBA", "MULTIPLY"
+        mg.inputs["Factor"].default_value = 1.0
+        links.new(tb.outputs["Color"], mg.inputs[6])
+        mg.inputs[7].default_value = (*[float(x) for x in gain_e], 1.0)
+        tymch.append(mg)
         vb = nodes.new("ShaderNodeVertexColor")
         vb.layer_name = vn
         mb = nodes.new("ShaderNodeMix")
         mb.data_type = "RGBA"
         links.new(vb.outputs["Color"], mb.inputs["Factor"])
         links.new(osnova, mb.inputs[6])
-        links.new(tb.outputs["Color"], mb.inputs[7])
+        links.new(mg.outputs[2], mb.inputs[7])
         osnova = mb.outputs[2]
         tymch += [ub, tb, vb, mb]
     mx = nodes.new("ShaderNodeMix")

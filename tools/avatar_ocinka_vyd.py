@@ -43,6 +43,21 @@ def main():
     ref_p, mref_p, rnd_p, ark_p, mpered_p, tochky_p = sys.argv[1:7]
     ref = cv2.cvtColor(cv2.imread(ref_p), cv2.COLOR_BGR2RGB)
     mref = cv2.imread(mref_p, cv2.IMREAD_GRAYSCALE) > 127
+    # Розпущене волосся — не тіло (те саме правило, що в підборі,
+    # `mpfb_pidbir.bez_volossia`; рядок 0 тут — верх).
+    temne = ref.max(-1) < 56
+    ys_, xs_ = np.where(mref)
+    y0_, y1_ = ys_.min(), ys_.max() + 1
+    vys_ = y1_ - y0_
+    yy_ = np.arange(mref.shape[0])[:, None]
+    if "--бік" in sys.argv:
+        tul_ = (ys_ < y0_ + 0.45 * vys_) & (ys_ > y0_ + 0.30 * vys_)
+        cx_ = float(np.median(xs_[tul_]))
+        volos = temne & (yy_ < y1_ - 0.70 * vys_) & \
+            (np.arange(mref.shape[1])[None, :] > cx_)
+    else:
+        volos = temne & (yy_ < y1_ - 0.78 * vys_)
+    mref = mref & ~volos
     mper = cv2.imread(mpered_p, cv2.IMREAD_GRAYSCALE) > 127
     L = np.load(tochky_p)
     yp = np.where(mper.any(1))[0]

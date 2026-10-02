@@ -57,7 +57,32 @@ TSILI_LR = ["arms/upperarm-scale-vert", "arms/lowerarm-scale-vert",
 OKO = 0.80                  # очі — на цій частці N над ступнями (+4% поля)
 
 
-def maska_ref(shliakh, oko_y=None):
+def bez_volossia(m, kadr, vyd):
+    """Маска кадру без розпущеного волосся (рядок 0 — низ). Жінка
+    02.10.2026: у профіль волосся позаду спини йшло в силует, і підбір
+    «добудовував» тулуб, стегна й сідниці (замовник: «у жінки статури не
+    схожі»). Профіль: темне вище 70% висоти й позаду середини тулуба; зад:
+    темне вище 78% висоти."""
+    img = bpy.data.images.load(kadr, check_existing=True)
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    temne = px.reshape(h, w, 4)[..., :3].max(-1) < 0.22
+    ys, xs = np.where(m)
+    y0, y1 = ys.min(), ys.max() + 1
+    vys = y1 - y0
+    yy = np.arange(h)[:, None]
+    if vyd == "бік":
+        tul = (ys > y1 - 0.45 * vys) & (ys < y1 - 0.30 * vys)
+        cx = float(np.median(xs[tul]))
+        volos = temne & (yy > y0 + 0.70 * vys) & \
+            (np.arange(w)[None, :] > cx)
+    else:
+        volos = temne & (yy > y0 + 0.78 * vys)
+    return m & ~volos
+
+
+def maska_ref(shliakh, oko_y=None, kadr=None, vyd=None):
     """`oko_y` — рівень очей на кадрі, пікселі ЗНИЗУ (None — за зростом)."""
     """Маска кадру → квадрат N×N: масштаб за висотою фігури, центр — за
     габаритом, ступні внизу з полем 4%."""
@@ -66,6 +91,8 @@ def maska_ref(shliakh, oko_y=None):
     px = np.empty(w * h * 4, dtype=np.float32)
     img.pixels.foreach_get(px)
     m = px.reshape(h, w, 4)[..., 0] > 0.5           # рядок 0 — низ
+    if kadr:
+        m = bez_volossia(m, kadr, vyd)
     ys, xs = np.where(m)
     y0, y1 = ys.min(), ys.max() + 1
     # Центр — за тулубом (рядки 30–45% висоти від маківки), не за габаритом:
@@ -121,6 +148,10 @@ OBLAST[_r0:_r1, :] = False
 # Кисті тепер у позі кадру — у мірі (без них руки лишались закороткими).
 # Зачіска: усе вище брів (очі + 4% N) — у моделі її немає (окрема накладка).
 OBLAST[int(N * (0.04 + OKO + 0.04)):, :] = False
+# Профіль — без вирізу шортів: збоку вони щільні, а без цієї смуги глибина
+# стегон «гуляла» до 0,99 (жінка ж9). Лише зачіска.
+OBLAST_BIK = np.ones((N, N), bool)
+OBLAST_BIK[int(N * (0.04 + OKO + 0.04)):, :] = False
 
 
 def oko_modeli(h):
@@ -141,8 +172,9 @@ def oko_modeli(h):
     return float(np.mean(zz)) * h.matrix_world[2][2] + h.matrix_world[2][3]
 
 
-def iou(a, b):
-    a, b = a & OBLAST, b & OBLAST
+def iou(a, b, oblast=None):
+    o = OBLAST if oblast is None else oblast
+    a, b = a & o, b & o
     return (a & b).sum() / max(1, (a | b).sum())
 
 
@@ -359,6 +391,21 @@ def _tochky_tila(h):
     return p @ mw[:3, :3].T + mw[:3, 3]
 
 
+MEZHI_TILA = {"stomach/stomach-pregnant": (-1.0, 0.2),
+              "buttocks/buttocks-volume": (-1.0, 0.5),
+              "hip/hip-scale-depth": (-1.0, 0.5),
+              "torso/torso-scale-depth": (-1.0, 0.6)}
+# Межі макро з оточення: MEZHI_MAKRO="muscle=0.3:0.55,weight=0.4:0.7".
+# Жінка: підбір спереду гнав «muscle» до 0,75 — руки й ноги виходили
+# атлетичні, на кадрі — м'яка статура (замовник: «статури не схожі»).
+MEZHI_MAKRO = {}
+for _p in os.environ.get("MEZHI_MAKRO", "").split(","):
+    if "=" in _p:
+        _k, _v = _p.split("=")
+        _a, _b = _v.split(":")
+        MEZHI_MAKRO[_k.strip()] = (float(_a), float(_b))
+
+
 class Povzunky:
     """Двополюсні цілі як пари ключів форми (incr/decr) і макро MPFB."""
 
@@ -411,8 +458,12 @@ class Povzunky:
             kb[self.kl[(imia, "decr")]].value = max(0.0, -v)
 
     def mezhi(self, imia):
-        return (0.0, 1.0) if imia in MAKRO or imia == "cupsize" \
-            else (-1.0, 1.0)
+        if imia in MAKRO or imia == "cupsize":
+            return MEZHI_MAKRO.get(imia, (0.0, 1.0))
+        # Живіт і сідниці не надувати: профіль Kontext буває повнішим за кадр
+        # спереду, і підбір давав жінці живіт і сідниці (замовник 02.10.2026:
+        # «у жінки статури не схожі»).
+        return MEZHI_TILA.get(imia, (-1.0, 1.0))
 
 
 # Проходів на крок. Один — повзунок від нуля сягав лише 0,46; п'ять і
@@ -432,6 +483,7 @@ TSILI_BIK = ["head/head-trans", "neck/neck-trans", "torso/torso-scale-depth",
              "stomach/stomach-pregnant", "cupsize"]
 
 
+KADR_BIK = [None]    # кольоровий кадр профілю — щоб зняти з маски волосся
 PROFIL_KUT = [0.0]   # на скільки «профіль» кадру не рівно 90°, градуси
 # Зсув профілю, метри «праворуч у кадрі»: центр за тулубом у профіль
 # збивала рука (на кадрі жінки вона висить позаду, у моделі — посередині;
@@ -460,11 +512,11 @@ def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
         # Без дзеркала: обидва профілі дивляться ліворуч кадру (так рахує й
         # проєкція), і знак кута має значення.
         if z_poshukom:
-            kr = max((iou(np.roll(mb_, dx, 1), m_b), dx)
+            kr = max((iou(np.roll(mb_, dx, 1), m_b, OBLAST_BIK), dx)
                      for dx in range(-16, 17, 2))
             _ZSUV_PX[0] = kr[1]
             return kr[0]
-        return iou(np.roll(mb_, _ZSUV_PX[0], 1), m_b)
+        return iou(np.roll(mb_, _ZSUV_PX[0], 1), m_b, OBLAST_BIK)
     naikr, krashchyi = -1, 0.0
     # Лише доворот грудьми до глядача (камера зміщується до −Y, перед
     # моделі): силует сам знака не розрізняє — m33 вибрав −10°, і на бік
@@ -545,7 +597,8 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
         y0f, y1f = _vys_masky(maska_pered)
         y0b, y1b = _vys_masky(maska_bik)
         oko_b = y0b + (oko_y - y0f) * (y1b - y0b) / (y1f - y0f)
-    m_b = maska_ref(maska_bik, oko_b) if maska_bik else None
+    m_b = maska_ref(maska_bik, oko_b, KADR_BIK[0], "бік") if maska_bik \
+        else None
     postavyty_ruky(arm, kut_ruk)
     pv = Povzunky(h)
 

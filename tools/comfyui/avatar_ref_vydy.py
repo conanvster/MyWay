@@ -98,7 +98,59 @@ def puchok():
             print("готово", imia, seed, flush=True)
 
 
+# Статура — з профілю s922 (замовник 02.10.2026: «у жінки статури не схожі
+# і дефекти скіна», як приклад — zh-bik-sym-s922: струнка, плаский живіт).
+# Профіль у пучку s971 вийшов повнішим, і підбір надув живіт і сідниці.
+# Тепер від s922: руки вниз (як модель у профіль) і волосся в пучок, тіло те
+# саме.
+STRUNKA = ("Lower both of her arms so they hang relaxed straight down along "
+           "the sides of her body, the near arm covering the far one, and tie "
+           "her long hair up into a tight high bun on the top of her head so "
+           "her neck and upper back are bare. Keep exactly the same slim "
+           "body, the same flat stomach, the same waist, hips and legs, the "
+           "same strict side view facing left, the same black two-piece "
+           "swimsuit, the same face, background, lighting and photorealistic "
+           "style.")
+SIDY_STRUNKA = (1011, 1022, 1033, 1044)
+
+
+def strunka():
+    rk.PROMT = STRUNKA
+    image = m.stage(str(A / "zh-bik-sym-s922.png"))
+    for seed in SIDY_STRUNKA:
+        kudy = A / ("zh-bik-strunka-s%d.png" % seed)
+        if kudy.exists():
+            continue
+        done = m.run(rk.graf(image, seed, "avatar_zh_bik_strunka_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]), kudy)
+        print("готово strunka", seed, flush=True)
+
+
+def strunka_puchok():
+    """s1022 (струнка, руки вниз) — волосся ще звисає по спині; весь пучок."""
+    rk.PROMT = PUCHOK.replace("Tie her long hair", "Gather all of her hair, "
+                              "with no strands hanging down her back, and tie it")
+    image = m.stage(str(A / "zh-bik-strunka-s1022.png"))
+    for seed in (1051, 1062, 1073):
+        kudy = A / ("zh-bik-strunka2-s%d.png" % seed)
+        if kudy.exists():
+            continue
+        done = m.run(rk.graf(image, seed, "avatar_zh_bik_strunka2_s%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"],
+                                 out["filename"]), kudy)
+        print("готово strunka2", seed, flush=True)
+
+
 def main():
+    if "--струнка2" in sys.argv:
+        m.free()
+        return strunka_puchok()
+    if "--струнка" in sys.argv:
+        m.free()
+        return strunka()
     if "--пучок" in sys.argv:
         m.free()
         return puchok()

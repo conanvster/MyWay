@@ -67,6 +67,66 @@ KROKY = {
                "backs of her hands and her knuckles, fingers together. The "
                "entire figure from the top of the bun to the floor under her "
                "feet is in frame with empty space above and below. " + SPILNE),
+    # Замовник 02.10.2026: «згенероване волосся заважає - пропоную генерувати
+    # жінку або без волосся або з дуже коротким волоссям». Від того самого
+    # переду s622 (статура й обличчя, які замовник прийняв).
+    "--лиса": ("zh-kupalnyk-s622.png", "zh-lysa", (1611, 1622, 1633),
+               "Shave her head completely bald: a smooth bare scalp with no "
+               "hair at all, bare ears and bare neck. Keep everything else "
+               "exactly the same: same woman, same face, same eyebrows, same "
+               "strict T-pose with both arms straight out horizontally, same "
+               "front view, same black two-piece swimsuit, same body, same "
+               "plain light grey background, same lighting, same "
+               "photorealistic style."),
+    "--коротке": ("zh-kupalnyk-s622.png", "zh-korotke", (1711, 1722, 1733),
+                  "Cut her hair into a very short buzz cut, only a few "
+                  "millimetres long, close to the scalp, so the shape of her "
+                  "head, her ears and her bare neck are fully visible. Keep "
+                  "everything else exactly the same: same woman, same face, "
+                  "same strict T-pose with both arms straight out "
+                  "horizontally, same front view, same black two-piece "
+                  "swimsuit, same body, same plain light grey background, "
+                  "same lighting, same photorealistic style."),
+    # Остання спроба (замовник: «ще раз спробувати згенерувати правильні
+    # рендери в позинії Т для вигляду боку (перевір щоб було точно збоку
+    # руки в положенні Т) Вигляд із заду без волосся»). Від лисого переду.
+    "--лиса-бік1": ("zh-lysa-vybir.png", "zh-lysa-bik1",
+                    (1811, 1822, 1833, 1844, 1855, 1866),
+                    "Change only the camera position: the camera orbits 90 "
+                    "degrees around her to her left side, so we now see her "
+                    "from the left side in an exact profile, her face points "
+                    "to the left of the frame. She does not move at all: she "
+                    "keeps exactly the same T-pose with both arms straight "
+                    "out to the sides at shoulder height, so from this side "
+                    "view her left arm points straight toward the camera, "
+                    "strongly foreshortened, and her right arm points "
+                    "straight away from the camera, hidden behind her body. "
+                    "Keep the same bald head, the same black two-piece "
+                    "swimsuit, the same body, plain light grey background, "
+                    "the whole body from head to feet in frame, "
+                    "photorealistic."),
+    "--лиса-бік2": ("zh-lysa-vybir.png", "zh-lysa-bik2",
+                    (1911, 1922, 1933, 1944, 1955, 1966),
+                    "Show the same bald woman in a strict side profile view "
+                    "facing left, standing upright in a T-pose. In this "
+                    "exact side view her arms are extended horizontally to "
+                    "her sides, perpendicular to the picture, so at shoulder "
+                    "height only her near shoulder, the round foreshortened "
+                    "near arm and the hand pointing at the viewer are "
+                    "visible; nothing hangs down along her body and nothing "
+                    "points forward or backward. Same black two-piece "
+                    "swimsuit, same body, plain light grey background, the "
+                    "whole body from head to feet in frame, photorealistic."),
+    "--лиса-зад": ("zh-lysa-vybir.png", "zh-lysa-zad", (2011, 2022, 2033),
+                   "Rotate the same woman 180 degrees so she is seen exactly "
+                   "from behind: the back of her smooth bald head, her bare "
+                   "back, the black swimsuit from behind, the backs of her "
+                   "legs, her heels on the floor. The same strict T-pose "
+                   "with both arms straight out horizontally to the sides at "
+                   "the same height as in the front view, her palms facing "
+                   "forward away from the camera. The entire figure from the "
+                   "top of the head to the floor is in frame with margin. "
+                   + SPILNE.replace("the same tight high bun, ", "")),
 }
 
 

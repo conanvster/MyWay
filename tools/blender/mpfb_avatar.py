@@ -421,6 +421,18 @@ def proektsiia(h, arm, ref, maska):
     # кожну ділянку веде вид, що дивиться на неї найпряміше.
     STEP = 4
     w_pered = np.clip(f, 0, 1) ** STEP * (vaga > 0)
+    # Вуха — лише з профілю (замовник: «невдалося ідеально сумістити обличча
+    # (бачу 4 вуха)»): спереду вухо видно ребром, і його розтягнута копія
+    # лягала поруч зі справжнім із кадру збоку.
+    vushka = np.zeros(len(co))
+    if "ears" in h.vertex_groups:
+        gi_v = h.vertex_groups["ears"].index
+        for v_ in me.vertices:
+            for g_ in v_.groups:
+                if g_.group == gi_v:
+                    vushka[v_.index] = g_.weight
+    if VYDY:
+        w_pered = w_pered * np.clip(1 - 2 * vushka, 0, 1)
     vagy = []
     print("[mpfb] проєкція: видно спереду %.0f%% вершин"
           % (100 * (vaga > 0.5).mean()))
@@ -492,7 +504,7 @@ def proektsiia(h, arm, ref, maska):
                 ruky=ruky if boky else None)
             w_ = vg ** STEP
             if boky:
-                w_ = 0.35 * w_ * ne_ruky
+                w_ = (0.35 + 0.65 * vushka) * w_ * ne_ruky
             else:
                 # Кисті ззаду — не з кадру: Kontext малює ззаду розкриті
                 # долоні (замовник: «розвернутими долонями назад - це не

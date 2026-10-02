@@ -77,6 +77,104 @@ def oko_kadru(ref, maska):
     return img.size[1] - y_top
 
 
+def farba_ochei(ref, tochky):
+    """Райдужка MakeHuman «brown» червонувата, на кадрі очі темні сіро-карі.
+    Середній колір райдужки кадру (точки 468/473 + радіус з 469–471) →
+    перефарбувати райдужку текстури очей: пікселі, що помітно відрізняються
+    від білка (насиченість), домножаються, щоб їхнє середнє дорівнювало
+    кадровому. Зіниця лишається, білок теж. Нова картинка — поруч із
+    моделлю, ассет MPFB не чіпаємо."""
+    import numpy as np
+    L = np.load(tochky)
+    im = bpy.data.images.load(ref)
+    w, hh = im.size
+    a = np.array(im.pixels[:], dtype=np.float32).reshape(hh, w, 4)[::-1, :, :3]
+    yy, xx = np.mgrid[:hh, :w]
+    px = []
+    for c in (468, 473):
+        r = max(1.5, 0.35 * np.linalg.norm(L[c + 1] - L[c + 3]))
+        px.append(a[(xx - L[c, 0]) ** 2 + (yy - L[c, 1]) ** 2 < r * r])
+    tsil = np.concatenate(px).mean(0)
+    # Білок: усередині контуру повік, без кола райдужки. На кадрі він у
+    # тіні повік і сіруватий; білосніжний білок MakeHuman давав «витріщені»
+    # очі (ітерація MPFB-13).
+    def vseredyni_mnohokutnyka(pts, poly):
+        """Парність перетинів променя (у Blender немає matplotlib)."""
+        x, y = pts[:, 0], pts[:, 1]
+        res = np.zeros(len(pts), bool)
+        for i in range(len(poly)):
+            x1, y1 = poly[i]
+            x2, y2 = poly[i - 1]
+            perekh = (y1 > y) != (y2 > y)
+            xp = x1 + (y - y1) * (x2 - x1) / (y2 - y1 + 1e-12)
+            res ^= perekh & (x < xp)
+        return res
+    kontury = ((33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158,
+                159, 160, 161, 246),
+               (263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385,
+                386, 387, 388, 466))
+    bil = []
+    sit = np.stack([xx.ravel() + 0.5, yy.ravel() + 0.5], 1)
+    for kon, c in zip(kontury, (468, 473)):
+        r = np.linalg.norm(L[c + 1] - L[c + 3]) / 2
+        vseredyni = vseredyni_mnohokutnyka(sit, L[list(kon)]).reshape(hh, w)
+        poza = (xx - L[c, 0]) ** 2 + (yy - L[c, 1]) ** 2 > (1.1 * r) ** 2
+        bil.append(a[vseredyni & poza])
+    bil = np.concatenate(bil)
+    # Контур захоплює й повіки з віями (середнє виходило буре, MPFB-14) —
+    # білок це найсвітліша третина.
+    if len(bil) > 5:
+        yask = bil.sum(1)
+        tsil_bil = bil[yask >= np.percentile(yask, 70)].mean(0)
+    else:
+        tsil_bil = None
+    bpy.data.images.remove(im)
+    # Сітка очей MPFB зветься «Human.high-poly» — шукаємо за картинкою.
+    for o in bpy.data.objects:
+        if o.type != "MESH":
+            continue
+        for m in o.data.materials:
+            for n in (m.node_tree.nodes if m and m.node_tree else []):
+                if n.type != "TEX_IMAGE" or n.image is None \
+                        or "_eye" not in n.image.name.lower():
+                    continue
+                t = n.image
+                tw, th = t.size
+                e = np.array(t.pixels[:], dtype=np.float32).reshape(th, tw, 4)
+                rgb = e[..., :3]
+                nas = rgb.max(-1) - rgb.min(-1)
+                rai = (nas > 0.12) & (rgb.max(-1) > 0.08)
+                if rai.sum() < 50:
+                    continue
+                k = tsil / np.maximum(rgb[rai].mean(0), 1e-3)
+                rgb[rai] = np.clip(rgb[rai] * k, 0, 1)
+                bilok = ~rai & (rgb.max(-1) > 0.35) & (e[..., 3] > 0.5)
+                if tsil_bil is not None and bilok.sum() > 50:
+                    kb = tsil_bil / np.maximum(rgb[bilok].mean(0), 1e-3)
+                    rgb[bilok] = np.clip(rgb[bilok] * kb, 0, 1)
+                    print("[mpfb] білок → %s (×%s, %d пікс. кадру)"
+                          % (np.round(tsil_bil * 255).astype(int),
+                             np.round(kb, 2), len(bil)))
+                e[..., :3] = rgb
+                nova = bpy.data.images.new("oko_kadru_eye", tw, th, alpha=True)
+                nova.pixels[:] = e.ravel()
+                nova.filepath_raw = os.path.join(
+                    os.path.dirname(os.path.abspath(KUDY)), "oko_kadru_eye.png")
+                nova.file_format = "PNG"
+                os.makedirs(os.path.dirname(nova.filepath_raw), exist_ok=True)
+                nova.save()
+                n.image = nova
+                for m2 in o.data.materials:
+                    for n2 in (m2.node_tree.nodes if m2 and m2.node_tree
+                               else []):
+                        if n2.type == "TEX_IMAGE" and n2.image == t:
+                            n2.image = nova
+                print("[mpfb] очі → колір кадру %s (райдужка ×%s)"
+                      % (np.round(tsil * 255).astype(int), np.round(k, 2)))
+                return
+    print("[mpfb] ‼ текстуру очей не знайдено — колір очей лишився MakeHuman")
+
+
 def asset(*chastyny):
     return os.path.join(DANI, *chastyny)
 
@@ -112,6 +210,9 @@ def main():
         m.blend_method = "OPAQUE" if hasattr(m, "blend_method") else None
     if REF:
         OKO_REF[0] = oko_kadru(os.path.abspath(REF[0]), os.path.abspath(REF[1]))
+        if OKO_REF[0] is not None:
+            farba_ochei(os.path.abspath(REF[0]), os.path.join(os.path.dirname(
+                os.path.abspath(REF[1])), "tochky-ref.npy"))
     if PIDBIR:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import mpfb_pidbir

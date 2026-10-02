@@ -21,31 +21,28 @@ VYD = ARGS[2] if len(ARGS) > 2 else "перед"
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=MODEL)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
-KUT = 90.0
+KUT, KUT_NIH, KUT_LIKTIA, STOPY = 90.0, 0.0, 0.0, 18.0
+KLIUCH = 0.0
 try:
     import json as _j
-    KUT = float(_j.load(open(MODEL + ".підбір.json")).get("кут рук", 90.0))
+    _p = _j.load(open(MODEL + ".підбір.json"))
+    KUT = float(_p.get("кут рук", 90.0))
+    KUT_NIH = float(_p.get("кут ніг", 0.0))
+    KUT_LIKTIA = float(_p.get("кут ліктя", 0.0))
+    STOPY = float(_p.get("стопи", 18.0))
+    KLIUCH = float(_p.get("ключиці", 0.0))
 except Exception:
     pass
 if T_POZA:
-    # Руки горизонтально, як на кадрі (модель MPFB стоїть в А-позі).
-    for bik in ("l", "r"):
-        pb = arm.pose.bones.get("upperarm_" + bik)
-        if pb is None:
-            continue
-        pb.rotation_mode = "QUATERNION"
-        hd = arm.matrix_world @ pb.head
-        tl = arm.matrix_world @ pb.tail
-        s_ = 1 if tl.x > hd.x else -1
-        tsil = Vector((math.sin(math.radians(KUT)) * s_, 0,
-                       -math.cos(math.radians(KUT))))
-        r = (tl - hd).normalized().rotation_difference(tsil)
-        m = pb.matrix.copy()
-        t = m.translation.copy()
-        m = r.to_matrix().to_4x4() @ m
-        m.translation = t
-        pb.matrix = m
-    bpy.context.view_layer.update()
+    # Та сама постановка, що й при підборі та проєкції (`mpfb_pidbir`).
+    import os as _os
+    sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import mpfb_pidbir as _P
+    _P.KUT_NIH[0] = KUT_NIH
+    _P.KUT_LIKTIA[0] = KUT_LIKTIA
+    _P.STOPY[0] = STOPY
+    _P.KLIUCH[0] = KLIUCH
+    _P.postavyty_ruky(arm, KUT)
 sitky = [o for o in bpy.data.objects if o.type == "MESH"]
 dg = bpy.context.evaluated_depsgraph_get()
 tochky = []
@@ -94,7 +91,7 @@ for o in [x for x in bpy.data.objects if x.type == "MESH"]:
     bm.free()
     print("[рендер] рогівка геть: %d граней" % len(geth))
 sc.render.film_transparent = True
-sc.render.resolution_x = sc.render.resolution_y = 1024
+sc.render.resolution_x = sc.render.resolution_y = int(__import__("os").environ.get("ROZDIL", "1024"))
 sc.view_settings.view_transform = "Standard"
 kam = bpy.data.objects.new("камера", bpy.data.cameras.new("камера"))
 sc.collection.objects.link(kam)

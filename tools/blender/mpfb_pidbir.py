@@ -14,9 +14,12 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-from bl_ext.blender_org.mpfb.services.targetservice import TargetService
-from bl_ext.blender_org.mpfb.entities.objectproperties import \
-    HumanObjectProperties
+try:    # рендер оцінки (`avatar_render`) бере лише постановку пози — без MPFB
+    from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+    from bl_ext.blender_org.mpfb.entities.objectproperties import \
+        HumanObjectProperties
+except Exception:   # без MPFB (--factory-startup) — TypeError, не ImportError
+    TargetService = HumanObjectProperties = None
 
 N = 384                     # бік маски підбору, пікселів
 NAKLADKA = None             # шлях PNG накладки масок (для ока)
@@ -93,11 +96,9 @@ def maska_modeli(tochky, vis_x, oko_z=None):
 OBLAST = np.ones((N, N), bool)
 _r0, _r1 = int(N * (0.04 + 0.92 * 0.36)), int(N * (0.04 + 0.92 * 0.56))
 OBLAST[_r0:_r1, :] = False
-_kr = int(N * 0.44)        # лише кінчики пальців (кисті на кадрі в іншій позі)
+# Кисті тепер у позі кадру — у мірі (без них руки лишались закороткими).
 # Зачіска: усе вище брів (очі + 4% N) — у моделі її немає (окрема накладка).
 OBLAST[int(N * (0.04 + OKO + 0.04)):, :] = False
-OBLAST[:, : N // 2 - _kr] = False
-OBLAST[:, N // 2 + _kr:] = False
 
 
 def oko_modeli(h):
@@ -126,7 +127,22 @@ def iou(a, b):
 def postavyty_ruky(arm, kut_vid_vertykali=10.0):
     """Руки — вниз уздовж тіла, як на кадрі (кут від вертикалі, градуси)."""
     from mathutils import Matrix
+    # Кисті й ступні — з нуля: їхні повороти відносні й накопичувались би
+    # при кожній новій постановці (підбір кута рук ставить позу багато разів).
+    for pb_ in arm.pose.bones:
+        if pb_.name.split("_")[0] in ("lowerarm", "hand", "foot", "thumb",
+                                      "index", "middle", "ring", "pinky"):
+            pb_.matrix_basis.identity()
+    bpy.context.view_layer.update()
     for bik, znak in (("l", 1), ("r", -1)):
+        pk = arm.pose.bones.get("clavicle_" + bik)
+        if pk is not None:
+            pk.rotation_mode = "QUATERNION"
+            pk.matrix_basis.identity()
+            bpy.context.view_layer.update()
+            if KLIUCH[0]:
+                _krutnuty(arm, pk.name, Vector((0, 1, 0)),
+                          math.radians(KLIUCH[0]) * znak)
         pb = arm.pose.bones.get("upperarm_" + bik)
         if pb is None:
             continue
@@ -145,6 +161,141 @@ def postavyty_ruky(arm, kut_vid_vertykali=10.0):
         m.translation = t
         pb.matrix = m
     bpy.context.view_layer.update()
+    postavyty_nohy(arm, KUT_NIH[0])
+    postavyty_kysti_stopy(arm)
+
+
+# Поза кадру, крім кута рук (02.10.2026): на кадрі кисті долонями вперед
+# і зап'ястки зігнуті вгору, ступні — носками назовні.
+STOPY_NAZOVNI = 18.0
+
+
+KUT_NIH = [0.0]   # кут стегон до середини (+) чи назовні (−), градуси
+KUT_LIKTIA = [0.0]  # передпліччя вгору (+) від лінії плеча, градуси
+STOPY = [STOPY_NAZOVNI]  # носки назовні, градуси
+KLIUCH = [0.0]   # ключиці донизу (+), градуси: на кадрі плечі спадисті
+
+
+def postavyty_nohy(arm, kut):
+    """Стегна до середини на `kut` градусів (гомілки моделі стояли ширше,
+    ніж на кадрі)."""
+    from mathutils import Matrix
+    for bik, znak in (("l", 1), ("r", -1)):
+        pb = arm.pose.bones.get("thigh_" + bik)
+        if pb is None:
+            continue
+        pb.rotation_mode = "QUATERNION"
+        pb.matrix_basis.identity()
+        bpy.context.view_layer.update()
+        m = pb.matrix.copy()
+        t = m.translation.copy()
+        m = Matrix.Rotation(math.radians(kut * znak), 4, "Y") @ m
+        m.translation = t
+        pb.matrix = m
+    bpy.context.view_layer.update()
+
+
+PALTSI = ("index", "middle", "ring", "pinky")
+
+
+def _holova(arm, n):
+    return arm.matrix_world @ arm.pose.bones[n].head
+
+
+def _napryamyty(arm, n, kudy, tsil):
+    """Повернути кістку `n` навколо її голови так, щоб напрямок голова→`kudy`
+    (точка у світі, зазвичай голова дочірньої кістки) став `tsil`.
+    Через голови суглобів, не хвости: імпорт glTF хвости вгадує."""
+    pb = arm.pose.bones[n]
+    pb.rotation_mode = "QUATERNION"
+    hd = _holova(arm, n)
+    r = (kudy() - hd).normalized().rotation_difference(tsil.normalized())
+    m = pb.matrix.copy()
+    t = m.translation.copy()
+    m = r.to_matrix().to_4x4() @ m
+    m.translation = t
+    pb.matrix = m
+    bpy.context.view_layer.update()
+
+
+def _krutnuty(arm, n, vis, kut_rad):
+    pb = arm.pose.bones[n]
+    from mathutils import Matrix
+    m = pb.matrix.copy()
+    t = m.translation.copy()
+    m = Matrix.Rotation(kut_rad, 4, vis) @ m
+    m.translation = t
+    pb.matrix = m
+    bpy.context.view_layer.update()
+
+
+def postavyty_kysti_stopy(arm, nazovni=None):
+    """Як на кадрі: лікоть прямий, кисть продовжує передпліччя, долоня
+    на камеру, великий палець угору, пальці разом і прямі.
+    (У спокої MPFB передпліччя дивиться на камеру під ~45°, а стара
+    постановка поворотами навколо осей світу ставила кисть сторч —
+    руки спереду виходили закороткими, ітерація MPFB-10.)"""
+    from mathutils import Matrix
+    if nazovni is None:
+        nazovni = STOPY[0]
+    pbs = arm.pose.bones
+    for bik, znak in (("l", 1), ("r", -1)):
+        if "lowerarm_" + bik not in pbs:
+            continue
+        pl = (_holova(arm, "lowerarm_" + bik) -
+              _holova(arm, "upperarm_" + bik)).normalized()
+        # Лікоть: на кадрі плече трохи вниз, передпліччя — вище (≠ одна
+        # пряма; ітерація MPFB-12: руки моделі вище кадрових).
+        vg = Vector((0, 0, 1))
+        vg_p = (vg - vg.dot(pl) * pl).normalized()
+        pleche = (pl + math.tan(math.radians(KUT_LIKTIA[0])) * vg_p) \
+            .normalized()
+        _napryamyty(arm, "lowerarm_" + bik,
+                    lambda: _holova(arm, "hand_" + bik), pleche)
+        _napryamyty(arm, "hand_" + bik,
+                    lambda: _holova(arm, "middle_01_" + bik), pleche)
+        # Крутнути кисть навколо передпліччя: вказівний над мізинцем
+        # (долоня на камеру, великий палець угору).
+        a_ = _holova(arm, "index_01_" + bik) - _holova(arm, "pinky_01_" + bik)
+        vgoru = Vector((0, 0, 1))
+        a_p = (a_ - a_.dot(pleche) * pleche).normalized()
+        v_p = (vgoru - vgoru.dot(pleche) * pleche).normalized()
+        kut = a_p.angle(v_p)
+        if a_p.cross(v_p).dot(pleche) < 0:
+            kut = -kut
+        _krutnuty(arm, "hand_" + bik, pleche, kut)
+        # Пальці прямі, уздовж кисті.
+        for p_ in PALTSI:
+            for i in (1, 2):
+                n = "%s_0%d_%s" % (p_, i, bik)
+                nx = "%s_0%d_%s" % (p_, i + 1, bik)
+                if n in pbs and nx in pbs:
+                    _napryamyty(arm, n, lambda nx=nx: _holova(arm, nx), pleche)
+            n3 = "%s_03_%s" % (p_, bik)
+            if n3 in pbs:
+                pb3 = pbs[n3]
+                _napryamyty(arm, n3, lambda pb3=pb3: arm.matrix_world @
+                            pb3.tail, pleche)
+        # Великий — угору й трохи вперед, як на кадрі (≈60° від кисті).
+        vel = (0.45 * pleche + Vector((0, -0.3, 0.85))).normalized()
+        for i in (1, 2):
+            n = "thumb_0%d_%s" % (i, bik)
+            nx = "thumb_0%d_%s" % (i + 1, bik)
+            if n in pbs and nx in pbs:
+                _napryamyty(arm, n, lambda nx=nx: _holova(arm, nx), vel)
+        if "thumb_03_" + bik in pbs:
+            pb3 = pbs["thumb_03_" + bik]
+            _napryamyty(arm, pb3.name, lambda pb3=pb3: arm.matrix_world @
+                        pb3.tail, vel)
+        pf = pbs.get("foot_" + bik)
+        if pf is not None:
+            pf.rotation_mode = "QUATERNION"
+            m = pf.matrix.copy()
+            t = m.translation.copy()
+            m = Matrix.Rotation(math.radians(nazovni * znak), 4, "Z") @ m
+            m.translation = t
+            pf.matrix = m
+            bpy.context.view_layer.update()
 
 
 def tochky_tila(h):
@@ -265,6 +416,33 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
     zh_kut(kut_ruk)
     print("[підбір] кут рук %.0f° від вертикалі: %.4f" % (kut_ruk, naikr),
           flush=True)
+    # Решта кутів пози — по черзі, двічі (впливають одне на одне).
+    kuty = (("кут рук", None, np.arange(76, 100.1, 1.0)),
+            ("ключиці", KLIUCH, np.arange(-6, 14.1, 1.0)),
+            ("кут ліктя", KUT_LIKTIA, np.arange(-4, 16.1, 1.0)),
+            ("кут ніг", KUT_NIH, np.arange(-6, 6.1, 1.0)),
+            ("стопи", STOPY, np.arange(6, 56.1, 2.0)))
+    for _ in range(2):
+        for imia, kom, diap in kuty:
+            krashche = kut_ruk if kom is None else kom[0]
+            for v in diap:
+                if kom is None:
+                    zh_kut(v)
+                else:
+                    kom[0] = v
+                    zh_kut(kut_ruk)
+                s_ = otsinka()
+                if s_ > naikr + 1e-5:
+                    naikr, krashche = s_, v
+            if kom is None:
+                kut_ruk = krashche
+            else:
+                kom[0] = krashche
+            zh_kut(kut_ruk)
+    print("[підбір] кути: рук %.0f°, ключиці %+.0f°, ліктя %+.0f°, ніг %+.0f°, "
+          "стопи %.0f°: %.4f" % (kut_ruk, KLIUCH[0], KUT_LIKTIA[0], KUT_NIH[0],
+                                 STOPY[0], naikr),
+          flush=True)
     for krok in (0.25, 0.12, 0.06, 0.03)[:raundy]:
         for imia in list(pv.znach):
             lo, hi = pv.mezhi(imia)
@@ -302,6 +480,10 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
         pb.matrix_basis.identity()
     bpy.context.view_layer.update()
     pv.znach["кут рук"] = kut_ruk
+    pv.znach["кут ніг"] = KUT_NIH[0]
+    pv.znach["кут ліктя"] = KUT_LIKTIA[0]
+    pv.znach["стопи"] = STOPY[0]
+    pv.znach["ключиці"] = KLIUCH[0]
     return naikr, pv.znach
 
 

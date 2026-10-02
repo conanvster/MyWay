@@ -61,8 +61,8 @@ def pidihnaty(a, ma, b, mb, Lb):
     ga, gb = sira(a), sira(b)
     best = (-9, None)
     for sk in np.arange(0.97, 1.031, 0.005):
-        for dx in range(-6, 7, 2):
-            for dy in range(-6, 7, 2):
+        for dx in range(-6, 7):
+            for dy in range(-6, 7):
                 M = np.float32([[sk, 0, (1 - sk) * S / 2 + dx],
                                 [0, sk, (1 - sk) * S / 2 + dy]])
                 g2 = cv2.warpAffine(gb, M, (S, S), flags=cv2.INTER_LINEAR)
@@ -116,6 +116,15 @@ def main():
     brovy = min(La2[[70, 63, 105, 66, 107, 336, 296, 334, 293, 300], 1])
     bez = np.ones((S, S), bool)
     bez[: int(brovy) - 4, :] = False
+    # Одяг кадру (шорти) — теж окрема частина, не тіло: темні ненасичені
+    # пікселі фігури, розширені на 3 px. Повна цифра з ним — окремо.
+    hsv = cv2.cvtColor((a * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
+    odiah = ma & (hsv[..., 2] < 70)
+    odiah = cv2.dilate(odiah.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
+    odiah = cv2.morphologyEx(odiah.astype(np.uint8), cv2.MORPH_CLOSE,
+                             np.ones((15, 15), np.uint8)) > 0
+    bez_z_odiahom = bez.copy()
+    bez = bez & ~odiah
     sp = ma & mb & bez
     iou_bez = (ma & mb & bez).sum() / max(1, ((ma | mb) & bez).sum())
     iou_z = (ma & mb).sum() / max(1, (ma | mb).sum())
@@ -127,17 +136,40 @@ def main():
     obl = np.zeros((S, S), bool)
     obl[y0:y1, x0:x1] = True
     oblychchia = ssim(sira(a), sira(b), obl & ma & mb)
+    # Діагностика (не в підсумку): обличчя з власним дорівнюванням ±3 px,
+    # ±3% — чи падіння обличчя від форми, чи від зсуву всієї постаті.
+    ga_, gb_ = sira(a), sira(b)
+    obl_lok = oblychchia
+    cy, cx = (y0 + y1) / 2, (x0 + x1) / 2
+    for sk in (0.97, 0.985, 1.0, 1.015, 1.03):
+        for dx in range(-3, 4):
+            for dy in range(-3, 4):
+                M_ = np.float32([[sk, 0, (1 - sk) * cx + dx],
+                                 [0, sk, (1 - sk) * cy + dy]])
+                g2 = cv2.warpAffine(gb_, M_, (S, S), flags=cv2.INTER_LINEAR)
+                m2_ = cv2.warpAffine(mb.astype(np.uint8), M_, (S, S),
+                                     flags=cv2.INTER_NEAREST) > 0
+                obl_lok = max(obl_lok, ssim(ga_, g2, obl & ma & m2_))
     pids = 0.25 * (iou_bez + kolir + tilo + oblychchia)
+    iou_odiah = (ma & mb & bez_z_odiahom).sum() / \
+        max(1, ((ma | mb) & bez_z_odiahom).sum())
     rez = {"силует": round(float(iou_bez), 3),
            "силует із зачіскою": round(float(iou_z), 3),
+           "силует з шортами": round(float(iou_odiah), 3),
            "колір": round(float(kolir), 3), "тіло": round(tilo, 3),
-           "обличчя": round(oblychchia, 3), "підсумок": round(float(pids), 3),
+           "обличчя": round(oblychchia, 3),
+           "обличчя локально": round(obl_lok, 3), "підсумок": round(float(pids), 3),
            "зсув очей, px": round(float(np.linalg.norm(
                La2[[33, 263]] - Lb2[[33, 263]], axis=1).mean()), 2)}
     print(json.dumps(rez, ensure_ascii=False))
     rizn = np.abs(a - b) * (ma & mb)[..., None]
+    # Силуети: червоне — лише на кадрі, зелене — лише в моделі (у мірі).
+    sil = np.zeros_like(a)
+    sil[ma & mb] = 0.35
+    sil[ma & ~mb & bez] = (1, 0, 0)
+    sil[mb & ~ma & bez] = (0, 1, 0)
     ark = np.concatenate([a, b * mb[..., None] + (1 - mb[..., None]) * 0.5,
-                          np.clip(rizn * 3, 0, 1)], axis=1)
+                          np.clip(rizn * 3, 0, 1), sil], axis=1)
     cv2.imwrite(ark_p, cv2.cvtColor((ark * 255).astype(np.uint8),
                                     cv2.COLOR_RGB2BGR))
 

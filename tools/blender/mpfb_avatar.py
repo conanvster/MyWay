@@ -245,6 +245,11 @@ def main():
                 h, arm0, None, None, KUT_RUK[0],
                 lambda hh_: render_tochky(hh_, os.path.abspath(REF[1])),
                 L_ref, OKO_REF[0], None)
+            if os.environ.get("SHYRYNA", "") not in ("", "0"):
+                proekt_, _ = vidobrazhennia(h, os.path.abspath(REF[1]))
+                rez["ширина обличчя"] = mpfb_pidbir.pidibraty_shyrynu(
+                    h, arm0, KUT_RUK[0], proekt_, os.path.abspath(REF[1]),
+                    L_ref)
         os.makedirs(os.path.dirname(os.path.abspath(KUDY)), exist_ok=True)
         with open(KUDY + ".підбір.json", "w") as f:
             json.dump(rez, f, ensure_ascii=False, indent=1)
@@ -431,6 +436,27 @@ def proektsiia(h, arm, ref, maska):
             for g_ in v_.groups:
                 if g_.group == gi_v:
                     vushka[v_.index] = g_.weight
+    # Голова (крім вух) — перед головний: тінь під щелепою з кадру збоку
+    # лягала на кути щелепи темними плямами й ширила обличчя (замовник:
+    # «не таке широке»). Перед — квадрат замість четвертого степеня.
+    holova_v = np.zeros(len(co))
+    if "head" in h.vertex_groups:
+        gi_h = h.vertex_groups["head"].index
+        for v_ in me.vertices:
+            for g_ in v_.groups:
+                if g_.group == gi_h:
+                    holova_v[v_.index] = g_.weight
+    holova_v = np.clip(holova_v - vushka, 0, 1)
+    # Кути щелепи поза овалом обличчя кадру (нижче очей) — не з кадрів:
+    # там на кадрі вже шия в тіні, і вона темніла плямами на щелепі
+    # (зл6). Шкіра MakeHuman під тон кадру.
+    poza_ovalom = np.zeros(len(co), bool)
+    if OKO_REF[0] is not None and "v_ovali" in dir():
+        poza_ovalom = (holova_v > 0.3) & ~v_ovali & (co[:, 2] < oz)
+    w_pered = w_pered * (1 - holova_v) + \
+        np.clip(f, 0, 1) ** 2 * (vaga > 0) * holova_v
+    w_pered = w_pered * ~poza_ovalom
+    print("[mpfb] поза овалом обличчя: %d вершин" % poza_ovalom.sum())
     if VYDY:
         w_pered = w_pered * np.clip(1 - 2 * vushka, 0, 1)
     vagy = []
@@ -502,9 +528,32 @@ def proektsiia(h, arm, ref, maska):
                 c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
                 mk_p, H_m, z0, z1, kadr=kadr, z_volossia=z_volossia,
                 ruky=ruky if boky else None)
+            # Вухо кадру збоку — на вухо моделі (замовник: «підтягни
+            # зображення вуха до вуха моделі»). VUKHO_BIK="x,y" — центр вуха
+            # на кадрі збоку, px (y зверху).
+            vk = os.environ.get("VUKHO_BIK", "")
+            if boky and vk and "ears" in h.vertex_groups:
+                im_ = bpy.data.images.load(mk_p, check_existing=True)
+                wq, hq = im_.size
+                rx, ry = (float(t) for t in vk.split(","))
+                ry = hq - ry
+                c_bik = co_b * (dz_m if imia == "bik-r" else 1)
+                na_kameru = c_bik[:, 0] > 0
+                v_e = (vushka > 0.5) & na_kameru
+                if v_e.any():
+                    mx = float(np.mean(uu[v_e] * wq))
+                    my = float(np.mean(vv[v_e] * hq))
+                    tsentr_v = c_bik[v_e].mean(0)
+                    d3 = np.linalg.norm(c_bik - tsentr_v, axis=1)
+                    vplyv = np.exp(-0.5 * (d3 / 0.035) ** 2) * na_kameru
+                    uu = uu + vplyv * (rx - mx) / wq
+                    vv = vv + vplyv * (ry - my) / hq
+                    print("[mpfb] вухо %s: зсув %+.1f/%+.1f px"
+                          % (imia, rx - mx, ry - my))
             w_ = vg ** STEP
             if boky:
-                w_ = (0.35 + 0.65 * vushka) * w_ * ne_ruky
+                w_ = (0.35 + 0.65 * vushka) * w_ * ne_ruky * \
+                    (1 - 0.8 * holova_v) * ~poza_ovalom
             else:
                 # Кисті ззаду — не з кадру: Kontext малює ззаду розкриті
                 # долоні (замовник: «розвернутими долонями назад - це не

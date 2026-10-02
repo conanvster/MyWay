@@ -145,6 +145,14 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
     vilni = _vagy_grup(h, ("head", "hand", "thumb", "index", "middle", "ring",
                            "pinky", "foot", "ball"))
     tiahnuty = np.clip(1 - 1.5 * vilni, 0, 1) * vidymi
+    # Голова — лише по горизонталі спереду й ззаду (замовник: «трохи
+    # витягнув модель облича, щоб воно було схоже на рендер, не таке
+    # широке»): обрис щік і щелепи тягнеться до кадру, точки обличчя
+    # (підбір за MediaPipe) лежать усередині й не зачіпаються.
+    vilni_kraii = _vagy_grup(h, ("hand", "thumb", "index", "middle", "ring",
+                                 "pinky", "foot", "ball"))
+    holova = _vagy_grup(h, ("head",))
+    tiahnuty_x = np.clip(1 - 1.5 * vilni_kraii, 0, 1) * vidymi
     mk_p = _maska(m_pered)
     mk_b = P.bez_volossia(_maska(m_bik), bik, "бік")
     mk_z = P.bez_volossia(_maska(m_zad), zad, "зад")
@@ -207,7 +215,7 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
             m_mod = _syluet(px, py, tris, vidymi, w, hh)
             # контури голови, кистей, ступень — не тягнуть
             ne = np.zeros((hh, w), np.uint8)
-            v_ = vilni > 0.5
+            v_ = (vilni_kraii if vyd != "бік" else vilni) > 0.5
             ix = np.clip(px[v_].astype(int), 0, w - 1)
             iy = np.clip(py[v_].astype(int), 0, hh - 1)
             ne[iy, ix] = 1
@@ -242,7 +250,9 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
         d[:, 1] = bk[:, 1]
         d[:, 2] = (rez["перед"][:, 2] + rez["зад"][:, 2] +
                    bk[:, 2]) / (2 + ne_ruky_bik)
-        d *= tiahnuty[:, None]
+        d[:, 0] *= tiahnuty_x
+        d[:, 1] *= tiahnuty
+        d[:, 2] *= tiahnuty
         dl = np.linalg.norm(d, axis=1)
         zaduzhe = dl > MAKS_M
         d[zaduzhe] *= (MAKS_M / dl[zaduzhe])[:, None]

@@ -756,13 +756,18 @@ MEZHI_OBL = {"head-scale-horiz": 1.6, "head-scale-vert": 1.6}
 
 
 class PovzunkyObl:
-    def __init__(self, h):
+    def __init__(self, h, pary=None):
         self.h, self.kl, self.znach = h, {}, {}
-        for imia, plus, minus, lr in PARY_OBL:
+        self.odnopol = set()
+        for imia, plus, minus, lr in (pary or PARY_OBL):
             boky = ("l-", "r-") if lr else ("",)
             ok = True
+            if minus is None:
+                self.odnopol.add(imia)
             for b in boky:
                 for zn, f in (("+", plus), ("-", minus)):
+                    if f is None:
+                        continue
                     kb_ = h.data.shape_keys.key_blocks \
                         if h.data.shape_keys else {}
                     if b + f not in kb_:
@@ -789,6 +794,120 @@ class PovzunkyObl:
         for zn, k in self.kl[imia]:
             kb[k].slider_max = max(1.0, MEZHI_OBL.get(imia, 1.0))
             kb[k].value = max(0.0, v) if zn == "+" else max(0.0, -v)
+
+
+# Ширина обличчя спереду (замовник 02.10.2026: «трохи витягнув модель
+# облича, щоб воно було схоже на рендер, не таке широке»). Лише повзунки
+# обрису — очі, ніс, рот (точки MediaPipe) на місці.
+PARY_SHYR = [
+    ("head-fat", "head-fat-incr", "head-fat-decr", False),
+    ("chin-bones", "chin-bones-incr", "chin-bones-decr", False),
+    ("chin-width", "chin-width-incr", "chin-width-decr", False),
+    ("chin-jaw-drop", "chin-jaw-drop-incr", "chin-jaw-drop-decr", False),
+    ("cheek-volume", "cheek-volume-incr", "cheek-volume-decr", True),
+    ("cheek-inner", "cheek-inner-incr", "cheek-inner-decr", True),
+    ("head-oval", "head-oval", None, False),
+    ("chin-triangle", "chin-triangle", None, False),
+    # Вуха моделі сиділи на ~10 px нижче й ширше за кадрові (мочки ширили
+    # обрис на рівні щік).
+    ("ear-trans-v", "ear-trans-up", "ear-trans-down", True),
+    ("ear-scale", "ear-scale-incr", "ear-scale-decr", True),
+    ("ear-wing", "ear-wing-incr", "ear-wing-decr", True),
+    ("ear-lobe", "ear-lobe-incr", "ear-lobe-decr", True),
+]
+
+
+_DBG = [False]
+
+
+def pidibraty_shyrynu(h, arm, kut_ruk, proekt, maska_ref, L_ref):
+    """Обрис голови спереду між очима й підборіддям — під кадр (IoU у цій
+    смузі). `proekt(co) → (x, y зверху)` у пікселях кадру."""
+    import cv2
+    postavyty_ruky(arm, kut_ruk)
+    img = bpy.data.images.load(maska_ref, check_existing=True)
+    w, hh = img.size
+    px = np.empty(w * hh * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    m_ref = (px.reshape(hh, w, 4)[..., 0] > 0.5)[::-1]       # y зверху
+    y_oko = (L_ref[33, 1] + L_ref[263, 1]) / 2
+    y_b = int(L_ref[152, 1]) + 2
+    # від верху вух (≈ на третину відстані очі—підборіддя вище очей)
+    y_a = int(y_oko - 0.35 * (y_b - y_oko))
+    cx = float(L_ref[1, 0])
+    pol = 1.4 * float(L_ref[454, 0] - L_ref[234, 0]) / 2
+    smuha = np.zeros((hh, w), bool)
+    smuha[y_a:y_b, int(cx - pol):int(cx + pol)] = True
+    holova = np.zeros(len(h.data.vertices))
+    gi = h.vertex_groups["head"].index
+    gb = h.vertex_groups["body"].index
+    for v in h.data.vertices:
+        # лише тіло — допоміжна сітка волосся MPFB теж на кістці голови й
+        # висіла клаптями обабіч (перша спроба: збіг 0,75 і не рухався)
+        if not any(g.group == gb and g.weight > 0.5 for g in v.groups):
+            continue
+        for g in v.groups:
+            if g.group == gi:
+                holova[v.index] = g.weight
+    mm = [m for m in h.modifiers if m.type == "MASK"]
+
+    def otsinka():
+        co, _ = vershyny_bez_masky(h)
+        for m in mm:
+            m.show_viewport = False
+        bpy.context.view_layer.update()
+        ev = h.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        me = ev.to_mesh()
+        me.calc_loop_triangles()
+        tris = np.array([t.vertices[:] for t in me.loop_triangles])
+        ev.to_mesh_clear()
+        for m in mm:
+            m.show_viewport = True
+        P = proekt(co)
+        t = tris[(holova[tris] > 0.3).all(1)]
+        mk = np.zeros((hh, w), np.uint8)
+        for tr in np.round(P[t]).astype(np.int32):
+            cv2.fillConvexPoly(mk, tr, 1)
+        mk = mk > 0
+        if _DBG[0]:
+            import os as _o
+            o_ = np.zeros((hh, w, 3), np.uint8)
+            o_[m_ref] = (0, 0, 200)
+            o_[mk] = (0, 200, 0)
+            o_[mk & m_ref] = (200, 200, 200)
+            o_[smuha & ~(mk | m_ref)] = (60, 60, 0)
+            cv2.imwrite(_o.environ["SHYRYNA_DEBUG"], o_)
+        a, b = mk & smuha, m_ref & smuha
+        return (a & b).sum() / max(1, (a | b).sum())
+    pv = PovzunkyObl(h, PARY_SHYR)
+    naikr = otsinka()
+    import os as _o
+    if _o.environ.get("SHYRYNA_DEBUG"):
+        _DBG[0] = True
+        otsinka()
+        _DBG[0] = False
+    print("[ширина] початок: %.4f" % naikr, flush=True)
+    for krok in (0.3, 0.3, 0.15, 0.15, 0.07):
+        for imia in list(pv.znach):
+            lo = 0.0 if imia in pv.odnopol else -1.0
+            for znak in (1, -1):
+                v0 = pv.znach[imia]
+                v1 = min(1.0, max(lo, v0 + znak * krok))
+                if v1 == v0:
+                    continue
+                pv.postavyty(imia, v1)
+                s_ = otsinka()
+                if s_ > naikr + 1e-4:
+                    naikr = s_
+                    break
+                pv.postavyty(imia, v0)
+        print("[ширина] крок %.2f: %.4f" % (krok, naikr), flush=True)
+    print("[ширина] повзунки: %s" % {k: round(v, 2) for k, v in pv.znach.items()
+                                     if abs(v) > 1e-3}, flush=True)
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    return naikr
 
 
 def vershyny_bez_masky(h):

@@ -269,6 +269,19 @@ def main():
             h, arm, KUT_RUK[0], os.path.abspath(REF[0]),
             os.path.abspath(REF[1]), *[os.path.abspath(x) for x in VYDY],
             OKO_REF[0])
+    # Форма грудей (замовник 02.10.2026: «вирівняй груди», приклад —
+    # округлий піднятий профіль): GRUDY="ціль=вага,…" — цілі MakeHuman
+    # поверх підбору й контурів.
+    gr = os.environ.get("GRUDY", "")
+    if gr:
+        from bl_ext.blender_org.mpfb.services.targetservice import TargetService
+        for par in gr.split(","):
+            n_, v_ = par.split("=")
+            TargetService.load_target(h, TargetService.target_full_path(n_),
+                                      weight=float(v_), name=n_)
+        h.data.update()
+        bpy.context.view_layer.update()
+        print("[mpfb] груди: %s" % gr)
     if REF:
         proektsiia(h, arm, os.path.abspath(REF[0]), os.path.abspath(REF[1]))
     sitky = [o for o in bpy.data.objects if o.type == "MESH"]

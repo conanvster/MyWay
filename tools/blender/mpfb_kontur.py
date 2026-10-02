@@ -153,6 +153,23 @@ def pidtiahnuty(h, arm, kut_ruk, pered, m_pered, bik, m_bik, zad, m_zad,
                                  "pinky", "foot", "ball"))
     holova = _vagy_grup(h, ("head",))
     tiahnuty_x = np.clip(1 - 1.5 * vilni_kraii, 0, 1) * vidymi
+    # Груди — не тягнути (замовник 02.10.2026: «вирівняй груди», бажаний
+    # профіль — округлий): контур профілю тягнув їх до обрису бюстгальтера
+    # кадру, і форма виходила горбатою. Форму дають повзунки (`GRUDY`).
+    if "nipple" in h.vertex_groups:
+        co0 = np.array([v.co[:] for v in me.vertices])
+        gn = h.vertex_groups["nipple"].index
+        sosky = np.array([any(g.group == gn for g in v.groups)
+                          for v in me.vertices])
+        hrudy = np.zeros(len(co0))
+        for znak in (1, -1):
+            s_ = sosky & (co0[:, 0] * znak > 0)
+            if s_.any():
+                c_ = co0[s_].mean(0)
+                d_ = np.linalg.norm(co0 - c_, axis=1)
+                hrudy = np.maximum(hrudy, np.clip(1.6 - d_ / 0.07, 0, 1))
+        tiahnuty = tiahnuty * (1 - hrudy)
+        tiahnuty_x = tiahnuty_x * (1 - hrudy)
     mk_p = _maska(m_pered)
     mk_b = P.bez_volossia(_maska(m_bik), bik, "бік")
     mk_z = P.bez_volossia(_maska(m_zad), zad, "зад")

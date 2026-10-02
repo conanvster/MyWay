@@ -406,7 +406,11 @@ def proektsiia(h, arm, ref, maska):
     # помножений на видимість; шкіра MakeHuman — 0,04 там, де жоден не
     # бачить. Шарові змішування в запіканні дають саме середнє, якщо
     # множник шару i — w_i / (w0 + Σ w_j, j ≤ i).
-    w_pered = np.clip(f, 0, 1) ** 2 * (vaga > 0)
+    # Четвертий степінь (ж13: при квадраті перед і бік на грудях мішались
+    # ~60/40 і бюстгальтер двоївся — кадри Kontext не збігаються точно):
+    # кожну ділянку веде вид, що дивиться на неї найпряміше.
+    STEP = 4
+    w_pered = np.clip(f, 0, 1) ** STEP * (vaga > 0)
     vagy = []
     print("[mpfb] проєкція: видно спереду %.0f%% вершин"
           % (100 * (vaga > 0.5).mean()))
@@ -418,7 +422,7 @@ def proektsiia(h, arm, ref, maska):
         bik, m_bik, zad, m_zad = [os.path.abspath(x) for x in VYDY]
         H_m = vys / k
         # Профіль — руками вниз, як на кадрі збоку (`mpfb_pidbir.KUT_BIK`).
-        pb_.postavyty_ruky(arm, pb_.KUT_BIK)
+        pb_.postavyty_ruky(arm, pb_.kut_biku(KUT_RUK[0]))
         co_b, nrm_b = pb_.vershyny_bez_masky(h)
         pb_.postavyty_ruky(arm, KUT_RUK[0])
         # Руки збоку не беремо: у профіль вони лежать на шортах, і де рука
@@ -435,6 +439,15 @@ def proektsiia(h, arm, ref, maska):
                         if g_.group == gi_:
                             ruky[v_.index] += g_.weight
         ne_ruky = np.clip(1 - 2 * ruky, 0, 1)
+        kysti = np.zeros(len(co))
+        for vg_ in h.vertex_groups:
+            if vg_.name.split("_")[0] in ("hand", "thumb", "index", "middle",
+                                          "ring", "pinky"):
+                gi_ = vg_.index
+                for v_ in me.vertices:
+                    for g_ in v_.groups:
+                        if g_.group == gi_:
+                            kysti[v_.index] += g_.weight
         # Лінія бюстгальтера / пахви: плечовий суглоб − 8 см.
         z_volossia = float((arm.matrix_world @ arm.data.bones["upperarm_l"]
                             .head_local).z) - 0.08
@@ -467,9 +480,15 @@ def proektsiia(h, arm, ref, maska):
                 c_, vidymi, hor, pb_.PROFIL_ZSUV[0] if boky else 0.0, dz, gl,
                 mk_p, H_m, z0, z1, kadr=kadr, z_volossia=z_volossia,
                 ruky=ruky if boky else None)
-            w_ = vg ** 2
+            w_ = vg ** STEP
             if boky:
-                w_ = 0.6 * w_ * ne_ruky
+                w_ = 0.35 * w_ * ne_ruky
+            else:
+                # Кисті ззаду — не з кадру: Kontext малює ззаду розкриті
+                # долоні (замовник: «розвернутими долонями назад - це не
+                # правильно»), і долоня лягала б на тильний бік кисті. Тильний
+                # бік — шкіра MakeHuman під тон кадру.
+                w_ = w_ * np.clip(1 - 2 * kysti, 0, 1)
             uvl = me.uv_layers.new(name="Проєкція-" + imia)
             for li, l in enumerate(me.loops):
                 uvl.data[li].uv = (uu[l.vertex_index], vv[l.vertex_index])
@@ -479,7 +498,10 @@ def proektsiia(h, arm, ref, maska):
             dodatkovi.append(("Проєкція-" + imia, "Видимість-" + imia, kadr))
         me.uv_layers.active = me.uv_layers[0]
     vagy.append(("Видимість", w_pered))
-    cum = np.full(len(co), 0.04)
+    # Частка шкіри MakeHuman — мала: при четвертому степені ваги видів на
+    # середніх кутах малі (f=0,6 → 0,13), і 0,04 вже просвічувала крізь
+    # чорний купальник бурим (ж14).
+    cum = np.full(len(co), 0.003)
     for vn, w_ in vagy:
         cum = cum + w_
         mn_ = w_ / cum

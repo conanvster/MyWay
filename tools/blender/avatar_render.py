@@ -30,6 +30,7 @@ for _pb in arm.pose.bones:
 bpy.context.view_layer.update()
 KUT, KUT_NIH, KUT_LIKTIA, STOPY = 90.0, 0.0, 0.0, 18.0
 KLIUCH = KOLINO = PROFIL = 0.0
+BIK_T = False
 try:
     import json as _j
     _p = _j.load(open(MODEL + ".підбір.json"))
@@ -40,6 +41,7 @@ try:
     KLIUCH = float(_p.get("ключиці", 0.0))
     KOLINO = float(_p.get("коліна", 0.0))
     PROFIL = float(_p.get("кут профілю", 0.0))
+    BIK_T = float(_p.get("бік у T-позі", 0.0)) > 0.5
 except Exception:
     pass
 if T_POZA:
@@ -53,7 +55,8 @@ if T_POZA:
     _P.KLIUCH[0] = KLIUCH
     _P.KOLINO[0] = KOLINO
     # Профіль Kontext малює руками вниз — модель так само (MPFB, KUT_BIK).
-    _P.postavyty_ruky(arm, _P.KUT_BIK if VYD == "бік" else KUT)
+    _P.postavyty_ruky(arm, _P.KUT_BIK if VYD == "бік" and not BIK_T
+                      else KUT)
 # Центр очних яблук (сітка з текстурою «…_eye») — до того, як рогівку
 # приберуть: за ним оцінка збоку й ззаду дорівнює масштаб (точок обличчя
 # там немає).

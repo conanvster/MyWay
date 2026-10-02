@@ -476,6 +476,13 @@ PROKHODY = int(os.environ.get("PROKHODY", "3"))
 # Профіль Kontext ставить руки вниз уздовж тіла (T-позу збоку він малює
 # на три чверті, s911) — тож для профілю й модель так само.
 KUT_BIK = 6.0
+# Жінка 02.10.2026: «необхідно щов у сих ракурсах було Т» — профіль теж у
+# T-позі; тоді модель для профілю стоїть так само, як спереду.
+BIK_T = os.environ.get("BIK_T", "") not in ("", "0")
+
+
+def kut_biku(kut_ruk):
+    return kut_ruk if BIK_T else KUT_BIK
 # Що видно лише збоку: постава голови й шиї, глибина тулуба, стегон, шиї.
 TSILI_BIK = ["head/head-trans", "neck/neck-trans", "torso/torso-scale-depth",
              "hip/hip-scale-depth", "neck/neck-scale-depth",
@@ -504,7 +511,8 @@ def povernuty_profil(p, kut):
 def pidibraty_profil(h, arm, pv, m_b, z_okom, kut_ruk):
     """Другий етап: модель руками вниз, міра — силует у профіль; повзунки
     лише ті, що спереду не видно (силует спереду вони не міняють)."""
-    postavyty_ruky(arm, KUT_BIK)
+    postavyty_ruky(arm, kut_biku(kut_ruk))
+    pv.znach["бік у T-позі"] = 1.0 if BIK_T else 0.0
 
     def otsinka_b(z_poshukom=False):
         p = povernuty_profil(tochky_tila(h), PROFIL_KUT[0])

@@ -86,8 +86,13 @@ func _ready() -> void:
 
 ## Поставити справжню модель замість капсули — той самий прийом, що й у
 ## `mob.gd::_apply_look()`, тільки за статтю, не за видом монстра.
-func apply_sex(sex: String, race: String = "людина") -> void:
-	var made := RACE_MODEL % [race, "жінка" if sex == "жінка" else "чоловік"]
+##
+## `path` — окрема модель аватара (01.10.2026: аватари зі сканів на тому
+## самому скелеті, `tools/blender/avatar_build.py`); порожньо — модель
+## раси.
+func apply_sex(sex: String, race: String = "людина", path: String = "") -> void:
+	var made := path if path != "" else \
+			RACE_MODEL % [race, "жінка" if sex == "жінка" else "чоловік"]
 	if not ResourceLoader.exists(made):
 		made = MODEL_FEMALE if sex == "жінка" else MODEL_MALE
 	if not ResourceLoader.exists(made):

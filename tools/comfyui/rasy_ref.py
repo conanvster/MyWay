@@ -16,6 +16,7 @@ ComfyUI, 1024×1024, 28 кроків, guidance 3.5, euler/beta, промт
 
     python3 -u tools/comfyui/rasy_ref.py            згенерувати й зібрати сторінку
     python3 -u tools/comfyui/rasy_ref.py --сторінка лише перебудувати test.html
+    … --дзеркало ~/гра-lineage                  ще й копіювати туди кожен кадр
 
 Перед запуском — ComfyUI на 127.0.0.1:8188 і вільна відеокарта (розділ 4
 спеки). Вихід: `wiki/img/test/rasy/<раса>-<стать>-v<N>.png` (лише диск,
@@ -66,23 +67,146 @@ RASY = [
      "short pointed ears, strong and enduring but slow"),
     ("ельф", "Ельф", "швидкий, чуйний, крихкий · 1,85 м",
      "an elf: pale skin, slender and thinner than a human, about 1.85 m "
-     "tall, long pointed ears, light agile and perceptive but fragile"),
+     "tall, long straight white or pale straw-white hair, small sharp "
+     "pointed ears, an elongated narrow face, light agile and perceptive "
+     "but fragile"),
 ]
+# Слово замовника після першого огляду (01.10.2026): «орки жінки з
+# більшими грудями та стегнами і грубим виразом обличчя, ельфи усі мають
+# біле або солом'яно-біле довге волосся, з гострими невеликими вухами, і
+# видовженим обличчям» — ельфам уписано в опис вище, орчицям — тут.
+DODATOK = {
+    ("орк", "female"): "a larger bust and wide heavy hips, a coarse, "
+                       "rough, stern facial expression",
+}
+NEG_ELF = ", long ears, huge ears, dark hair, black hair, brown hair, " \
+          "round face"
+# Відкинуті замовником варіанти: ім'я -> новий seed (старі seed 7102,
+# 7111–7113, 7202, 7203, 7211, 7213). Решта лишається як була.
+NOVI = {
+    "орк-чоловік-v1": 9101, "орк-чоловік-v2": 9102,
+    "орк-чоловік-v3": 9103,
+    "орк-жінка-v1": 9111, "орк-жінка-v2": 9112, "орк-жінка-v3": 9113,
+    "ельф-чоловік-v2": 8202, "ельф-чоловік-v3": 8203,
+    "ельф-жінка-v1": 8211, "ельф-жінка-v3": 8213,
+}
 STATI = [("чоловік", "male", "чоловік"), ("жінка", "female", "жінка")]
 SIDY = [1, 2, 3]
 
 
-def promt(rasa, stat):
-    _, _, _, tilo = rasa
+# Кадри, що лишились із першого прогону, коли опис ельфа був іншим (до
+# слова «біле довге волосся, невеликі вуха»): ім'я -> опис тіла, яким їх
+# справді зроблено. Без цього промт на сторінці рас брехав би.
+STARE_TILO = {
+    "ельф-чоловік-v1": "an elf: pale skin, slender and thinner than a "
+                       "human, about 1.85 m tall, long pointed ears, light "
+                       "agile and perceptive but fragile",
+    "ельф-жінка-v2": "an elf: pale skin, slender and thinner than a "
+                     "human, about 1.85 m tall, long pointed ears, light "
+                     "agile and perceptive but fragile",
+}
+
+
+def promt(rasa, stat, tilo=None):
+    tilo = tilo or rasa[3]
     eng = stat[1]
     odiag = ODIAG + (", fully clothed, modest attire" if eng == "female"
                      else "")
     return (
         "Dark fantasy RPG character concept art, full-body portrait of a "
-        "%s %s hero, %s, %s. Body: %s, %s. Clothing: %s. Hands empty, "
+        "%s %s hero, %s, %s. Body: %s, %s%s. Clothing: %s. Hands empty, "
         "relaxed natural stance. %s"
         % (eng, rasa[0] == "людина" and "human" or rasa[0] == "орк"
-           and "orc" or "elf", KUT, TLO, eng, tilo, odiag, KHVIST))
+           and "orc" or "elf", KUT, TLO, eng, tilo,
+           ", " + DODATOK[(rasa[0], eng)] if (rasa[0], eng) in DODATOK
+           else "", odiag, KHVIST))
+
+
+# Орчиці втретє (01.10.2026): замовник — «останні референси були більше
+# схожі на Фіону з мультфільму, ніж на реального аватара», дав два
+# приклади (Oreate AI: орчиця й орк у шкіряній броні в підземеллі) і
+# «хочу зробити більші груди». Тож орчиці — окремий промт у стилі
+# прикладів, FLUX з нуля, а не правка 8111.
+OSOBLYVI = {
+    ("орк", "female"): (
+        "Dark fantasy RPG character concept art, full-body portrait of a "
+        "realistic female orc warrior, %s. Body: a grim powerful orc "
+        "woman about 1.9 m tall, muted olive green-brown skin with a "
+        "rough weathered pore-detailed texture, a heavy brow, a broad "
+        "strong jaw, small lower tusks jutting from the lower lip, short "
+        "pointed ears, a coarse stern scowling face, long thick dark hair "
+        "in several braids, strong muscular arms and shoulders, a large "
+        "full heavy bust, a defined waist and wide strong hips and thick "
+        "thighs. Clothing: dark worn leather armour fully covering her: a "
+        "fitted moulded leather breastplate shaped to her large bust, "
+        "leather pauldrons and bracers, a wide belt with pouches, leather "
+        "trousers, heavy leather boots, a ragged dark cloak behind. Hands "
+        "empty, relaxed natural stance. Setting: a dark stone dungeon "
+        "corridor lit by wall torches, warm torchlight against cold "
+        "shadows. Atmosphere: gritty and realistic like a live-action "
+        "film, cinematic lighting, photorealistic skin, leather and "
+        "metal, high detail texture, 8k resolution, Unreal Engine 5 style "
+        "rendering." % KUT,
+        NEG_ZHIN.replace("armor, ", "") + ", Shrek, Fiona, Pixar, Disney, animated movie, "
+        "cute, chubby cheeks, bright green skin, smooth plastic skin, "
+        "elf, beautiful model face"),
+}
+# Промт самого замовника (01.10.2026) — дослівно, окремим рядом поруч із
+# моїм, щоб порівняти. «front view» і сіре тло — його вибір (і зручні
+# для 3D: Kontext/Pixal3D люблять однотонне тло).
+PROMT_ZAMOVNYKA = (
+    "Concept art character design sheet of an attractive female orc, "
+    "isolated on a plain solid neutral grey background. Gritty and "
+    "hyper-realistic, full-body portrait. Angular and rugged facial "
+    "features, strong jawline, savage yet captivating beauty. Voluptuous "
+    "hourglass physique, very large breasts, thick thighs, full-figured "
+    "but toned athletic shape. Wearing form-fitting detailed rugged "
+    "leather and iron fantasy armor that highlights her curves. Studio "
+    "product lighting, front view, 8k resolution, highly detailed, "
+    "photorealistic photography reference.")
+NEG_ZAMOVNYKA = ("cartoon, anime, chibi, stylized, toy, Shrek, Fiona, Pixar, "
+                 "Disney, animated movie, cropped feet, cropped head, text, "
+                 "watermark, nude, naked, topless, nsfw")
+# Додаткові ряди: (раса, стать) -> (заголовок, [(ім'я, промт, seed, негатив)]).
+# Орки-чоловіки — з налаштуваннями орчиць (слово замовника 01.10.2026:
+# «перегенеруй орка чоловіка з налаштуваннями від орка жінки, фон в
+# референсах не обов'язковий»). Тло — однотонне темне: фігуру видно, і
+# для 3D зручніше.
+OSOBLYVI[("орк", "male")] = (
+    "Dark fantasy RPG character concept art, full-body portrait of a "
+    "realistic male orc warrior, %s. Body: a grim powerful orc man about "
+    "1.9 m tall, muted olive green-brown skin with a rough weathered "
+    "pore-detailed texture and old scars, a heavy brow, a broad strong "
+    "jaw, prominent lower tusks jutting from the lower lip, short pointed "
+    "ears, a coarse stern scowling face, long thick dark hair in several "
+    "braids, a short rough beard, a massive heavily muscled build with "
+    "broad shoulders, a thick neck and powerful arms and legs. Clothing: "
+    "dark worn leather and iron armour: a leather breastplate with "
+    "riveted iron plates, fur-trimmed leather pauldrons, leather bracers, "
+    "a wide belt with pouches, leather trousers, heavy fur-topped leather "
+    "boots, a ragged dark cloak behind. Hands empty, relaxed natural "
+    "stance. Setting: a plain dark neutral background with soft "
+    "atmospheric haze. Atmosphere: gritty and realistic like a live-action "
+    "film, cinematic lighting, photorealistic skin, leather and metal, "
+    "high detail texture, 8k resolution, Unreal Engine 5 style rendering."
+    % KUT,
+    NEG.replace("armor, ", "") + ", Shrek, Pixar, Disney, animated movie, "
+    "cute, chubby cheeks, bright green skin, smooth plastic skin, elf, "
+    "beautiful model face")
+
+# Ряд за промтом замовника (seed 9201–9203) відкинуто ним самим: «це
+# неприйнятно» — огрядні жінки з людською шкірою, не орчиці. Кадри — у
+# vidkynuti/, промт лишено як запис, що не спрацювало.
+DODATKOVI = {}
+# Підписи замість «seed N» — для кадрів, зроблених не звичайним промтом.
+PIDPYS = {}
+# Приклади замовника над секцією: (раса, стать) -> [(файл, підпис)].
+PRYKLADY = {}   # приклади Oreate AI прибрано на прохання замовника
+
+
+def seed_of(ri, si, v):
+    imia = "%s-%s-v%d" % (RASY[ri][0], STATI[si][0], v)
+    return NOVI.get(imia, 7000 + ri * 100 + si * 10 + v)
 
 
 def vybir():
@@ -91,10 +215,18 @@ def vybir():
     for ri, rasa in enumerate(RASY):
         for si, stat in enumerate(STATI):
             for v in SIDY:
-                seed = 7000 + ri * 100 + si * 10 + v
-                out.append(("%s-%s-v%d" % (rasa[0], stat[0], v),
-                            promt(rasa, stat), seed,
-                            NEG_ZHIN if stat[1] == "female" else NEG))
+                neg = NEG_ZHIN if stat[1] == "female" else NEG
+                if rasa[0] == "ельф":
+                    neg += NEG_ELF
+                imia = "%s-%s-v%d" % (rasa[0], stat[0], v)
+                prompt = promt(rasa, stat, STARE_TILO.get(imia))
+                if imia in STARE_TILO:
+                    neg = NEG_ZHIN if stat[1] == "female" else NEG
+                if (rasa[0], stat[1]) in OSOBLYVI:
+                    prompt, neg = OSOBLYVI[(rasa[0], stat[1])]
+                out.append((imia, prompt, seed_of(ri, si, v), neg))
+    for _, riady in DODATKOVI.values():
+        out.extend(riady)
     return out
 
 
@@ -163,8 +295,20 @@ def generuvaty():
                             VYKHID / (imia + ".png"))
                 print("готово", imia, flush=True)
                 zibraty()
+                dzerkalo(imia)
                 break
             time.sleep(5)
+
+
+def dzerkalo(imia):
+    """`--дзеркало <корінь>`: копія кадру й сторінки ще й туди — у
+    робочу копію, яку замовник відкриває в браузері."""
+    if "--дзеркало" not in sys.argv:
+        return
+    kudy = Path(sys.argv[sys.argv.index("--дзеркало") + 1])
+    (kudy / "wiki/img/test/rasy").mkdir(parents=True, exist_ok=True)
+    shutil.copy(VYKHID / (imia + ".png"), kudy / "wiki/img/test/rasy")
+    shutil.copy(STORINKA, kudy / "wiki/test.html")
 
 
 def zibraty():
@@ -172,6 +316,12 @@ def zibraty():
     stari = STORINKA.read_text(encoding="utf-8")
     holova = stari[:stari.index("<main>")]
     khvist = stari[stari.index("</main>"):]
+    # Розділ дерев (`tools/dereva_test.py`) живе між своїми мітками —
+    # перебудова рас його не губить.
+    if "<!-- дерева -->" in stari:
+        a = stari.index("<!-- дерева -->")
+        b = stari.index("<!-- /дерева -->") + len("<!-- /дерева -->")
+        khvist = stari[a:b] + "\n" + khvist
     tilo = ['<main>', '<h1>Тест генерації</h1>',
             '<p class="lead">Раси: по три варіанти на кожну стать кожної '
             'раси — вибери, які йдуть на сторінку '
@@ -188,9 +338,14 @@ def zibraty():
         for si, stat in enumerate(STATI):
             tilo.append('<h3>%s, %s</h3>' % (rasa[1], stat[2]))
             tilo.append('<div class="compare">')
+            for fail, pidpys in PRYKLADY.get((rasa[0], stat[0]), []):
+                tilo.append('<figure class="ref"><img src="img/test/rasy/%s" '
+                            'alt="%s"><figcaption><b>приклад</b>%s'
+                            '</figcaption></figure>' % (fail, pidpys,
+                                                        pidpys))
             for v in SIDY:
                 imia = "%s-%s-v%d" % (rasa[0], stat[0], v)
-                seed = 7000 + RASY.index(rasa) * 100 + si * 10 + v
+                seed = seed_of(RASY.index(rasa), si, v)
                 if (VYKHID / (imia + ".png")).exists():
                     kadr = '<img src="img/test/rasy/%s.png" alt="%s, %s, ' \
                            'варіант %d">' % (imia, rasa[1], stat[2], v)
@@ -198,9 +353,28 @@ def zibraty():
                     kadr = '<div style="aspect-ratio:1/1;background:#000;' \
                            'border-radius:3px;display:grid;place-items:' \
                            'center;color:#888">ще генерується</div>'
-                tilo.append('<figure>%s<figcaption><b>v%d</b>seed %d'
-                            '</figcaption></figure>' % (kadr, v, seed))
+                pidpys = PIDPYS.get(imia, "seed %d" % seed)
+                tilo.append('<figure>%s<figcaption><b>v%d</b>%s'
+                            '</figcaption></figure>' % (kadr, v, pidpys))
             tilo.append('</div>')
+            if (rasa[0], stat[0]) in DODATKOVI:
+                zaholovok, riady = DODATKOVI[(rasa[0], stat[0])]
+                tilo.append('<h3>%s, %s — %s</h3>' % (rasa[1], stat[2],
+                                                      zaholovok))
+                tilo.append('<div class="compare">')
+                for imia, _, seed, _ in riady:
+                    if (VYKHID / (imia + ".png")).exists():
+                        kadr = '<img src="img/test/rasy/%s.png" alt="%s">' \
+                               % (imia, imia)
+                    else:
+                        kadr = '<div style="aspect-ratio:1/1;background:' \
+                               '#000;border-radius:3px;display:grid;' \
+                               'place-items:center;color:#888">ще ' \
+                               'генерується</div>'
+                    tilo.append('<figure>%s<figcaption><b>%s</b>seed %d'
+                                '</figcaption></figure>'
+                                % (kadr, imia[-2:], seed))
+                tilo.append('</div>')
     tilo.append('<p class="note">Тестова сторінка, не для гравців.</p>')
     STORINKA.write_text(holova + "\n".join(tilo) + "\n" + khvist,
                         encoding="utf-8")

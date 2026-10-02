@@ -553,6 +553,29 @@ def скіл_рядок(s):
     return "; ".join(що)
 
 
+def промти_рас(ключ, стать):
+    """Згорнуті промти, якими зроблено аватари цієї раси й статі (слово
+    замовника 01.10.2026: «необхідно десь зберегти промти… додай їх
+    згорнутими на rasy.html»). Джерело — `tools/comfyui/rasy_ref.py`, той
+    самий перелік, яким кадри генерувались, тож не розходиться з ними."""
+    sys.path.insert(0, os.path.join(ROOT, "tools", "comfyui"))
+    import rasy_ref
+    рядки = []
+    for ім_я, промт, сід, негатив in rasy_ref.vybir():
+        if not ім_я.startswith("%s-%s-v" % (ключ, стать)):
+            continue
+        рядки.append('<p><b>варіант %s · seed %d</b> · FLUX dev Q4, '
+                     '1024×1024, 28 кроків, guidance 3.5, euler/beta</p>'
+                     '<pre style="white-space:pre-wrap">%s</pre>'
+                     '<p class="muted">негатив:</p>'
+                     '<pre style="white-space:pre-wrap">%s</pre>'
+                     % (ім_я[-1], сід, e(промт), e(негатив)))
+    if not рядки:
+        return ""
+    return ('<details><summary>Промти (%d)</summary>%s</details>'
+            % (len(рядки), "".join(рядки)))
+
+
 def раси(світ):
     теки = os.path.join(ROOT, "art", "скіли")
     os.makedirs(os.path.join(IMG, "skily"), exist_ok=True)
@@ -582,6 +605,32 @@ def раси(світ):
                 'менше поваги треба набрати на кожен рівень, ніж людині. '
                 'Жінкам треба на %s%% менше.</p>'
                 % число(abs(round(світ.рівні["стать"].get("жінка", 0) * 100))))
+    # Вигляд (слово замовника 01.10.2026: «перенеси референси рас до
+    # rasy.html»). Файли — `wiki/img/rasy/<раса>-<стать>-v<N>.png`, лише
+    # диск, як фото монстрів; зроблені `tools/comfyui/rasy_ref.py`. Три на
+    # стать — гравець вибиратиме один при створенні персонажа.
+    вигляд = []
+    for ключ, назва, _ in РАСИ:
+        for стать in ("чоловік", "жінка"):
+            кадри = []
+            for v in (1, 2, 3):
+                ім_я = "%s-%s-v%d.png" % (ключ, стать, v)
+                if os.path.exists(os.path.join(IMG, "rasy", ім_я)):
+                    кадри.append('<figure><img src="img/rasy/%s" alt="%s, '
+                                 '%s, варіант %d" loading="lazy">'
+                                 '<figcaption>%s, %s — варіант %d'
+                                 '</figcaption></figure>'
+                                 % (e(ім_я), назва, стать, v, назва, стать, v))
+            if кадри:
+                вигляд.append('<h3>%s, %s</h3><div class="figs">%s</div>'
+                              % (назва, стать, "".join(кадри)))
+                вигляд.append(промти_рас(ключ, стать))
+    if вигляд:
+        тіло.append('<h2>Вигляд</h2>')
+        тіло.append('<p class="note">По три варіанти аватара на кожну стать '
+                    'кожної раси — при створенні персонажа гравець вибере '
+                    'один. Вигляд стати не міняє.</p>')
+        тіло.extend(вигляд)
     фігури = []
     for ключ, назва, _ in РАСИ:
         for стать in ("чоловік", "жінка"):

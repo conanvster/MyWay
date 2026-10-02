@@ -21,51 +21,90 @@
 </div></header>
 <main>
 <h1>Тест генерації</h1>
-<p class="lead">Раси: по три варіанти на кожну стать кожної раси — вибери, які йдуть на сторінку <a href="rasy.html">Раси та професії</a>. Нічого звідси не лінкується з основних сторінок.</p>
-<p class="note">FLUX dev Q4 у ComfyUI, 1024×1024, 28 кроків, guidance 3.5 — правила з <code>spec/генерація-референсів-монстрів.md</code>. Вигляд рас — із <code>spec/DECIDED.md</code>; одяг простий стартовий, тло — туманний хвойний ліс.</p>
-<h2>Людина</h2>
-<p class="note">середина по всіх статах · 1,75 м</p>
-<h3>Людина, чоловік</h3>
+<p class="lead">Робоча сторінка для порівняння варіантів перед тим, як вони йдуть у вікі чи гру. Нічого звідси не лінкується з основних сторінок.</p>
+<!-- аватар -->
+<h2>Аватар 3D — людина, чоловік, варіант 1</h2>
+<p class="note">Чисті референси під 3D-модель: та сама людина з <a href="rasy.html">варіанта 1</a>, Kontext ставить її в T-позу манекена (на його скелет лягають рухи <code>./run.sh --рухи-людини</code>), сіре тло — під Pixal3D. Вибери, з якого будувати.</p>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7001</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7002</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7003</figcaption></figure>
+<figure class="ref"><img src="img/rasy/людина-чоловік-v1.png" alt="вихідний варіант 1"><figcaption><b>вихідний</b>варіант 1, seed 7001</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s11.png" alt="T-поза, seed 11"><figcaption><b>T-поза</b>Kontext, seed 11</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s22.png" alt="T-поза, seed 22"><figcaption><b>T-поза</b>Kontext, seed 22</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s33.png" alt="T-поза, seed 33"><figcaption><b>T-поза</b>Kontext, seed 33</figcaption></figure>
+<figure><img src="img/test/avatar/tpoza-s44.png" alt="T-поза, seed 44"><figcaption><b>T-поза</b>Kontext, seed 44</figcaption></figure>
 </div>
-<h3>Людина, жінка</h3>
+<h3>База без одягу — лише пов'язка</h3>
+<p class="note">Модель не залежить від одягу: одяг ляже поверх окремими частинами. Kontext від T-пози seed 11.</p>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7011</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7012</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7013</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s111.png" alt="база, seed 111"><figcaption><b>база</b>Kontext від s11, seed 111</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s122.png" alt="база, seed 122"><figcaption><b>база</b>Kontext від s11, seed 122</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s133.png" alt="база, seed 133"><figcaption><b>база</b>Kontext від s11, seed 133</figcaption></figure>
+<figure><img src="img/test/avatar/baza-s144.png" alt="база, seed 144"><figcaption><b>база</b>Kontext від s11, seed 144</figcaption></figure>
 </div>
-<h2>Орк</h2>
-<p class="note">сильний, витривалий, повільний · 1,9 м</p>
-<h3>Орк, чоловік</h3>
+<h3>Голова для перуки — великий кадр</h3>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7101</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7102</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7103</figcaption></figure>
+<figure><img src="img/test/avatar/holova-s311.png" alt="Голова для перуки — великий кадр"><figcaption><b>великий кадр</b>Kontext, seed 311</figcaption></figure>
+<figure><img src="img/test/avatar/holova-s322.png" alt="Голова для перуки — великий кадр"><figcaption><b>великий кадр</b>Kontext, seed 322</figcaption></figure>
 </div>
-<h3>Орк, жінка</h3>
+<h3>База 2 — щільна коротка пов'язка (ноги окремі)</h3>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7111</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7112</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7113</figcaption></figure>
+<figure><img src="img/test/avatar/baza2-s211.png" alt="База 2 — щільна коротка пов'язка (ноги окремі)"><figcaption><b>щільна коротка пов'язка (ноги окремі)</b>Kontext, seed 211</figcaption></figure>
+<figure><img src="img/test/avatar/baza2-s222.png" alt="База 2 — щільна коротка пов'язка (ноги окремі)"><figcaption><b>щільна коротка пов'язка (ноги окремі)</b>Kontext, seed 222</figcaption></figure>
+<figure><img src="img/test/avatar/baza2-s233.png" alt="База 2 — щільна коротка пов'язка (ноги окремі)"><figcaption><b>щільна коротка пов'язка (ноги окремі)</b>Kontext, seed 233</figcaption></figure>
+<figure><img src="img/test/avatar/baza2-s244.png" alt="База 2 — щільна коротка пов'язка (ноги окремі)"><figcaption><b>щільна коротка пов'язка (ноги окремі)</b>Kontext, seed 244</figcaption></figure>
 </div>
-<h2>Ельф</h2>
-<p class="note">швидкий, чуйний, крихкий · 1,85 м</p>
-<h3>Ельф, чоловік</h3>
+<h3>Людина, жінка — T-поза</h3>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7201</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7202</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7203</figcaption></figure>
+<figure><img src="img/test/avatar/zh-tpoza-s11.png" alt="Людина, жінка — T-поза"><figcaption><b>T-поза</b>Kontext, seed 11</figcaption></figure>
+<figure><img src="img/test/avatar/zh-tpoza-s22.png" alt="Людина, жінка — T-поза"><figcaption><b>T-поза</b>Kontext, seed 22</figcaption></figure>
+<figure><img src="img/test/avatar/zh-tpoza-s33.png" alt="Людина, жінка — T-поза"><figcaption><b>T-поза</b>Kontext, seed 33</figcaption></figure>
+<figure><img src="img/test/avatar/zh-tpoza-s44.png" alt="Людина, жінка — T-поза"><figcaption><b>T-поза</b>Kontext, seed 44</figcaption></figure>
 </div>
-<h3>Ельф, жінка</h3>
+<h3>Людина, жінка — база: пов'язки на стегнах і на грудях</h3>
 <div class="compare">
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v1</b>seed 7211</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v2</b>seed 7212</figcaption></figure>
-<figure><div style="aspect-ratio:1/1;background:#000;border-radius:3px;display:grid;place-items:center;color:#888">ще генерується</div><figcaption><b>v3</b>seed 7213</figcaption></figure>
+<figure><img src="img/test/avatar/zh-baza-s111.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 111</figcaption></figure>
+<figure><img src="img/test/avatar/zh-baza-s122.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 122</figcaption></figure>
+<figure><img src="img/test/avatar/zh-baza-s133.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 133</figcaption></figure>
+<figure><img src="img/test/avatar/zh-baza-s144.png" alt="Людина, жінка — база: пов'язки на стегнах і на грудях"><figcaption><b>база: пов'язки на стегнах і на грудях</b>Kontext, seed 144</figcaption></figure>
 </div>
-<p class="note">Тестова сторінка, не для гравців.</p>
+<h3>Людина, жінка — купальник (під 3D, як у прикладі замовника)</h3>
+<div class="compare">
+<figure><img src="img/test/avatar/zh-kupalnyk-s611.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 611</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s622.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 622</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s633.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 633</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s641.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 641</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s652.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 652</figcaption></figure>
+<figure><img src="img/test/avatar/zh-kupalnyk-s663.png" alt="Людина, жінка — купальник (під 3D, як у прикладі замовника)"><figcaption><b>купальник (під 3D, як у прикладі замовника)</b>Kontext, seed 663</figcaption></figure>
+</div>
+<h3>Результат: 3D-модель MPFB — людина, чоловік (81.9%)</h3>
+<p class="note">Референси: спереду — симетричний, ступні спереду; збоку — профіль руками вниз (Kontext s931); ззаду — s911. Модель: <code>./run.sh --рухи-людини --модель res://models/own/avatary/mpfb/людина-чоловік-mpfb.gltf</code>. Постава в рухах виправлена (горб і голова вперед — від перенаправлення рухів).</p>
+<div class="compare">
+<figure style="flex:3"><img src="img/test/avatar/mpfb-cholovik-3vydy.png" alt="людина, чоловік з трьох боків"><figcaption><b>спереду 86.7% · збоку 71.0% · ззаду 88.1%</b>у кожному ряду: референс · модель · силует (червоне — лише референс, зелене — модель)</figcaption></figure>
+</div>
+<h3>Результат: 3D-модель MPFB — людина, жінка (74.6%)</h3>
+<p class="note">Референси: одна зачіска (тугий пучок) в усіх трьох; спереду й ззаду — T-поза; профіль — руками вниз (Kontext T-позу збоку не малює: руки вперед, униз або три чверті — 6 сідів); висоти профілю й спини вирівняні під перед (маківка, бюстгальтер, шорти, ступні — розбіжність 0–1 px). Груди більші (cupsize 0,8…1,0). Кисті ззаду — не з кадру (Kontext малює ззаду розкриті долоні). Модель: <code>./run.sh --рухи-людини --модель res://models/own/avatary/mpfb-zhinka/людина-жінка-mpfb.gltf</code>. Контури підтягнуті під три кадри (нежорстке підтягування сітки, <code>tools/blender/mpfb_kontur.py</code>): збіг силуетів спереду 0,796→0,824, ззаду 0,657→0,735, збоку 0,750→0,810; лишилась розбіжність рук ззаду — на кадрі ззаду Kontext підняв руки вище, ніж спереду. Порівняння до/після — <a href="img/test/avatar/mpfb-zhinka-kontury.png">mpfb-zhinka-kontury.png</a>.</p>
+<div class="compare">
+<figure style="flex:3"><img src="img/test/avatar/mpfb-zhinka-3vydy.png" alt="людина, жінка з трьох боків"><figcaption><b>спереду 80.1% · збоку 63.9% · ззаду 79.7%</b>у кожному ряду: референс · модель · силует (червоне — лише референс, зелене — модель)</figcaption></figure>
+</div>
+<!-- /аватар -->
+<!-- дерева -->
+<h2>Дерева — генератор (П-253)</h2>
+<p class="note">Кожне дерево — випадковий тип і крона зі справжньої кори (Poly Haven) і справжніх листків (ambientCG), CC0; <code>tools/blender/derevo.py</code>. Вибери типи, які лишаємо, і що поправити.</p>
+<div class="compare">
+<figure><img src="img/test/dereva/100.png" alt="дерево 100"><figcaption><b>№ 100 · листяне, крона «колона»</b>8 м · кора bark_willow_02 · листя LeafSet022 · 9 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/101.png" alt="дерево 101"><figcaption><b>№ 101 · листяне, крона «парасоля»</b>11 м · кора bark_brown_01 · листя LeafSet010 · 10 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/102.png" alt="дерево 102"><figcaption><b>№ 102 · листяне, крона «яйце»</b>8 м · кора jolcham_oak_bark_01 · листя LeafSet023 · 11 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/103.png" alt="дерево 103"><figcaption><b>№ 103 · хвойне, крона «конус»</b>22 м · кора pine_bark · листя LeafSet019 · 12 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/104.png" alt="дерево 104"><figcaption><b>№ 104 · листяне, крона «яйце»</b>14 м · кора bark_platanus · листя LeafSet023 · 11 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/105.png" alt="дерево 105"><figcaption><b>№ 105 · листяне, крона «куля»</b>13 м · кора bark_platanus · листя LeafSet024 · 16 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/106.png" alt="дерево 106"><figcaption><b>№ 106 · листяне, крона «колона»</b>12 м · кора jolcham_oak_bark_01 · листя LeafSet016 · 12 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/107.png" alt="дерево 107"><figcaption><b>№ 107 · хвойне, крона «колона»</b>14 м · кора pine_bark · листя LeafSet019 · 16 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/108.png" alt="дерево 108"><figcaption><b>№ 108 · листяне, крона «колона»</b>8 м · кора jolcham_oak_bark_01 · листя LeafSet022 · 11 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/109.png" alt="дерево 109"><figcaption><b>№ 109 · листяне, крона «куля»</b>9 м · кора bark_willow_02 · листя LeafSet014 · 10 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/110.png" alt="дерево 110"><figcaption><b>№ 110 · листяне, крона «яйце»</b>14 м · кора bark_willow_02 · листя LeafSet023 · 14 тис. трикутників</figcaption></figure>
+<figure><img src="img/test/dereva/111.png" alt="дерево 111"><figcaption><b>№ 111 · хвойне, крона «колона»</b>20 м · кора pine_bark · листя LeafSet019 · 16 тис. трикутників</figcaption></figure>
+</div>
+<!-- /дерева -->
+<p class="note">Тестова сторінка, не для гравців. Раси перенесено на <a href="rasy.html">Раси та професії</a>.</p>
 </main>
 <footer>Тестова сторінка, не для гравців.</footer>
 </body></html>

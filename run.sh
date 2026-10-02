@@ -11,6 +11,9 @@
 #                     набору природи в ряд, з підписами й зміряними висотами
 #   ./run.sh --рухи-людини  парад рухів моделі людини: по одній фігурі
 #                     на кожен рух із бібліотеки, кожна підписана назвою
+#                     (`--модель res://…` — інша модель на тому самому
+#                     скелеті, напр. аватар MPFB
+#                     res://models/own/avatary/mpfb/людина-чоловік-mpfb.gltf)
 #   ./run.sh --рухи-монстрів  те саме для монстрів: по фігурі на пару
 #                     «вид+рух»; хто ще на фігурці з примітивів —
 #                     стій→іди→бий по колу, як у --парад; тут же (без
@@ -102,7 +105,7 @@ case "${1:-}" in
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
     --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --рослини) exec godot --path "$proj" --script res://probes/plants.gd ;;
-    --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd ;;
+    --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd -- "${@:2}" ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --звірі-скан) exec godot --path "$proj" --script res://probes/scan_beasts.gd -- "${@:2}" ;;
     --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;

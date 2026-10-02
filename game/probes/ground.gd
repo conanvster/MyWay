@@ -196,6 +196,25 @@ func _go() -> void:
 	_yes("зображення є в усіх речей зі значком",
 			missing.size() == book.bases.size() - _with_icon(book))
 
+	# Не про землю, але про ту саму торбу: буква грейду в кутку значка
+	# спорядження (слово замовника 01.10.2026).
+	print("\n— буква грейду в торбі —")
+	var icon := ItemIcon.new()
+	icon.size = Vector2(48, 48)
+	add_child(icon)
+	icon.show_item("зброя", "зброя", "B", SWORD)
+	var box := icon.letter_box()
+	_yes("на мечі B — «%s» у правому нижньому куті" % icon.letter(),
+			icon.letter() == "B" and box.end == Vector2(48, 48))
+	_yes("квадрат букви — 10%% площі (%.1f%%)"
+			% (box.get_area() / (48.0 * 48.0) * 100.0),
+			absf(box.get_area() / (48.0 * 48.0) - 0.1) < 0.001)
+	icon.show_item("ресурс", "", "", BARK)
+	_yes("на стосі букви немає (там кількість)", icon.letter() == "")
+	icon.show_item("обладунок", "тіло", "E")
+	_yes("на порожньому силуеті букви немає", icon.letter() == "")
+	icon.queue_free()
+
 	print("  підсумок: %d з %d" % [_ok, _ok + _bad])
 	await _snapshot(world, me, book)
 	get_tree().quit(1 if _bad > 0 else 0)

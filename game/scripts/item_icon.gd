@@ -43,6 +43,14 @@ const LINE := 2.0
 var _shape := ""
 var _tint := NO_GRADE
 var _tex: Texture2D = null
+## Буква грейду в правому нижньому кутку (слово замовника 01.10.2026:
+## «в інвентарі в нижньому правому куточку буквою з кольором, буква
+## займає 10% зображення»). Лише на спорядженні: у стосу в тому куті
+## стоїть кількість.
+var _letter := ""
+## 10% площі значка — квадрат зі стороною √0,1 ≈ 0,32 сторони.
+const LETTER_SHARE := 0.1
+const LETTER_KINDS: Array[String] = ["зброя", "обладунок", "амулет"]
 
 
 static func grade_color(grade: String) -> Color:
@@ -88,13 +96,51 @@ func show_item(kind: String, slot: String, grade: String,
 	_shape = shape_of(kind, slot)
 	_tint = MONEY_COLOR if kind == "гроші" else grade_color(grade)
 	_tex = _art.get(name)
+	# Без назви — порожній силует тіла, не річ: букви на ньому немає.
+	_letter = grade if name != "" and kind in LETTER_KINDS \
+			and GRADE_COLORS.has(grade) else ""
 	queue_redraw()
 
 
 func clear_item() -> void:
 	_shape = ""
 	_tex = null
+	_letter = ""
 	queue_redraw()
+
+
+## Яка буква стоїть у кутку — для проби.
+func letter() -> String:
+	return _letter
+
+
+## Квадрат букви: правий нижній кут значка, 10% його площі.
+func letter_box() -> Rect2:
+	var side: float = minf(size.x, size.y)
+	var off := Vector2((size.x - side) * 0.5, (size.y - side) * 0.5)
+	var box := side * sqrt(LETTER_SHARE)
+	return Rect2(off + Vector2(side - box, side - box), Vector2(box, box))
+
+
+func _draw_letter() -> void:
+	if _letter == "":
+		return
+	var box := letter_box()
+	var font: Font = ThemeDB.fallback_font
+	# Розмір шрифту — щоб висота великої літери (≈0,7 кегля) заповнила
+	# квадрат; «SS» ширше — стискаємо, щоб не вилазило з кута.
+	var font_size := maxi(6, roundi(box.size.y / 0.72))
+	var wide := font.get_string_size(_letter, HORIZONTAL_ALIGNMENT_LEFT,
+			-1, font_size).x
+	if wide > box.size.x * 1.3:
+		font_size = maxi(6, roundi(font_size * box.size.x * 1.3 / wide))
+		wide = font.get_string_size(_letter, HORIZONTAL_ALIGNMENT_LEFT,
+				-1, font_size).x
+	var base := Vector2(box.end.x - wide - 1.0, box.end.y - 1.0)
+	draw_string_outline(font, base, _letter, HORIZONTAL_ALIGNMENT_LEFT,
+			-1, font_size, 3, Color(0, 0, 0, 0.9))
+	draw_string(font, base, _letter, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			font_size, _tint)
 
 
 func _draw() -> void:
@@ -107,6 +153,7 @@ func _draw() -> void:
 	if _tex != null:
 		draw_texture_rect(_tex, Rect2(off, Vector2(side, side)), false)
 		draw_rect(Rect2(off, Vector2(side, side)), _tint, false, LINE)
+		_draw_letter()
 		return
 	var fill := Color(_tint.r * FILL_DIM, _tint.g * FILL_DIM,
 			_tint.b * FILL_DIM, 0.95)
@@ -126,6 +173,7 @@ func _draw() -> void:
 		"гроші": _coins(side, off, fill)
 		"артефакт": _eye(side, off, fill)
 		_: _lump(side, off, fill)
+	_draw_letter()
 
 
 ## Замкнена фігура: заливка темнішим, обрис кольором грейду.

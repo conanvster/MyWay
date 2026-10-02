@@ -9,6 +9,7 @@ IoU з маскою референсу. Покоординатний спуск 
 maska_bik)`.
 """
 import math
+import os
 
 import bpy
 import numpy as np
@@ -30,12 +31,15 @@ TSILI = ["torso/torso-scale-horiz", "torso/torso-vshape",
          "head/head-scale-horiz", "head/head-scale-vert",
          "legs/measure-thigh-circ", "legs/measure-calf-circ",
          "torso/measure-waist-circ", "torso/measure-bust-circ",
-         "arms/measure-upperarm-circ"]
+         "arms/measure-upperarm-circ", "torso/torso-muscle-dorsi"]
 # Парні (лівий і правий разом): довжина й товщина рук — підбір їх не бачив,
 # поки з міри відрізали бічні стовпці, і руки MPFB лишались довшими й
 # тоншими за кадр.
 TSILI_LR = ["arms/upperarm-scale-vert", "arms/lowerarm-scale-vert",
-            "arms/upperarm-scale-horiz", "arms/lowerarm-scale-horiz"]
+            "arms/upperarm-scale-horiz", "arms/lowerarm-scale-horiz",
+            # Знизу передпліччя й дельти — на кадрі товщі (MPFB-16).
+            "arms/lowerarm-muscle", "arms/upperarm-muscle",
+            "arms/upperarm-shoulder-muscle"]
 
 
 # Масштаб — від ступень до рівня ОЧЕЙ (02.10.2026): верх голови на кадрі
@@ -130,7 +134,7 @@ def postavyty_ruky(arm, kut_vid_vertykali=10.0):
     # Кисті й ступні — з нуля: їхні повороти відносні й накопичувались би
     # при кожній новій постановці (підбір кута рук ставить позу багато разів).
     for pb_ in arm.pose.bones:
-        if pb_.name.split("_")[0] in ("lowerarm", "hand", "foot", "thumb",
+        if pb_.name.split("_")[0] in ("lowerarm", "hand", "foot", "calf", "thumb",
                                       "index", "middle", "ring", "pinky"):
             pb_.matrix_basis.identity()
     bpy.context.view_layer.update()
@@ -173,10 +177,21 @@ STOPY_NAZOVNI = 18.0
 KUT_NIH = [0.0]   # кут стегон до середини (+) чи назовні (−), градуси
 KUT_LIKTIA = [0.0]  # передпліччя вгору (+) від лінії плеча, градуси
 STOPY = [STOPY_NAZOVNI]  # носки назовні, градуси
+KOLINO = [0.0]   # гомілки до середини (+), градуси: на кадрі гомілки ближче
 KLIUCH = [0.0]   # ключиці донизу (+), градуси: на кадрі плечі спадисті
 
 
 def postavyty_nohy(arm, kut):
+    _postavyty_stehna(arm, kut)
+    if KOLINO[0]:
+        for bik, znak in (("l", 1), ("r", -1)):
+            if "calf_" + bik in arm.pose.bones:
+                arm.pose.bones["calf_" + bik].rotation_mode = "QUATERNION"
+                _krutnuty(arm, "calf_" + bik, Vector((0, 1, 0)),
+                          math.radians(KOLINO[0]) * znak)
+
+
+def _postavyty_stehna(arm, kut):
     """Стегна до середини на `kut` градусів (гомілки моделі стояли ширше,
     ніж на кадрі)."""
     from mathutils import Matrix
@@ -380,6 +395,13 @@ class Povzunky:
         return (0.0, 1.0) if imia in MAKRO else (-1.0, 1.0)
 
 
+# Проходів на крок. Один — повзунок від нуля сягав лише 0,46; п'ять і
+# чотири — повзунки тіла йшли в край, пропорції голови до тіла розходились
+# і обличчя на оцінці падало до ~0,5…0,64 (MPFB-18…21, 27). Три — найкраще
+# на симетричному кадрі (MPFB-24, 29).
+PROKHODY = int(os.environ.get("PROKHODY", "3"))
+
+
 def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
               oko_y=None):
     """`kut_ruk` — кут рук від вертикалі на кадрі (90 — T-поза); `oko_y` —
@@ -421,7 +443,11 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
             ("ключиці", KLIUCH, np.arange(-6, 14.1, 1.0)),
             ("кут ліктя", KUT_LIKTIA, np.arange(-4, 16.1, 1.0)),
             ("кут ніг", KUT_NIH, np.arange(-6, 6.1, 1.0)),
-            ("стопи", STOPY, np.arange(6, 56.1, 2.0)))
+            # Коліна (KOLINO) — підбір дав −1°, оцінка гірша (MPFB-25): поза
+            # пошуком, кут лишається 0.
+            # Стопи не далі 30°: підбір тягнув до 54° — ступні дивились убік
+            # (на кадрі ≈25–30°; П6 «реалістично» важить більше за міру).
+            ("стопи", STOPY, np.arange(6, 30.1, 2.0)))
     for _ in range(2):
         for imia, kom, diap in kuty:
             krashche = kut_ruk if kom is None else kom[0]
@@ -443,20 +469,27 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
           "стопи %.0f°: %.4f" % (kut_ruk, KLIUCH[0], KUT_LIKTIA[0], KUT_NIH[0],
                                  STOPY[0], naikr),
           flush=True)
+    # Кожен крок — повторно, поки щось кращає: за один прохід на крок
+    # повзунок від нуля сягав лише 0,25+0,12+0,06+0,03 = 0,46 (MPFB-17 —
+    # пів десятка повзунків упирались саме в 0,46).
     for krok in (0.25, 0.12, 0.06, 0.03)[:raundy]:
-        for imia in list(pv.znach):
-            lo, hi = pv.mezhi(imia)
-            for znak in (1, -1):
-                v0 = pv.znach[imia]
-                v1 = min(hi, max(lo, v0 + znak * krok))
-                if v1 == v0:
-                    continue
-                pv.postavyty(imia, v1)
-                s = otsinka()
-                if s > naikr + 1e-4:
-                    naikr = s
-                    break
-                pv.postavyty(imia, v0)
+        for _prokhid in range(PROKHODY):
+            bulo = naikr
+            for imia in list(pv.znach):
+                lo, hi = pv.mezhi(imia)
+                for znak in (1, -1):
+                    v0 = pv.znach[imia]
+                    v1 = min(hi, max(lo, v0 + znak * krok))
+                    if v1 == v0:
+                        continue
+                    pv.postavyty(imia, v1)
+                    s = otsinka()
+                    if s > naikr + 1e-4:
+                        naikr = s
+                        break
+                    pv.postavyty(imia, v0)
+            if naikr <= bulo + 1e-4:
+                break
         print("[підбір] крок %.2f: %.4f" % (krok, naikr), flush=True)
     print("[підбір] повзунки: %s" % {k: round(v, 3) for k, v in pv.znach.items()
                                       if abs(v) > 1e-3}, flush=True)
@@ -484,6 +517,7 @@ def pidibraty(h, arm, maska_pered, maska_bik=None, raundy=4, kut_ruk=90.0,
     pv.znach["кут ліктя"] = KUT_LIKTIA[0]
     pv.znach["стопи"] = STOPY[0]
     pv.znach["ключиці"] = KLIUCH[0]
+    pv.znach["коліна"] = KOLINO[0]
     return naikr, pv.znach
 
 
@@ -519,6 +553,11 @@ PARY_OBL = [
 ]
 
 
+# Голова ширша за ±1 MakeHuman: при статурі кадру (вага 1) ширина голови
+# упиралась у 1,0 і точки лишались за 3,5 px (MPFB-19).
+MEZHI_OBL = {"head-scale-horiz": 1.6, "head-scale-vert": 1.6}
+
+
 class PovzunkyObl:
     def __init__(self, h):
         self.h, self.kl, self.znach = h, {}, {}
@@ -527,14 +566,22 @@ class PovzunkyObl:
             ok = True
             for b in boky:
                 for zn, f in (("+", plus), ("-", minus)):
-                    shl = TargetService.target_full_path(b + f)
-                    if not shl:
-                        ok = False
-                        continue
-                    TargetService.load_target(h, shl, weight=0.0, name=b + f)
+                    kb_ = h.data.shape_keys.key_blocks \
+                        if h.data.shape_keys else {}
+                    if b + f not in kb_:
+                        shl = TargetService.target_full_path(b + f)
+                        if not shl:
+                            ok = False
+                            continue
+                        TargetService.load_target(h, shl, weight=0.0,
+                                                  name=b + f)
                     self.kl.setdefault(imia, []).append((zn, b + f))
             if ok:
-                self.znach[imia] = 0.0
+                # Другий раунд підбору бере вже поставлені значення.
+                kb_ = h.data.shape_keys.key_blocks
+                self.znach[imia] = sum(
+                    (kb_[k].value if z == "+" else -kb_[k].value)
+                    for z, k in self.kl[imia]) / len(boky)
             else:
                 self.kl.pop(imia, None)
         print("[обличчя] повзунків: %d" % len(self.znach), flush=True)
@@ -543,6 +590,7 @@ class PovzunkyObl:
         self.znach[imia] = v
         kb = self.h.data.shape_keys.key_blocks
         for zn, k in self.kl[imia]:
+            kb[k].slider_max = max(1.0, MEZHI_OBL.get(imia, 1.0))
             kb[k].value = max(0.0, v) if zn == "+" else max(0.0, -v)
 
 
@@ -573,6 +621,19 @@ def pidibraty_oblychchia(h, arm, ref, maska, kut_ruk, render_fn, L_ref,
     """`render_fn(h) -> (точки_моделі (478,2) у пікселях кадру, функція
     проєкції вершин у ті самі пікселі)`; `L_ref` — точки кадру."""
     import numpy as np_
+    rez = None
+    # Один раунд. Другий (новий рендер, свіжі точки MediaPipe, нові
+    # заступники) почав з 4,4 px і скінчив на 2,9 — точки на рендері без
+    # волосся шумні, обличчя на оцінці впало до 0,54 (MPFB-26).
+    for raund, kroky in enumerate(((0.3, 0.3, 0.15, 0.15, 0.07, 0.07, 0.03),
+                                   )):
+        rez = _pidibraty_oblychchia(h, arm, kut_ruk, render_fn, L_ref,
+                                    kroky, raund)
+    return rez
+
+
+def _pidibraty_oblychchia(h, arm, kut_ruk, render_fn, L_ref, kroky, raund):
+    import numpy as np_
     postavyty_ruky(arm, kut_ruk)
     L_mod, proekt = render_fn(h)
     co, nrm = vershyny_bez_masky(h)
@@ -598,14 +659,16 @@ def pidibraty_oblychchia(h, arm, ref, maska, kut_ruk, render_fn, L_ref,
         return float(np_.hypot(*(proekt(c2)[vibr] - L_ref).T).mean())
 
     naikr = otsinka()
-    print("[обличчя] початок: %.2f px" % naikr, flush=True)
+    print("[обличчя] раунд %d, початок: %.2f px" % (raund + 1, naikr),
+          flush=True)
     # Кроки повторюються, доки дають виграш: сума одного проходу (0,52)
     # упиралась у стелю, хоча повзунки мають ±1 (ітерація MPFB-7).
-    for krok in (0.3, 0.3, 0.15, 0.15, 0.07, 0.07, 0.03):
+    for krok in kroky:
         for imia in list(pv.znach):
             for znak in (1, -1):
                 v0 = pv.znach[imia]
-                v1 = min(1.0, max(-1.0, v0 + znak * krok))
+                m_ = MEZHI_OBL.get(imia, 1.0)
+                v1 = min(m_, max(-m_, v0 + znak * krok))
                 if v1 == v0:
                     continue
                 pv.postavyty(imia, v1)

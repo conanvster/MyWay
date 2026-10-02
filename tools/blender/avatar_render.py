@@ -22,7 +22,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=MODEL)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
 KUT, KUT_NIH, KUT_LIKTIA, STOPY = 90.0, 0.0, 0.0, 18.0
-KLIUCH = 0.0
+KLIUCH = KOLINO = 0.0
 try:
     import json as _j
     _p = _j.load(open(MODEL + ".підбір.json"))
@@ -31,6 +31,7 @@ try:
     KUT_LIKTIA = float(_p.get("кут ліктя", 0.0))
     STOPY = float(_p.get("стопи", 18.0))
     KLIUCH = float(_p.get("ключиці", 0.0))
+    KOLINO = float(_p.get("коліна", 0.0))
 except Exception:
     pass
 if T_POZA:
@@ -42,6 +43,7 @@ if T_POZA:
     _P.KUT_LIKTIA[0] = KUT_LIKTIA
     _P.STOPY[0] = STOPY
     _P.KLIUCH[0] = KLIUCH
+    _P.KOLINO[0] = KOLINO
     _P.postavyty_ruky(arm, KUT)
 sitky = [o for o in bpy.data.objects if o.type == "MESH"]
 dg = bpy.context.evaluated_depsgraph_get()

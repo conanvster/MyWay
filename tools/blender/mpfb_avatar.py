@@ -331,8 +331,15 @@ def proektsiia(h, arm, ref, maska):
     # Глядач спереду (камера на −Y): праворуч у кадрі — +X.
     u = (cx_r + (co[:, 0] - cx_m) * k) / w
     v = (y0 + (co[:, 2] - z0) * k) / hh
-    u, v = vyrivniaty_oblychchia(h, ref, maska, u, v, w, hh, cx_r, cx_m,
-                                 y0, z0, k)
+    # WARP: 1 — текстура обличчя тягнеться до точок моделі (очі текстури на
+    # 3D-очах), 0 — чиста проєкція (вид спереду точно як на кадрі).
+    # 0,5 — найкраще: 1 → обличчя 0,768, 0 → 0,787 і вухо в плямі,
+    # 0,5 → 0,789 (MPFB-24, 28, 29); очі на 3/4 сидять в обох.
+    vaga_w = float(os.environ.get("WARP", "0.5"))
+    if vaga_w > 0:
+        uw, vw = vyrivniaty_oblychchia(h, ref, maska, u, v, w, hh, cx_r,
+                                       cx_m, y0, z0, k)
+        u, v = u + vaga_w * (uw - u), v + vaga_w * (vw - v)
     f = -nrm[:, 1]
     vuzka = mk.copy()
     for _ in range(5):

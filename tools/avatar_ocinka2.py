@@ -110,6 +110,11 @@ def main():
     cv2.imwrite(t_m, mrnd.astype(np.uint8) * 255)
     La, Lb = tochky(ref_p, mref_p), tochky(t_r, t_m)
     a, ma, La2 = normuvaty(ref, mref, La)
+    # Тло — однакове сіре в обох (02.10.2026): на кадрі світло-сіре фото,
+    # у рендері 0,5, і вікна SSIM на краю силуету карали за тло, а не за
+    # модель (смуга втрат по всьому контуру, MPFB-23). Стара цифра — поруч.
+    a_foto = a.copy()
+    a[~ma] = 0.5
     b, mb, Lb2 = normuvaty(rnd, mrnd, Lb)
     b, mb, Lb2 = pidihnaty(a, ma, b, mb, Lb2)
     # Смуга зачіски: вище найвищої точки брів (за кадром) — поза мірою.
@@ -140,6 +145,7 @@ def main():
     # ±3% — чи падіння обличчя від форми, чи від зсуву всієї постаті.
     ga_, gb_ = sira(a), sira(b)
     obl_lok = oblychchia
+    lok_par = (1.0, 0, 0)
     cy, cx = (y0 + y1) / 2, (x0 + x1) / 2
     for sk in (0.97, 0.985, 1.0, 1.015, 1.03):
         for dx in range(-3, 4):
@@ -149,8 +155,12 @@ def main():
                 g2 = cv2.warpAffine(gb_, M_, (S, S), flags=cv2.INTER_LINEAR)
                 m2_ = cv2.warpAffine(mb.astype(np.uint8), M_, (S, S),
                                      flags=cv2.INTER_NEAREST) > 0
-                obl_lok = max(obl_lok, ssim(ga_, g2, obl & ma & m2_))
+                s_l = ssim(ga_, g2, obl & ma & m2_)
+                if s_l > obl_lok:
+                    obl_lok, lok_par = s_l, (sk, dx, dy)
     pids = 0.25 * (iou_bez + kolir + tilo + oblychchia)
+    pids_foto = 0.25 * (iou_bez + kolir + ssim(sira(a_foto), sira(b), sp) +
+                        ssim(sira(a_foto), sira(b), obl & ma & mb))
     iou_odiah = (ma & mb & bez_z_odiahom).sum() / \
         max(1, ((ma | mb) & bez_z_odiahom).sum())
     rez = {"силует": round(float(iou_bez), 3),
@@ -158,7 +168,9 @@ def main():
            "силует з шортами": round(float(iou_odiah), 3),
            "колір": round(float(kolir), 3), "тіло": round(tilo, 3),
            "обличчя": round(oblychchia, 3),
-           "обличчя локально": round(obl_lok, 3), "підсумок": round(float(pids), 3),
+           "обличчя локально": round(obl_lok, 3),
+           "обличчя: масштаб, зсув": lok_par, "підсумок": round(float(pids), 3),
+           "підсумок (тло кадру)": round(float(pids_foto), 3),
            "зсув очей, px": round(float(np.linalg.norm(
                La2[[33, 263]] - Lb2[[33, 263]], axis=1).mean()), 2)}
     print(json.dumps(rez, ensure_ascii=False))

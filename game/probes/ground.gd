@@ -217,7 +217,10 @@ func _go() -> void:
 
 	# П-223, слово замовника 10.10.2026: у PvP речі з гравця не падають;
 	# від монстра — падають, як і раніше (П-27).
-	print("\n— смерть від гравця й від монстра —")
+	# П-259, слово замовника 10.10.2026: PvP двох видів. Непогоджений
+	# (флаг) — речі падають, як від монстра; погоджений (спеціальна зона) —
+	# не падають. Зони ще немає — погодження ставимо гачком `agreed_pvp`.
+	print("\n— смерть від гравця (два режими) й від монстра —")
 	grid["втрата речей"] = {"ресурси": 1.0, "лут": 1.0, "вдягнене": 0.0}
 	var killer: Node = world.spawn(2, Vector3(6, 30, 0))
 	var pvp: Node = world.spawn(3, Vector3(4, 30, 0))
@@ -226,15 +229,25 @@ func _go() -> void:
 	pvp.gear.clear()
 	var lying_before: int = ground.lying.size()
 	world.combat._kill(2, killer, pvp, 3)
-	_yes("убив гравець — речі при ньому (%d кори)" % int(pvp.items.get(BARK, 0)),
-			int(pvp.items.get(BARK, 0)) == 5 and ground.lying.size() == lying_before)
+	_yes("непогоджений PvP — кора на землі", not pvp.items.has(BARK)
+			and ground.lying.size() == lying_before + 1)
+	var duel: Node = world.spawn(5, Vector3(5, 30, 2))
+	duel.items = {BARK: 5}
+	duel.things.clear()
+	duel.gear.clear()
+	world.combat.agreed_pvp = func(_k: int, _v: int) -> bool: return true
+	world.combat._kill(2, killer, duel, 5)
+	world.combat.agreed_pvp = Callable()
+	_yes("погоджений PvP — речі при ньому (%d кори)"
+			% int(duel.items.get(BARK, 0)), int(duel.items.get(BARK, 0)) == 5
+			and ground.lying.size() == lying_before + 1)
 	var pve: Node = world.spawn(4, Vector3(8, 30, 0))
 	pve.items = {BARK: 5}
 	pve.things.clear()
 	pve.gear.clear()
 	world.combat._kill(-1, null, pve, 4)
 	_yes("убив монстр — кора на землі", not pve.items.has(BARK)
-			and ground.lying.size() == lying_before + 1)
+			and ground.lying.size() == lying_before + 2)
 	grid["втрата речей"] = was
 
 	print("  підсумок: %d з %d" % [_ok, _ok + _bad])

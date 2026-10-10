@@ -463,6 +463,20 @@ func _out_of_reach(me: int, action: String) -> void:
 		_link.notice(me, "задалеко")
 
 
+## Погоджений PvP (П-259): обидва погодились на бій чи це івент, і бій
+## іде в спеціальній зоні — там речі не губляться. Самої зони в грі ще
+## немає (форк П-260), тож світ поставить сюди перевірку, коли вона
+## з'явиться: (вбивця, убитий) -> bool. Порожній — погодженого PvP нема.
+var agreed_pvp: Callable
+
+
+func _agreed(me: int, victim_id: int) -> bool:
+	var killer := payee(me)
+	if killer <= 0 or victim_id <= 0 or not agreed_pvp.is_valid():
+		return false
+	return bool(agreed_pvp.call(killer, victim_id))
+
+
 func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	victim.die()
 	# Гравець за смерть втрачає повагу: рівно 10% обсягу поточного рівня
@@ -473,11 +487,12 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		print("[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
 		# І частина речей (друга половина П-27). Лягають на землю біля
-		# трупа (П-160) — підняти може будь-хто. У PvP речі не падають
-		# (П-223, слово замовника 10.10.2026): убивця — гравець чи його
-		# прикликаний.
+		# трупа (П-160) — підняти може будь-хто. PvP двох видів (П-259,
+		# слово замовника 10.10.2026): у ПОГОДЖЕНОМУ — у спеціальній зоні —
+		# речі не падають; у непогодженому (флаг, П-26/П-64) — падають, як
+		# від монстра.
 		var gone_all: Array = []
-		if side(me) < 0:
+		if not _agreed(me, victim_id):
 			gone_all = progress.lose_items(victim, goods, ground)
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)

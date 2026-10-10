@@ -473,8 +473,12 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		print("[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
 		# І частина речей (друга половина П-27). Лягають на землю біля
-		# трупа (П-160) — підняти може будь-хто.
-		var gone_all: Array = progress.lose_items(victim, goods, ground)
+		# трупа (П-160) — підняти може будь-хто. У PvP речі не падають
+		# (П-223, слово замовника 10.10.2026): убивця — гравець чи його
+		# прикликаний.
+		var gone_all: Array = []
+		if side(me) < 0:
+			gone_all = progress.lose_items(victim, goods, ground)
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)
 			print("[смерть] %d загубив %s" % [victim_id, gone])

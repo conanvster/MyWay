@@ -215,6 +215,28 @@ func _go() -> void:
 	_yes("на порожньому силуеті букви немає", icon.letter() == "")
 	icon.queue_free()
 
+	# П-223, слово замовника 10.10.2026: у PvP речі з гравця не падають;
+	# від монстра — падають, як і раніше (П-27).
+	print("\n— смерть від гравця й від монстра —")
+	grid["втрата речей"] = {"ресурси": 1.0, "лут": 1.0, "вдягнене": 0.0}
+	var killer: Node = world.spawn(2, Vector3(6, 30, 0))
+	var pvp: Node = world.spawn(3, Vector3(4, 30, 0))
+	pvp.items = {BARK: 5}
+	pvp.things.clear()
+	pvp.gear.clear()
+	var lying_before: int = ground.lying.size()
+	world.combat._kill(2, killer, pvp, 3)
+	_yes("убив гравець — речі при ньому (%d кори)" % int(pvp.items.get(BARK, 0)),
+			int(pvp.items.get(BARK, 0)) == 5 and ground.lying.size() == lying_before)
+	var pve: Node = world.spawn(4, Vector3(8, 30, 0))
+	pve.items = {BARK: 5}
+	pve.things.clear()
+	pve.gear.clear()
+	world.combat._kill(-1, null, pve, 4)
+	_yes("убив монстр — кора на землі", not pve.items.has(BARK)
+			and ground.lying.size() == lying_before + 1)
+	grid["втрата речей"] = was
+
 	print("  підсумок: %d з %d" % [_ok, _ok + _bad])
 	await _snapshot(world, me, book)
 	get_tree().quit(1 if _bad > 0 else 0)

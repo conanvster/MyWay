@@ -106,6 +106,8 @@ var _messages: VBoxContainer
 var _cells: Array = []
 var _floats: Array = []
 var _coords_text: Label
+var _quest_box: Control
+var _quest_text: Label
 
 
 func setup(world: Node) -> void:
@@ -379,6 +381,10 @@ func _toggle_stats() -> void:
 
 ## Стати від сервера. Клієнт їх не рахує — тільки показує (П-08).
 func set_stats(data: Dictionary) -> void:
+	if _quest_box != null:
+		var quest := str(data.get("завдання", ""))
+		_quest_box.visible = quest != ""
+		_quest_text.text = "завдання: " + quest
 	if _stats_box == null:
 		return
 	_stats_who.text = "%s, %s" % [str(data.get("раса", "?")),
@@ -1107,6 +1113,8 @@ signal wants_enchant(at: int, thing_at: int)
 signal wants_learn_skill(at: int, key: String)
 ## Узяти наступну професію й злити два вміння в одне (П-224).
 signal wants_take_profession(at: int, key: String)
+## Узяти в майстра гільдії завдання переходу (П-227).
+signal wants_take_quest(at: int, key: String)
 signal wants_synthesize(at: int, key: String)
 signal wants_raise_skill(at: int, key: String)
 
@@ -2659,8 +2667,9 @@ func _show_profession(row: Dictionary) -> void:
 			str(row.get("квест", "")), str(row.get("де", ""))]
 	for step: Dictionary in row.get("умови", []):
 		text += "
-%s %s — %d із %d" % ["✓" if bool(step["готово"]) else "·",
-				str(step["що"]), int(step["зроблено"]), int(step["треба"])]
+%s %s — %d|%d%s" % ["✓" if bool(step["готово"]) else "·",
+				str(step["що"]), int(step["зроблено"]), int(step["треба"]),
+				"" if bool(step.get("взято", true)) else "  (ще не взято)"]
 	var hint := str(row.get("як відкрити", ""))
 	if hint != "":
 		text += "
@@ -2669,12 +2678,20 @@ func _show_profession(row: Dictionary) -> void:
 %s" % [str(row.get("гілка", "")),
 				hint]
 	_guild_detail_info.text = text
+	var key := str(row.get("ключ", ""))
+	# Три стани кнопки (П-227): завдання ще не взято — «Взяти завдання»;
+	# узято й виконано — «Стати»; узято, але ще ні — лічильник.
 	if bool(row.get("можна", false)):
 		_guild_detail_press.text = "Стати: %s" % str(row.get("назва", ""))
 		_guild_detail_press.disabled = false
-		var key := str(row.get("ключ", ""))
 		_guild_detail_press.pressed.connect(func() -> void:
 				wants_take_profession.emit(_guild_with, key))
+	elif not bool(row.get("взято", false)) \
+			and bool(row.get("можна взяти", false)):
+		_guild_detail_press.text = "Взяти завдання"
+		_guild_detail_press.disabled = false
+		_guild_detail_press.pressed.connect(func() -> void:
+				wants_take_quest.emit(_guild_with, key))
 	else:
 		_guild_detail_press.text = "ще ні"
 		_guild_detail_press.disabled = true
@@ -2844,6 +2861,17 @@ func _build_coords() -> void:
 	_coords_text = _text(12, box)
 	_coords_text.position = Vector2(6, 1)
 	_coords_text.text = "x 0,0  y 0,0  z 0,0"
+
+	# Лічильник завдання переходу «вовкулака 3|10» (П-227) — під
+	# координатами; немає завдання — рядка не видно.
+	_quest_box = Control.new()
+	_quest_box.position = Vector2(0, 22)
+	_quest_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_quest_box.visible = false
+	box.add_child(_quest_box)
+	_plate(Vector2(150, 18), BACK, _quest_box)
+	_quest_text = _text(12, _quest_box)
+	_quest_text.position = Vector2(6, 1)
 
 
 ## Рамка цілі — угорі посередині. Ховається, коли цілі немає (П-31).

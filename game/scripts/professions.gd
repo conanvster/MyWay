@@ -61,27 +61,58 @@ func quest_of(key: String) -> Dictionary:
 	return rows.get(key, {}).get("квест", {})
 
 
-## Скільки з умови вже зроблено й скільки треба. Одна умова — один рядок
-## {що, зроблено, треба, готово}.
-func quest_progress(who: Node, key: String) -> Array:
-	var out: Array = []
+## Кого бити й скільки (П-227): квест у грі — одна умова «убити N виду».
+func quest_kind(key: String) -> String:
 	for cond: Dictionary in quest_of(key).get("умови", []):
-		var done := 0
-		var need := int(cond.get("скільки", 1))
-		var what := ""
 		if cond.has("вбити"):
-			what = "убити %s" % cond["вбити"]
-			done = int(who.kills.get(cond["вбити"], 0))
-		elif cond.has("принести"):
-			what = "принести %s" % cond["принести"]
-			done = int(who.items.get(cond["принести"], 0))
-		out.append({"що": what, "зроблено": mini(done, need),
-				"треба": need, "готово": done >= need})
-	return out
+			return str(cond["вбити"])
+	return ""
 
 
-## Чи можна взяти цю професію. Порожній рядок — можна, інакше причина.
-func why_not(who: Node, key: String) -> String:
+func quest_need(key: String) -> int:
+	for cond: Dictionary in quest_of(key).get("умови", []):
+		if cond.has("вбити"):
+			return int(cond.get("скільки", 1))
+	return 0
+
+
+## Чи взято саме це завдання.
+func quest_taken(who: Node, key: String) -> bool:
+	return str(who.quest.get("професія", "")) == key
+
+
+## Лічильник «убито|треба» (П-227). Рахується від мітки, поставленої,
+## коли завдання взяли в майстра гільдії: убиті до того не йдуть у
+## рахунок. Не взято — нуль. Один рядок {що, зроблено, треба, готово,
+## взято} — у тому самому вигляді, що й раніше, щоб показ не міняти.
+func quest_progress(who: Node, key: String) -> Array:
+	var kind := quest_kind(key)
+	if kind == "":
+		return []
+	var need := quest_need(key)
+	var done := 0
+	if quest_taken(who, key):
+		done = maxi(0, int(who.kills.get(kind, 0)) - int(who.quest.get("від", 0)))
+	return [{"що": "убити %s" % kind, "зроблено": mini(done, need),
+			"треба": need, "готово": done >= need,
+			"взято": quest_taken(who, key)}]
+
+
+## Лічильник одним рядком для екрана: «вовкулака 3|10». Порожньо — нічого
+## не взято.
+func quest_line(who: Node) -> String:
+	var key := str(who.quest.get("професія", ""))
+	if key == "" or not rows.has(key):
+		return ""
+	var steps := quest_progress(who, key)
+	if steps.is_empty():
+		return ""
+	return "%s %d|%d" % [quest_kind(key), int(steps[0]["зроблено"]),
+			int(steps[0]["треба"])]
+
+
+## Чи можна йти на цю професію взагалі: батько й рівень. Квест — окремо.
+func _why_not_path(who: Node, key: String) -> String:
 	if not rows.has(key):
 		return "такої професії немає"
 	var row: Dictionary = rows[key]
@@ -94,28 +125,57 @@ func why_not(who: Node, key: String) -> String:
 	if who.level < int(row.get("з рівня", 1)):
 		return "%s береться з %d рівня" % [name_of(key),
 				int(row.get("з рівня", 1))]
+	return ""
+
+
+## Чи дадуть завдання — без наслідків, для показу кнопки.
+func why_not_quest(who: Node, key: String) -> String:
+	var why := _why_not_path(who, key)
+	if why != "":
+		return why
+	if quest_kind(key) == "":
+		return "у цієї професії немає завдання"
+	if quest_taken(who, key):
+		return "завдання вже взято"
+	return ""
+
+
+## Узяти завдання в майстра гільдії (П-227). Порожній рядок — узято.
+## Одне завдання за раз: нове замінює старе (лічильник починається
+## наново) — гравець передумав, куди йти.
+func take_quest(who: Node, key: String) -> String:
+	var why := why_not_quest(who, key)
+	if why != "":
+		return why
+	who.quest = {"професія": key,
+			"від": int(who.kills.get(quest_kind(key), 0))}
+	return ""
+
+
+## Чи можна взяти цю професію. Порожній рядок — можна, інакше причина.
+func why_not(who: Node, key: String) -> String:
+	var why := _why_not_path(who, key)
+	if why != "":
+		return why
+	if quest_kind(key) == "":
+		return ""
+	if not quest_taken(who, key):
+		return "спершу візьми завдання в майстра гільдії"
 	for step: Dictionary in quest_progress(who, key):
 		if not step["готово"]:
-			return "квест «%s»: %s — %d із %d" % [
+			return "завдання «%s»: %s — %d|%d" % [
 					str(quest_of(key).get("назва", "")), step["що"],
 					int(step["зроблено"]), int(step["треба"])]
 	return ""
 
 
-## Узяти професію. Речі, які просив квест, ЗАБИРАЮТЬСЯ: інакше одна
-## в'язка шкур провела б крізь усі чотири етапи.
+## Узяти професію. Виконане завдання знімається.
 func take(who: Node, key: String) -> String:
 	var why := why_not(who, key)
 	if why != "":
 		return why
-	for cond: Dictionary in quest_of(key).get("умови", []):
-		if cond.has("принести"):
-			var what := str(cond["принести"])
-			var need := int(cond.get("скільки", 1))
-			who.items[what] = maxi(0, int(who.items.get(what, 0)) - need)
-			if who.items[what] == 0:
-				who.items.erase(what)
 	who.profession = key
+	who.quest = {}
 	return ""
 
 

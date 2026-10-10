@@ -139,6 +139,10 @@ var opened: Array[String] = []
 ## переходу й для гілок, що відкриваються полюванням, тому він
 ## зберігається разом із персонажем, а не живе до виходу з гри.
 var kills: Dictionary = {}
+## Взяте в майстра гільдії завдання переходу (П-227): {"професія",
+## "від"} — «від» = скільки цього виду було вбито на мить, коли взяв.
+## Лічильник «убито|треба» рахується від неї, не від усього життя.
+var quest: Dictionary = {}
 ## Відкати скілів: ключ -> скільки секунд лишилось.
 var skill_ready_in: Dictionary = {}
 var attack_ready_in := 0.0
@@ -655,7 +659,37 @@ func server_step(delta: float) -> void:
 
 ## Чи знає істота цей скіл і чи минув його відкат.
 func knows(key: String) -> bool:
-	return learned.has(key)
+	return skill_level(key) > 0
+
+
+## Рівень уміння, з яким воно діє: вивчене ПЛЮС рівні з вдягнених речей
+## (П-221, слово замовника 10.10.2026: «складаються»). Зняв річ — лишається
+## вивчене; не вивчав — діє, лише поки річ на тобі. Затуплена зброя, як і
+## її стати, вміння не дає. Понад останній рівень скіла не росте — це
+## обрізає `Skill.at`.
+func skill_level(key: String) -> int:
+	return int(learned.get(key, 0)) + gear_skill(key)
+
+
+func gear_skill(key: String) -> int:
+	var total := 0
+	for slot in gear:
+		var at: int = gear[slot]
+		if at >= 0 and at < things.size() and not things[at].is_blunt():
+			total += int(things[at].skills.get(key, 0))
+	return total
+
+
+## Усі вміння, що діють зараз: вивчені й від речей.
+func skill_keys() -> Array:
+	var out: Array = learned.keys()
+	for slot in gear:
+		var at: int = gear[slot]
+		if at >= 0 and at < things.size() and not things[at].is_blunt():
+			for key: String in things[at].skills:
+				if not out.has(key):
+					out.append(key)
+	return out
 
 
 func skill_ready(key: String) -> bool:

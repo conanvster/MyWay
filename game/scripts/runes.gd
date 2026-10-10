@@ -41,7 +41,8 @@ func learn(who: Node, key: String) -> String:
 	var skill: Skill = _skills.get_skill(key)
 	if skill == null:
 		return "такого вміння немає"
-	if who.knows(key):
+	# Вивчене — саме вивчене: уміння від речі (П-221) вчити не заважає.
+	if who.learned.has(key):
 		return "%s уже вивчено" % skill.name
 	if who.level < skill.from_level:
 		return "%s вивчається з %d рівня" % [skill.name, skill.from_level]
@@ -90,7 +91,7 @@ func synthesize(who: Node, key: String) -> String:
 		return "такого вміння немає"
 	if skill.source != "синтез" or skill.synthesis.size() < 2:
 		return "%s не виходить синтезом" % skill.name
-	if who.knows(key):
+	if who.learned.has(key):
 		return "%s уже вивчено" % skill.name
 	if who.level < skill.from_level:
 		return "%s зливається з %d рівня" % [skill.name, skill.from_level]
@@ -117,7 +118,7 @@ func raise(who: Node, key: String) -> String:
 	var skill: Skill = _skills.get_skill(key)
 	if skill == null:
 		return "такого вміння немає"
-	if not who.knows(key):
+	if not who.learned.has(key):
 		return "%s не вивчено" % skill.name
 	var level: int = who.learned[key]
 	if level >= skill.max_level():

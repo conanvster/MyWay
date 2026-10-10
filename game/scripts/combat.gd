@@ -212,7 +212,7 @@ func cast(me: int, key: String) -> bool:
 	if not a.skill_ready(key):
 		return false  # відкат — дія просто викидається (П-38)
 
-	var level: int = a.learned[key]
+	var level: int = a.skill_level(key)
 	var cost: int = skill.mana(level)
 	# «Не вистачає мани — скіл неактивний» (П-93).
 	if a.mp < cost:
@@ -280,7 +280,7 @@ func tick_casts(delta: float) -> void:
 		if a.casting_left > 0.0:
 			continue
 		var skill: Skill = skills.get_skill(a.casting_key)
-		var level: int = a.learned.get(a.casting_key, 1)
+		var level: int = maxi(1, a.skill_level(a.casting_key))
 		# Ціль беремо ту, на кого починали (П-42).
 		a.target_id = a.casting_target if a.casting_target != 0 else a.target_id
 		a.stop_cast()

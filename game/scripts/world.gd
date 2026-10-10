@@ -436,7 +436,8 @@ func _serve_self(peer: int) -> void:
 		send_stats(peer)
 	# Те саме для вивченого: руна або новий рівень скіла мають одразу
 	# з'явитись у вікні «Скіли».
-	var learned_mark := str(me.learned)
+	# Вміння від речей (П-221) теж: вдягнув — з'явилось, зняв — зникло.
+	var learned_mark := "%s/%s" % [me.learned, me.gear]
 	if _skills_mark.get(peer, "") != learned_mark:
 		_skills_mark[peer] = learned_mark
 		send_skills(peer)
@@ -1509,6 +1510,10 @@ func _on_joined(id: int) -> void:
 ## статів, ні спорядження немає й бути не повинно (П-08).
 func _stats_row(a: Node) -> Dictionary:
 	return {
+		# Лічильник завдання переходу «вовкулака 3|10» (П-227). Тут, а не
+		# окремим пакетом: стати шлються, щойно змінився їхній відбиток, —
+		# і лічильник оновиться з кожним убитим.
+		"завдання": data.professions.quest_line(a),
 		"раса": a.race,
 		"стать": a.sex,
 		"рівень": a.level,
@@ -1547,11 +1552,11 @@ func _stats_row(a: Node) -> Dictionary:
 ## Збирає сервер — у клієнта книги скілів для ЧУЖИХ рівнів немає.
 func _skills_row(a: Node) -> Array:
 	var out: Array = []
-	for key: String in a.learned:
+	for key: String in a.skill_keys():
 		var skill: Skill = data.skills.get_skill(key)
 		if skill == null:
 			continue
-		var level: int = int(a.learned[key])
+		var level: int = a.skill_level(key)
 		out.append({
 			"ключ": key,
 			"назва": skill.name,
@@ -2458,7 +2463,7 @@ func _guild_rows(a: Node) -> Array:
 		# Прихована гілка мовчить, доки не відкрита: ні назви, ні чисел.
 		if not data.professions.branch_open(a, skill.branch):
 			continue
-		var known: bool = a.knows(key)
+		var known: bool = a.learned.has(key)
 		var level: int = int(a.learned.get(key, 0))
 		out.append({
 			"ключ": key,
@@ -2515,6 +2520,8 @@ func _guild_about(a: Node) -> Dictionary:
 			"квест": str(quest.get("назва", "")),
 			"де": str(quest.get("де", "")),
 			"умови": profs.quest_progress(a, key),
+			"взято": profs.quest_taken(a, key),
+			"можна взяти": profs.why_not_quest(a, key) == "",
 			"можна": profs.why_not(a, key) == "",
 			"чому ні": profs.why_not(a, key),
 			"гілка": str(profs.branch_of(key).get("назва", "")),
@@ -2551,6 +2558,28 @@ func ask_guild(at: int) -> void:
 	# Амулет міг прийти не з монстра, а з крамниці чи від іншого гравця,
 	# тому дивимось на гілки й тут, а не лише після вбивства.
 	_check_branches(id, a)
+	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
+
+
+## Узяти в майстра гільдії завдання переходу (П-227).
+@rpc("any_peer", "call_remote", "reliable")
+func ask_take_quest(at: int, key: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.teaches():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = data.professions.take_quest(a, key)
+	if why != "":
+		link.notice(id, why)
+	else:
+		link.notice(id, "завдання «%s»: %s" % [
+				str(data.professions.quest_of(key).get("назва", "")),
+				data.professions.quest_line(a)])
+		print("[професії] %d узяв завдання на «%s»" % [id, key])
+		send_stats(id)
 	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 
 
@@ -2881,6 +2910,8 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_port", at, town))
 		hud.wants_learn_skill.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_learn_skill", at, key))
+		hud.wants_take_quest.connect(func(at: int, key: String) -> void:
+				rpc_id(1, "ask_take_quest", at, key))
 		hud.wants_take_profession.connect(func(at: int, key: String) -> void:
 				rpc_id(1, "ask_take_profession", at, key))
 		hud.wants_synthesize.connect(func(at: int, key: String) -> void:

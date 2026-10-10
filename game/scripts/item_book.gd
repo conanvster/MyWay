@@ -99,6 +99,10 @@ func make(name: String, rolled: Array = []) -> Item:
 	# JSON не знає цілих: без цього «витривалість» приходила як 1.0, і в
 	# показі речі стояло б «+1.0» замість «+1».
 	item.stats = {}
+	item.skills = {}
+	var gives: Dictionary = data.get("вміння", {})
+	for key: String in gives:
+		item.skills[key] = int(gives[key])
 	for stat in data.get("стати", {}):
 		item.stats[stat] = int(data["стати"][stat])
 	for affix: Dictionary in item.affixes:

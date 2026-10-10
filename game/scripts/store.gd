@@ -211,6 +211,9 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"profession": who.profession,
 		"opened": who.opened,
 		"kills": who.kills,
+		# Взяте завдання переходу (П-227): без нього після перезаходу
+		# лічильник «0|10» почався б наново.
+		"quest": who.quest,
 		"items": who.items,
 		"things": _things_row(who),
 		"warehouse_items": who.warehouse_items,
@@ -273,6 +276,9 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	who.profession = str(row.get("profession", who.profession))
 	who.opened.assign(row.get("opened", who.opened))
 	who.kills = _whole(row.get("kills", {}))
+	var quest: Dictionary = row.get("quest", {})
+	who.quest = {"професія": str(quest.get("професія", "")),
+			"від": int(quest.get("від", 0))} if not quest.is_empty() else {}
 	who.items = _whole(row.get("items", {}))
 	who.warehouse_items = _whole(row.get("warehouse_items", {}))
 	who.gear = _whole(row.get("gear", {}))

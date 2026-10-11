@@ -54,6 +54,13 @@ if "--прив'язка" in ARGS:
     i_ = ARGS.index("--прив'язка")
     PRYVIAZKA_OSI, PRYVIAZKA = ARGS[i_ + 1].split(",")
     del ARGS[i_:i_ + 2]
+# Сторона текстури тіла (11.10.2026): 2048 на все тіло давало обличчю
+# замало пікселів — ельфійка йде з 4096.
+TEKSTURA = 2048
+if "--текстура" in ARGS:
+    i_ = ARGS.index("--текстура")
+    TEKSTURA = int(ARGS[i_ + 1])
+    del ARGS[i_:i_ + 2]
 PERUKA = None
 if "--перука" in ARGS:
     PERUKA = ARGS[ARGS.index("--перука") + 1]
@@ -532,8 +539,9 @@ def main():
             m.use_backface_culling = False
     for m in skan.data.materials:
         for n in (m.node_tree.nodes if m and m.use_nodes else []):
-            if n.type == "TEX_IMAGE" and n.image and n.image.size[0] > 2048:
-                n.image.scale(2048, 2048)
+            if n.type == "TEX_IMAGE" and n.image \
+                    and n.image.size[0] > TEKSTURA:
+                n.image.scale(TEKSTURA, TEKSTURA)
     os.makedirs(os.path.dirname(KUDY), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=KUDY, export_format="GLTF_SEPARATE",
                               export_animations=False, export_skins=True,
@@ -615,7 +623,9 @@ def proektsiia(skan, pered):
     # маска» хибили на кілька пікселів (найбільше на обличчі). Підбираємо
     # окремо по кожній осі: профіль заповнення рядків (стовпців) точками
     # сітки проти профілю маски.
-    N = 1024
+    # Профіль — стільки клітин, скільки рядків у маски (кадр квадратний):
+    # стале 1024 падало на кадрі 4K (11.10.2026, обличчя ельфійки).
+    N = h
     tochky = np.array([((v.co.x - lo.x) / (hi.x - lo.x),
                         (v.co.z - lo.z) / (hi.z - lo.z))
                        for v in me.vertices])
@@ -677,33 +687,42 @@ def proektsiia(skan, pered):
           % (bu[1], bu[2], bu[0], bv[1], bv[2], bv[0]))
     uv = me.uv_layers.new(name="Проєкція")
     vyd = me.color_attributes.new("Видимість", "FLOAT_COLOR", "CORNER")
-    for poly in me.polygons:
-        for li in poly.loop_indices:
-            v = me.vertices[me.loops[li].vertex_index]
-            tz = (v.co.z - lo.z) / (hi.z - lo.z)
-            i = min(ryadky - 1, max(0, int(tz * ryadky)))
-            tx = (v.co.x - lo.x) / (hi.x - lo.x)
-            if pered > 0:
-                tx = 1.0 - tx
-            uu = u0 + tx * (u1 - u0)
-            vv = v0 + tz * (v1 - v0)
-            if potik is not None:
-                # Пікселі: x — зліва, y — ЗВЕРХУ (як у кадрі й потоці).
-                px_ = min(w - 1, max(0, int(uu * w)))
-                py_ = min(h - 1, max(0, int((1.0 - vv) * h)))
-                fx, fy = potik[py_, px_]
-                uu += fx / w
-                vv -= fy / h
-            uv.data[li].uv = (uu, vv)
-            f = v.normal.y * pered
-            # Усе, що хоч трохи повернуте до камери, на кадрі видно саме
-            # так — повна вага вже з 0,15 (суміш із розмитим Pixal3D на
-            # опуклостях давала двоїння, ітерація 2–3).
-            ww = max(0.0, min(1.0, f / 0.15))
-            if not vuzka[min(h - 1, max(0, int(vv * h))),
-                         min(w - 1, max(0, int(uu * w)))]:
-                ww = 0.0
-            vyd.data[li].color = (ww, ww, ww, 1.0)
+    # Масово (11.10.2026): цикл по кутах через RNA на 300 тис. граней не
+    # закінчився й за 35 хв; ті самі формули масивами — секунди.
+    nl, nv = len(me.loops), len(me.vertices)
+    vi = np.empty(nl, dtype=np.int64)
+    me.loops.foreach_get("vertex_index", vi)
+    co = np.empty(nv * 3, dtype=np.float64)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(nv, 3)[vi]
+    nr = np.empty(nv * 3, dtype=np.float64)
+    me.vertices.foreach_get("normal", nr)
+    nr = nr.reshape(nv, 3)[vi]
+    tz = (co[:, 2] - lo.z) / (hi.z - lo.z)
+    tx = (co[:, 0] - lo.x) / (hi.x - lo.x)
+    if pered > 0:
+        tx = 1.0 - tx
+    uu = u0 + tx * (u1 - u0)
+    vv = v0 + tz * (v1 - v0)
+    if potik is not None:
+        # Пікселі: x — зліва, y — ЗВЕРХУ (як у кадрі й потоці).
+        px_ = np.clip((uu * w).astype(int), 0, w - 1)
+        py_ = np.clip(((1.0 - vv) * h).astype(int), 0, h - 1)
+        fl = potik[py_, px_]
+        uu = uu + fl[:, 0] / w
+        vv = vv - fl[:, 1] / h
+    uv.data.foreach_set("uv", np.stack([uu, vv], 1).astype(np.float32)
+                        .ravel())
+    # Усе, що хоч трохи повернуте до камери, на кадрі видно саме так —
+    # повна вага вже з 0,15 (суміш із розмитим Pixal3D на опуклостях
+    # давала двоїння, ітерація 2–3).
+    ww = np.clip(nr[:, 1] * pered / 0.15, 0.0, 1.0)
+    vydno = vuzka[np.clip((vv * h).astype(int), 0, h - 1),
+                  np.clip((uu * w).astype(int), 0, w - 1)]
+    ww = np.where(vydno, ww, 0.0)
+    kol = np.ones((nl, 4), dtype=np.float32)
+    kol[:, :3] = ww[:, None]
+    vyd.data.foreach_set("color", kol.ravel())
     me.uv_layers.active = me.uv_layers["UVMap"] if "UVMap" in me.uv_layers \
         else me.uv_layers[0]
     print("[аватар] проєкція: кадр u %.3f–%.3f, v %.3f–%.3f" % (u0, u1, v0, v1))
@@ -822,7 +841,7 @@ def zapekty(skan):
             links.remove(l)
     bsdf.inputs["Metallic"].default_value = 0.0
     bsdf.inputs["Roughness"].default_value = 0.6
-    cil = bpy.data.images.new("аватар-колір", 2048, 2048)
+    cil = bpy.data.images.new("аватар-колір", TEKSTURA, TEKSTURA)
     tex_c = nodes.new("ShaderNodeTexImage")
     tex_c.image = cil
     nodes.active = tex_c

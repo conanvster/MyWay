@@ -10,7 +10,7 @@ T-поза на сірому тлі в тому ж одязі, тоді одяг
 
     ~/Програми/cv-venv/bin/python -u tools/comfyui/elf_kupalnyk.py [--купальник]
 
-Без ключа — T-пози; `--купальник [--з <файл>]` — купальник від T-пози
+Без ключа — T-пози; `--один-крок` — T-поза й купальник разом з оригіналу; `--тендітна` — купальник із тонкою кісткою від s44; `--купальник [--з <файл>]` — купальник від T-пози
 (типово el-tpoza-s11.png). Вихід — `wiki/img/test/avatar/el-*.png`
 (лише диск, як усі кадри аватарів). Готовий кадр не перегенеровується.
 """
@@ -58,6 +58,46 @@ KUPALNYK = (
     "lighting, same photorealistic style.")
 
 
+# Тендітна (слово замовника 11.10.2026: «вийшла дуже широка в кістках —
+# очікував більш тендітну»). Той самий купальник від тієї ж T-пози, але
+# статура названа прямо — Kontext без цього лишає кістяк одягненої.
+TENDITNA_SIDY = (711, 722, 733, 744)
+TENDITNA = KUPALNYK.replace(
+    "same natural slender feminine figure and body proportions",
+    "but make her build much more delicate and fragile, a petite "
+    "fine-boned elven figure: narrow shoulders, slim thin arms, very thin "
+    "wrists and ankles, a small narrow ribcage, a tiny waist, slim narrow "
+    "hips, slender long legs with thin thighs and calves, long graceful "
+    "neck, light ballet-dancer frame, no muscle bulk")
+
+
+# Тендітна, один крок (11.10.2026): від T-пози в одязі Kontext лишав
+# широкий кістяк (el-tenditna-*), тож тепер — прямо з оригіналу «варіант 1»,
+# де вона тонка: поза, тло й купальник разом. Без «ballet» — давало
+# балетки. Пропорції — словами з прикладу замовника 11.10.2026 («низька
+# постать із широким тазом» → висока, довгонога, таз вужчий за плечі);
+# саме фото — реальної людини, у генерацію не йде.
+ODYN_SIDY = (811, 822, 833, 844)
+ODYN = (
+    "Change the pose, the clothing and the background. The same elf woman "
+    "now stands in a strict T-pose facing the camera directly: both arms "
+    "stretched straight out to the sides horizontally at shoulder height, "
+    "palms facing down, legs straight and slightly apart, bare feet flat on "
+    "the ground, head level looking straight forward, front orthographic "
+    "view, the whole body from head to feet in frame with margin around "
+    "it. Replace all of her clothing, belts and boots with a simple black "
+    "two-piece swimsuit: a black bikini top with thin shoulder straps and "
+    "black high-cut bikini briefs; she is barefoot. Replace the forest with "
+    "a plain uniform light grey studio background, soft even shadowless "
+    "lighting. " + ELF + ". Give her a tall, very slim, long-legged "
+    "model figure: legs much longer than her torso, thin straight thighs "
+    "with a clear gap between them, slim knees and calves, hips narrower "
+    "than her shoulders, a very small waist, a flat toned stomach, thin "
+    "arms and wrists, narrow shoulders, long neck, small head relative to "
+    "her height (about eight heads tall), light fine bones, no muscle "
+    "bulk, same photorealistic style.")
+
+
 def kroky(prompt, dzherelo, sidy, nazva):
     rk.PROMT = prompt
     image = m.stage(str(dzherelo))
@@ -75,6 +115,13 @@ def kroky(prompt, dzherelo, sidy, nazva):
 
 def main():
     m.free()
+    if "--один-крок" in sys.argv:
+        kroky(ODYN, DZHERELO, ODYN_SIDY, "el-odyn-s%d.png")
+        return
+    if "--тендітна" in sys.argv:
+        z = VYKHID / "el-tpoza-s44.png"
+        kroky(TENDITNA, z, TENDITNA_SIDY, "el-tenditna-s44-s%d.png")
+        return
     if "--купальник" in sys.argv:
         z = VYKHID / (sys.argv[sys.argv.index("--з") + 1]
                       if "--з" in sys.argv else "el-tpoza-s11.png")

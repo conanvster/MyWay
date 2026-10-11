@@ -72,6 +72,17 @@ const PIECES := {
 	"голова": ["Шолом"],
 }
 const PIECE_PREFIX := "Одяг-"
+## Що тримається в руках, а не вдягається (11.10.2026): комірка ->
+## кістка кисті. Лук — у лівій, як його тримають; решта зброї — у правій.
+const HELD := {"зброя": "hand_r", "щит": "hand_l"}
+const BOW_HAND := "hand_l"
+## Як лягає річ у кисть: клинок `WeaponLook` іде вздовж +Y, а кість
+## кисті в моделі людини дивиться інакше. Підібрано на знімку.
+const GRIP_TURN := Vector3(0, 0, -90)
+## Ліва кисть — дзеркало правої.
+const LEFT_GRIP_TURN := Vector3(0, 0, 180)
+const SHIELD_TURN := Vector3(0, -90, 0)
+const HELD_PREFIX := "Тримає-"
 
 var path := ""
 var height := 1.0
@@ -239,10 +250,58 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		mesh.visible = shown.has(piece)
 		if mesh.visible:
 			mesh.material_override = _cloth(shown[piece])
+	_hold_gear(look, goods)
 	# Волосся (19.09.2026) — під шоломом його не видно.
 	for hair: Node in find_children("Волосся*", "MeshInstance3D", true,
 			false):
 		hair.visible = not shown.has("Шолом")
+
+
+## Зброя й щит у руках — з `WeaponLook`. Щоразу наново: вдягання
+## рідкісне, а старе тримання так не лишиться висіти після зняття.
+func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
+	if _skeleton == null:
+		return
+	for old: Node in _skeleton.get_children():
+		if str(old.name).begins_with(HELD_PREFIX):
+			_skeleton.remove_child(old)
+			old.queue_free()
+	if goods == null:
+		return
+	for slot: String in HELD:
+		if not look.has(slot):
+			continue
+		var base: Dictionary = goods.base_of(look[slot])
+		var bone: String = BOW_HAND if str(base.get("тип", "")) == "лук" \
+				else HELD[slot]
+		if _skeleton.find_bone(bone) == -1:
+			continue
+		var grip := BoneAttachment3D.new()
+		grip.name = HELD_PREFIX + slot
+		grip.bone_name = bone
+		_skeleton.add_child(grip)
+		var thing := WeaponLook.build(base)
+		if slot == "щит":
+			thing.rotation_degrees = SHIELD_TURN
+		elif bone == "hand_l":
+			thing.rotation_degrees = LEFT_GRIP_TURN
+		else:
+			thing.rotation_degrees = GRIP_TURN
+		# Річ — у метрах гри, а кістяк — в одиницях файла, підігнаних
+		# `_fit`. Ділимо на масштаб від кістяка до самої моделі.
+		thing.scale = Vector3.ONE / _scale_down_to(_skeleton)
+		grip.add_child(thing)
+
+
+## Добуток масштабів від `node` угору до цієї моделі (не включно).
+func _scale_down_to(node: Node) -> float:
+	var k := 1.0
+	var at: Node = node
+	while at != null and at != self:
+		if at is Node3D:
+			k *= (at as Node3D).scale.x
+		at = at.get_parent()
+	return maxf(k, 0.0001)
 
 
 static var _cloths: Dictionary = {}

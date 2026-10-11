@@ -218,7 +218,8 @@ func set_folded(on: bool) -> void:
 	var was := size.y
 	folded = on
 	body.visible = not on
-	_lay_out(Vector2(size.x, TITLE_H if on else _inner.y + PAD * 2.0 + TITLE_H))
+	var open_h := _inner.y + PAD * 2.0 + TITLE_H
+	_lay_out(Vector2(size.x, TITLE_H if on else open_h))
 	if keep_bottom:
 		position.y += was - size.y
 	_keep_on_screen()

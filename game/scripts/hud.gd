@@ -3220,7 +3220,8 @@ func log_line(text: String) -> void:
 			tint = LOG_COLORS[tag]
 			break
 	var clock: Dictionary = Time.get_time_dict_from_system()
-	_log_text.append_text("[color=#8a8a84]%02d:%02d:%02d[/color] [color=#%s]%s[/color]\n"
+	_log_text.append_text(
+			"[color=#8a8a84]%02d:%02d:%02d[/color] [color=#%s]%s[/color]\n"
 			% [clock.hour, clock.minute, clock.second, tint.to_html(false),
 			text.replace("[", "[lb]")])
 	while _log_text.get_paragraph_count() > LOG_LINES:

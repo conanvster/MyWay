@@ -1736,7 +1736,8 @@ func look_of(a: Node) -> Dictionary:
 	if not ("gear" in a):
 		return out
 	for slot: String in a.gear:
-		if not SkinnedModel.PIECES.has(slot):
+		if not SkinnedModel.PIECES.has(slot) \
+				and not SkinnedModel.HELD.has(slot):
 			continue
 		var at: int = int(a.gear[slot])
 		if at >= 0 and at < a.things.size():
@@ -3676,7 +3677,8 @@ func client_log(text: String) -> void:
 ## Кого клієнт уже не бачить — лишається номером.
 func named(text: String) -> String:
 	if _id_word == null:
-		_id_word = RegEx.create_from_string("(?<![\\d.,])-?\\d+(?![\\d.%]|,\\d)")
+		_id_word = RegEx.create_from_string(
+				"(?<![\\d.,])-?\\d+(?![\\d.%]|,\\d)")
 	var out := ""
 	var from := 0
 	for m: RegExMatch in _id_word.search_all(text):

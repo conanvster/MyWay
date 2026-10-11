@@ -62,6 +62,9 @@ var wardens: Wardens
 var outlaws: Outlaws
 ## Клієнт: номер гравця → скільки на ньому вбивств (колір імені, П-87).
 var _outlaw_kills: Dictionary = {}
+## Погоджений PvP: виклики й арени (П-259, П-260). Будуються на обох
+## боках, бої веде сервер.
+var duels: Duels
 ## Речі на землі (П-160): викинуте й загублене при смерті.
 var ground := Ground.new()
 var runes: Runes
@@ -159,6 +162,11 @@ func _ready() -> void:
 	dungeons = Dungeons.new()
 	dungeons.name = "Підземелля"
 	add_child(dungeons)
+	duels = Duels.new()
+	duels.name = "Арени"
+	duels.names = _names
+	add_child(duels)
+	combat.agreed_pvp = duels.agreed
 
 	# Краєвид будується однаково й на сервері, і в клієнта: серверові
 	# потрібні стіни, щоб крізь будинки не бігали, клієнтові — картинка.
@@ -367,6 +375,7 @@ func _physics_process(delta: float) -> void:
 		_tick_grace_places()
 		_tick_water(delta)
 		_tick_trade(delta)
+		_tick_duels(delta)
 		summons.tick(delta)
 		wardens.tick(delta)
 		outlaws.tick(delta)
@@ -1131,6 +1140,8 @@ func _check_branches(id: int, a: Node) -> void:
 func _on_kill(victim_id: int, victim: Node, killer_id: int = 0) -> void:
 	if victim_id < 0 and wardens != null:
 		wardens.on_kill(victim, killer_id)
+	if victim_id > 0 and duels != null:
+		_duel_over(victim_id, duels.on_death(victim_id))
 	if victim_id >= 0 or not victim.get("is_boss"):
 		return
 	var key := dungeons.index_at(victim.global_position.x,
@@ -2561,6 +2572,115 @@ func _tick_trade(delta: float) -> void:
 			rpc_id(int(row[0]), "client_trade_invite_gone")
 
 
+# ── погоджений PvP: виклик і арена (П-259, П-260) ─────────────────────
+#
+# Логіка — `Duels`; тут хто кого кличе, перенос і що кому сказати.
+
+## Покликати ціль на арену.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_duel_invite(to: int) -> void:
+	if not Net.is_server:
+		return
+	duel_invite(multiplayer.get_remote_sender_id(), to)
+
+
+## Те саме без мережі — для проби.
+func duel_invite(id: int, to: int) -> void:
+	var why: String = duels.invite(id, to, creatures.get(id),
+			creatures.get(to))
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "виклик на арену надіслано: %s"
+			% _names.get(to, "гравець"))
+	link.to_one(to, &"client_duel_invite", [str(_names.get(id, "гравець")),
+			Duels.INVITE_TIME])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_duel_answer(yes: bool) -> void:
+	if not Net.is_server:
+		return
+	duel_answer(multiplayer.get_remote_sender_id(), yes)
+
+
+## Б відповів. «Так» — обох на арену, кожного на свій край.
+func duel_answer(id: int, yes: bool) -> void:
+	var from: int = duels.invited_by(id)
+	if not yes:
+		duels.decline(id)
+		if from != 0:
+			link.notice(from, "%s відмовився від бою"
+					% _names.get(id, "гравець"))
+		return
+	var res: Dictionary = duels.accept(id, creatures.get(from),
+			creatures.get(id))
+	if res.has("чому"):
+		link.notice(id, res["чому"])
+		if from != 0:
+			link.notice(from, "бій не почався: %s" % res["чому"])
+		return
+	var slot: int = res["місце"]
+	duels.raise(slot)
+	var pair: Array = res["хто"]
+	for side in 2:
+		var one: int = pair[side]
+		var a: Node = creatures[one]
+		a.target_id = 0
+		link.to_one(one, &"client_arena", [slot])
+		# Обличчям одне до одного: перший на заході дивиться на схід.
+		a.place_at(Duels.start_point(slot, side),
+				PI * 0.5 if side == 0 else -PI * 0.5)
+		link.to_watchers(one, &"client_place", [one, a.global_position,
+				a.facing])
+		link.to_one(one, &"client_place", [one, a.global_position,
+				a.facing])
+		link.notice(one, "арена: бій із %s — речі тут не губляться; "
+				% _names.get(pair[1 - side], "гравець")
+				+ "%.0f с на бій" % Duels.FIGHT_TIME)
+
+
+## Бій скінчився смертю: кому що сказати. `winner` 0 — це не арена.
+func _duel_over(loser: int, winner: int) -> void:
+	if winner == 0:
+		return
+	link.notice(winner, "перемога! за %.0f с — назад" % Duels.RETURN_AFTER)
+	link.notice(loser, "поразка. речі не загублено; за %.0f с — назад"
+			% Duels.RETURN_AFTER)
+
+
+func _tick_duels(delta: float) -> void:
+	var res: Dictionary = duels.tick(delta)
+	for row: Array in res["прострочені"]:
+		link.notice(int(row[0]), "%s не відповів на виклик"
+				% _names.get(int(row[1]), "гравець"))
+		link.to_one(int(row[1]), &"client_duel_invite_gone")
+	for pair: Array in res["нічия"]:
+		for one: int in pair:
+			link.notice(one, "час бою вийшов — нічия; за %.0f с — назад"
+					% Duels.RETURN_AFTER)
+	for row: Array in res["назад"]:
+		_duel_return(int(row[0]), row[1])
+
+
+## Повернути з арени туди, звідки покликали. Переможений оживає там же:
+## бій за згодою не відправляє в місто (П-260 «повернення на місце»).
+func _duel_return(id: int, back: Vector3) -> void:
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	# Встиг сам повернутися в місто з вікна смерті — уже не на арені.
+	if Duels.slot_at(a.global_position.x, a.global_position.z) < 0:
+		return
+	if not a.is_alive():
+		a.hp = maxi(1, roundi(a.stats.max_hp() * a.REVIVE_SHARE))
+		a.corpse_left = 0.0
+		link.to_watchers(id, &"client_revive", [id, a.hp])
+	a.target_id = 0
+	combat.send_to(id, Vector2(back.x, back.z), "арена")
+	link.to_one(id, &"client_place", [id, a.global_position, a.facing])
+
+
 # ── гільдія: вивчення й підняття рівня скілів (крок 5, П-145) ───────
 #
 # Сама логіка (`Runes`) написана 02.09.2026, задовго до цього мешканця —
@@ -2889,6 +3009,16 @@ func send_stats(id: int) -> void:
 
 
 func _on_left(id: int) -> void:
+	# З арени — назад, звідки покликали, ще ДО збереження: інакше зайшов
+	# би посеред порожньої арени. Суперник перемагає.
+	var rival := duels.opponent(id)
+	var back: Variant = duels.forget(id)
+	var who: Node = creatures.get(id)
+	if back != null and who != null:
+		who.place_at(back, who.facing)
+		if rival != 0:
+			link.notice(rival, "%s вийшов із гри — перемога за тобою"
+					% _names.get(id, "гравець"))
 	# Зберегти ДО того, як істота зникне: інакше зберігати вже нічого.
 	_save_one(id)
 	# Стіл обміну закривається, а не висить: другий лишився б сам на сам
@@ -3005,6 +3135,11 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 		hud.wants_withdraw_stack.connect(
 				func(at: int, name: String, count: int) -> void:
 				rpc_id(1, "ask_withdraw_stack", at, name, count))
+		# Виклик на арену (П-260).
+		hud.wants_duel_invite.connect(func(to: int) -> void:
+				rpc_id(1, "ask_duel_invite", to))
+		hud.wants_duel_answer.connect(func(yes: bool) -> void:
+				rpc_id(1, "ask_duel_answer", yes))
 		# Обмін між гравцями (П-218).
 		hud.wants_trade_invite.connect(func(to: int) -> void:
 				rpc_id(1, "ask_trade_invite", to))
@@ -3224,6 +3359,26 @@ func client_trade_invite(from: String, _wait: float) -> void:
 		return
 	if hud != null:
 		hud.ask_trade_invite(from)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_duel_invite(from: String, _wait: float) -> void:
+	if view.duel_invited():
+		return
+	if hud != null:
+		hud.ask_duel_invite(from)
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_duel_invite_gone() -> void:
+	if hud != null:
+		hud.duel_invite_gone()
+
+
+## Тебе переносять на арену `slot` — збудувати її, поки не впав крізь.
+@rpc("authority", "call_remote", "reliable")
+func client_arena(slot: int) -> void:
+	duels.raise(slot)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -3550,6 +3705,10 @@ func ground_at(x: float, z: float) -> float:
 		var below := dungeons.floor_at(x, z)
 		if not is_nan(below):
 			return below
+	if duels != null:
+		var arena := duels.floor_at(x, z)
+		if not is_nan(arena):
+			return arena
 	var land: Node = get_node_or_null("Landscape")
 	return land.height_at(x, z) if land != null \
 			and land.has_method("height_at") else 0.0

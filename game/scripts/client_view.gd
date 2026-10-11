@@ -54,6 +54,7 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_ward_demo = OS.get_cmdline_user_args().has("--варта")
 	_trade_demo = OS.get_cmdline_user_args().has("--обмін")
 	_trade_lead = OS.get_cmdline_user_args().has("--веде")
+	_duel_demo = OS.get_cmdline_user_args().has("--арена")
 
 
 var _demo := false
@@ -549,6 +550,8 @@ func demo(delta: float) -> void:
 	if _demo_ward(delta):
 		return
 	if _demo_trade(delta):
+		return
+	if _demo_duel(delta):
 		return
 	# У режимі показу гравець ще й іде до найближчого монстра — інакше
 	# він стоїть на місці й на всі удари відповідає «задалеко».
@@ -1248,6 +1251,93 @@ func _demo_trade(delta: float) -> bool:
 		print("[обмін] показ: кладу гроші ×%d" % money)
 		_link.to_server(&"ask_trade_offer_stack", ["гроші", money])
 		return true
+	return true
+
+
+## Показ арени (П-260): два клієнти, `--арена --веде` і `--арена`.
+## Другий ходить за ведучим; ведучий кличе на арену, другий погоджується;
+## на арені б'є лише ведучий — щоб бій скінчився, а не тягся до нічиєї.
+## Кожен друкує, де стоїть: до виклику, на арені й після повернення.
+## Шле ті самі прохання, що й кнопка «Виклик» і вікно згоди.
+var _duel_demo := false
+var _duel_done := false
+var _duel_left := 0.0
+var _duel_from := Vector3.ZERO
+var _duel_was_in := false
+
+
+func _demo_duel(delta: float) -> bool:
+	if not _duel_demo or _duel_done:
+		return false
+	var me: Node = _me()
+	var in_arena := Duels.slot_at(me.global_position.x,
+			me.global_position.z) >= 0
+	# Місце виклику — останнє, де стояв перед переносом: сервер вертає
+	# туди, де гравець був у мить згоди, а не коли прийшов виклик (другий
+	# ще міг іти до ведучого).
+	if not in_arena and not _duel_was_in:
+		_duel_from = me.global_position
+	if in_arena and not _duel_was_in:
+		_duel_was_in = true
+		print("[арена] показ: на арені, стою в (%.0f, %.1f, %.0f)"
+				% [me.global_position.x, me.global_position.y,
+				   me.global_position.z])
+	if _duel_was_in and not in_arena:
+		_duel_done = true
+		print("[арена] показ закінчив: назад за %.1f м від місця виклику, "
+				% Vector2(me.global_position.x - _duel_from.x,
+					me.global_position.z - _duel_from.z).length()
+				+ "живий %s, здоров'я %d" % [me.is_alive(), me.hp])
+		return true
+	var other_id := 0
+	for id: int in _creatures:
+		if id > 0 and id != _world.multiplayer.get_unique_id():
+			other_id = id
+	if other_id == 0:
+		me.walk_to = Vector3.ZERO
+		return true
+	var other: Node3D = _creatures[other_id]
+	_duel_left -= delta
+	if in_arena:
+		# Ведучий іде до суперника (удар — лише поруч), другий стоїть.
+		me.walk_to = other.global_position if _trade_lead \
+				and me.global_position.distance_to(other.global_position) \
+				> 2.0 else Vector3.ZERO
+		if _trade_lead and _duel_left <= 0.0 and other.is_alive():
+			_duel_left = 1.0
+			_link.to_server(&"select_target", [other_id])
+			_link.to_server(&"strike")
+		return true
+	if _trade_lead:
+		var spot := Vector3(TRADE_DEMO_SPOT.x, me.global_position.y,
+				TRADE_DEMO_SPOT.z)
+		if me.global_position.distance_to(spot) > 1.5:
+			me.walk_to = spot
+			return true
+	if me.global_position.distance_to(other.global_position) \
+			> TRADE_DEMO_NEAR:
+		if not _trade_lead:
+			me.walk_to = other.global_position
+		return true
+	me.walk_to = Vector3.ZERO
+	if _trade_lead and _duel_left <= 0.0:
+		# Кличемо, доки не перенесе: другий міг бути ще задалеко чи в
+		# бою, і сервер тоді відмовляє — це не вада.
+		_duel_left = 2.0
+		print("[арена] показ: кличу %d з (%.0f, %.0f)"
+				% [other_id, me.global_position.x, me.global_position.z])
+		_link.to_server(&"ask_duel_invite", [other_id])
+	return true
+
+
+## Сервер покликав на арену — у показі погоджуємось.
+func duel_invited() -> bool:
+	if not _duel_demo:
+		return false
+	var me: Node = _me()
+	print("[арена] показ: мене кличуть, стою в (%.0f, %.0f) — так"
+			% [me.global_position.x, me.global_position.z])
+	_link.to_server(&"ask_duel_answer", [true])
 	return true
 
 

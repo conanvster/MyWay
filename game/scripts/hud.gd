@@ -89,6 +89,7 @@ var _mp_fill: ColorRect
 var _vitals_text: Label
 var _target_box: Control
 var _target_trade: Button
+var _target_duel: Button
 var _target_name: Label
 var _target_fill: ColorRect
 var _queue_text: Label
@@ -1086,6 +1087,10 @@ signal wants_store_thing(at: int, thing_at: int)
 signal wants_store_stack(at: int, name: String, count: int)
 signal wants_withdraw_thing(at: int, thing_at: int)
 signal wants_withdraw_stack(at: int, name: String, count: int)
+
+## Виклик на арену (П-260): кого кличу і моя відповідь на виклик.
+signal wants_duel_invite(to: int)
+signal wants_duel_answer(yes: bool)
 
 ## Обмін між гравцями (П-218). Усе — прохання до сервера; що лежить на
 ## столі й чи відбувся обмін, каже лише він.
@@ -2203,6 +2208,26 @@ func ask_trade_invite(from: String) -> void:
 var _trade_inviting := false
 
 
+## Сервер кличе на арену — те саме вікно «так / ні», що й на обмін.
+## Хрестик — це «ні»; мовчання сервер сам погасить за 30 с (П-74).
+func ask_duel_invite(from: String) -> void:
+	ask_confirm("%s викликає тебе на бій на арені (речі не губляться). "
+			% from + "Погодитись?",
+			func() -> void: wants_duel_answer.emit(true),
+			func() -> void: wants_duel_answer.emit(false))
+	_duel_inviting = true
+
+
+var _duel_inviting := false
+
+
+func duel_invite_gone() -> void:
+	if _duel_inviting and _confirm_box != null and _confirm_box.visible \
+			and _confirm_text.text.contains("викликає тебе на бій"):
+		hide_confirm()
+	_duel_inviting = false
+
+
 ## Запрошення прострочилось — ховаємо питання, якщо це ще воно.
 func trade_invite_gone() -> void:
 	if _trade_inviting and _confirm_box != null and _confirm_box.visible \
@@ -2911,6 +2936,21 @@ func _build_target() -> void:
 			if _target > 0:
 				wants_trade_invite.emit(_target))
 	_target_box.add_child(_target_trade)
+	# Виклик на арену (П-260) — там само й за тих самих умов: ціль-гравець.
+	_target_duel = Button.new()
+	_target_duel.name = "Виклик"
+	_target_duel.text = "Виклик"
+	_target_duel.size = Vector2(70, 24)
+	_target_duel.custom_minimum_size = _target_duel.size
+	_target_duel.position = Vector2(WIDE + 84.0, 8)
+	_target_duel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_target_duel.visible = false
+	_target_duel.tooltip_text = "покликати на бій на арені: речі там не " \
+			+ "губляться (треба стояти поруч)"
+	_target_duel.pressed.connect(func() -> void:
+			if _target > 0:
+				wants_duel_invite.emit(_target))
+	_target_box.add_child(_target_duel)
 
 
 ## Панель 1-7 і черга дій — унизу посередині (П-20, П-38, П-58).
@@ -3099,6 +3139,7 @@ func set_target(id: int) -> void:
 	# Гравці — у додатних номерах; себе на обмін не кличуть.
 	_target_trade.visible = id > 0 \
 			and id != _world.multiplayer.get_unique_id()
+	_target_duel.visible = _target_trade.visible
 	if id != 0:
 		# Ім'я й колір беремо в світу: він знає, хто це і якої різниці
 		# рівнів. Показ не рахує нічого сам (П-08).

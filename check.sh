@@ -431,6 +431,81 @@ run_trade() {
     fi
 }
 
+# ── погоджений PvP: виклик і арена (П-260) ─────────────────────────────
+#
+# Два справжні клієнти через справжній сервер: ведучий (`--веде`) кличе
+# другого на арену, той погоджується, обох переносить, б'є лише ведучий.
+# Звіряємо: обидва побували на арені, переможений не загубив речей, і
+# обох повернуло туди, звідки покликали. Ведучий стоїть на місці — йому
+# не далі 1 м; другий у мить згоди ще йде до ведучого (кличуть за 4 м, а
+# підходить він до 2,5), і його останнє місце на клієнті розходиться з
+# серверним на крок-два — йому не далі 3 м.
+run_duel() {
+    head_of "Арена: виклик, бій за згодою, повернення"
+    stop_server
+    start_server "$logs/server-duel.log" --полігон \
+        || { say_bad "сервер не піднявся"; return; }
+    : > "$logs/duel-lead.log"
+    : > "$logs/duel-follow.log"
+    godot --headless --path game -- --демо --арена --веде "$test_world" \
+        > "$logs/duel-lead.log" 2>&1 &
+    own_client=$!
+    sleep 2
+    godot --headless --path game -- --демо --арена "$test_world" \
+        > "$logs/duel-follow.log" 2>&1 &
+    own_client2=$!
+    local waited=0
+    while [ "$waited" -lt 150 ]; do
+        if grep -q '\[арена\] показ закінчив' "$logs/duel-lead.log" \
+            && grep -q '\[арена\] показ закінчив' "$logs/duel-follow.log"
+        then
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    kill "$own_client" "$own_client2" 2>/dev/null
+    wait "$own_client" "$own_client2" 2>/dev/null
+    own_client=""
+    own_client2=""
+    printf '    (бій зайняв %d с)\n' "$waited"
+
+    local side log line far most
+    for side in lead follow; do
+        most=$([ "$side" = lead ] && echo 1.0 || echo 3.0)
+        log="$logs/duel-$side.log"
+        grep -q '\[арена\] показ: на арені' "$log" \
+            && say_ok "$side: $(grep -m1 -o 'на арені, стою в .*' "$log")" \
+            || { say_bad "$side: на арену не перенесло"; continue; }
+        line=$(grep -m1 -o 'показ закінчив: .*' "$log")
+        far=$(printf '%s' "$line" | grep -o 'за [0-9.]* м' | grep -o '[0-9.]*')
+        if [ -z "$far" ]; then
+            say_bad "$side: назад не повернуло за 150 с"
+        elif awk -v f="$far" -v m="$most" 'BEGIN { exit !(f <= m) }'; then
+            say_ok "$side: ${line#показ закінчив: }"
+        else
+            say_bad "$side: повернуло задалеко — $line"
+        fi
+    done
+    grep -q 'поразка. речі не загублено' "$logs/duel-follow.log" \
+        && say_ok "переможений: «поразка. речі не загублено»" \
+        || say_bad "переможений не дістав «поразки»"
+    grep -q 'загублено, лежить на землі' "$logs/duel-follow.log" \
+        && say_bad "на арені впали речі"
+    grep -q '\[арена\] .* переміг ' "$logs/server-duel.log" \
+        && say_ok "сервер записав: $(grep -m1 -o '\[арена\] .* переміг .*' \
+            "$logs/server-duel.log")" \
+        || say_bad "у журналі сервера немає переможця"
+    grep -q '\[pvp\]' "$logs/server-duel.log" \
+        && say_bad "на арені хтось флагнутий: $(grep -m1 '\[pvp\]' \
+            "$logs/server-duel.log")"
+    if grep -q 'ERROR' "$logs/duel-lead.log" "$logs/duel-follow.log"; then
+        say_bad "у журналах клієнтів є помилки:"
+        grep -h -m3 'ERROR' "$logs/duel-lead.log" "$logs/duel-follow.log" \
+            | sed 's/^/      /'
+    fi
+}
+
 # ── пам'ять не росте ──────────────────────────────────────────────────
 #
 # Найдорожча вада проєкту була саме така: вічний цикл у показі набирав по
@@ -497,6 +572,9 @@ case "$mode" in
     --обмін)
         run_trade
         ;;
+    --арена)
+        run_duel
+        ;;
     --швидко)
         run_lint
         run_server
@@ -510,6 +588,7 @@ case "$mode" in
         run_fight
         run_shop
         run_trade
+        run_duel
         run_memory
         ;;
 esac

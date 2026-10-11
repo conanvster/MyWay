@@ -171,12 +171,15 @@ func _go() -> void:
 	_yes("без зброї ламати нічого", smith.break_weapon(me, book).is_empty())
 
 	# Наскрізь через бій: удар, що звів міцність у нуль, ламає зброю.
-	var hare: Node = world.spawn(2, Vector3(1, 30, 0))
+	# Монстр — від'ємний номер: додатний `spawn` робить гравцем, а удар по
+	# гравцю в місті з П-88 (Р-7, 11.10.2026) не діє зовсім.
+	var hare: Node = world.spawn(-2, Vector3(1, 30, 0))
+	hare.setup(Vector3(1, 30, 0), 2, false, world.data.for_kind(2))
 	var axe: Item = book.make(SWORD)
 	axe.durability = 1
 	me.items = {}
 	me.equip(me.add_thing(axe))
-	me.target_id = 2
+	me.target_id = -2
 	hare.hp = 1000000
 	# Мережі в пробі немає: замість торби клієнтові — лічильник.
 	var bag_sent: Array = []
@@ -187,7 +190,7 @@ func _go() -> void:
 			me.worn_in("зброя") == null and me.items == {metal: 1})
 	_yes("світ шле торбу гравцеві %s" % [bag_sent], bag_sent == [1])
 	hare.queue_free()
-	world.creatures.erase(2)
+	world.creatures.erase(-2)
 
 	print("\n— магічна чи фізична —")
 	var amulet: Item = book.make(AMULET)

@@ -2174,6 +2174,58 @@ func ask_enchant(at: int, thing_at: int) -> void:
 	_send_smith(id, at, who.title())
 
 
+## Кування (П-22, П-258): усі рецепти й скільки якого металу в торбі.
+## Рецепти рахує сервер — клієнт лише показує й просить «оцю річ».
+@rpc("any_peer", "call_remote", "reliable")
+func ask_forge(at: int) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.forges():
+		return
+	_send_forge(id, at, who.title())
+
+
+func _send_forge(id: int, at: int, title: String) -> void:
+	var a: Node = creatures.get(id)
+	if a == null:
+		return
+	var rows: Array = []
+	var metals := {}
+	for base: String in data.smith.recipes(data.items):
+		var info: Dictionary = data.items.base_of(base)
+		var needs: Dictionary = data.smith.recipe(base, data.items)
+		for name: String in needs:
+			metals[name] = int(a.items.get(name, 0))
+		rows.append({"назва": base, "грейд": str(info.get("грейд", "")),
+				"вид": str(info.get("вид", "")),
+				"слот": str(info.get("слот", "")),
+				"стати": info.get("стати", {}), "ціна": int(info.get("ціна", 0)),
+				"речі": needs})
+	rpc_id(id, "client_forge", at, title, rows, metals)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func ask_craft(at: int, base: String) -> void:
+	if not Net.is_server:
+		return
+	var id := multiplayer.get_remote_sender_id()
+	var who: NPC = _resident(id, at)
+	if who == null or not who.forges():
+		return
+	var a: Node = creatures.get(id)
+	var why: String = data.smith.forge(a, base, data.items)
+	if why != "":
+		link.notice(id, why)
+		return
+	link.notice(id, "%s: скуто «%s»" % [who.title(),
+			data.smith.forged.title()])
+	print("[коваль] %d скував %s" % [id, data.smith.forged.title()])
+	_after_bag(id, a)
+	_send_forge(id, at, who.title())
+
+
 ## Перенести. Ціну беремо ЩЕ РАЗ тут, а не ту, що надіслав клієнт:
 ## інакше «телепорт за 1 монету» робиться однією правкою пакета (P1).
 @rpc("any_peer", "call_remote", "reliable")
@@ -3168,6 +3220,10 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 				rpc_id(1, "ask_ports", at))
 		hud.wants_smith.connect(func(at: int) -> void:
 				rpc_id(1, "ask_smith", at))
+		hud.wants_forge.connect(func(at: int) -> void:
+				rpc_id(1, "ask_forge", at))
+		hud.wants_craft.connect(func(at: int, base: String) -> void:
+				rpc_id(1, "ask_craft", at, base))
 		hud.wants_repair.connect(func(at: int, thing_at: int) -> void:
 				rpc_id(1, "ask_repair", at, thing_at))
 		hud.wants_enchant.connect(func(at: int, thing_at: int) -> void:
@@ -3485,6 +3541,14 @@ func client_talk(at: int, title: String, trades: bool,
 	if hud != null:
 		hud.show_talk(at, title, trades, warehouse_keeper, guild_master,
 				priest, mage, super_buff, smith)
+
+
+## Коваль: що можна скувати й скільки металу в торбі (П-258).
+@rpc("authority", "call_remote", "reliable")
+func client_forge(at: int, title: String, rows: Array,
+		metals: Dictionary) -> void:
+	if hud != null:
+		hud.show_forge(at, title, rows, metals)
 
 
 ## Коваль: що в тебе є, почому ремонт і що просить зачарування.

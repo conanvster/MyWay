@@ -79,13 +79,83 @@ func repair_cost(item: Item, book: ItemBook) -> int:
 			roundi(price * float(r.get("частка ціни", 0.3)) * lost))
 
 
-## З чого річ скрафчено: «матеріал → скільки». Рецептів ще немає (П-22),
-## тож до них — «крафт заглушка»: метал грейду з таблиці зачарування.
-func craft_materials(item: Item) -> Dictionary:
+## Рецепт кування (П-22, П-258 — слово замовника 11.10.2026: «усе
+## спорядження, рецепт = матеріали грейду ×10»): метал грейду речі ×
+## «крафт → матеріалу». Порожньо — це не кується: річ не з «видів» або
+## без грейду (квестові амулети професій, П-224).
+func recipe(base: String, book: ItemBook) -> Dictionary:
+	if book == null or not book.has(base):
+		return {}
+	var data: Dictionary = book.base_of(base)
+	var craft: Dictionary = rules.get("крафт", {})
+	if not str(data.get("вид", "")) in Array(craft.get("види", [])):
+		return {}
+	if not data.has("грейд"):
+		return {}
+	return _metal_times(str(data["грейд"]), int(craft.get("матеріалу", 0)))
+
+
+func _metal_times(grade: String, count: int) -> Dictionary:
 	var metal := str(rules.get("зачарування", {}).get("матеріал", {})
-			.get(item.grade, ""))
-	var count := int(rules.get("поломка", {}).get("крафт заглушка", 0))
+			.get(grade, ""))
 	return {metal: count} if metal != "" and count > 0 else {}
+
+
+## З чого річ скрафчено: «матеріал → скільки» — її рецепт. Без книги
+## речей (проба міцності) — той самий метал грейду × «матеріалу».
+func craft_materials(item: Item, book: ItemBook = null) -> Dictionary:
+	if book != null and book.has(item.base):
+		return recipe(item.base, book)
+	return _metal_times(item.grade,
+			int(rules.get("крафт", {}).get("матеріалу", 0)))
+
+
+## Усе, що кується, — назви баз за грейдом і назвою.
+func recipes(book: ItemBook) -> Array:
+	var out: Array = []
+	for base: String in book.bases.keys():
+		if not recipe(base, book).is_empty():
+			out.append(base)
+	out.sort_custom(func(a: String, b: String) -> bool:
+		var ga := ItemBook.GRADES.find(str(book.base_of(a)["грейд"]))
+		var gb := ItemBook.GRADES.find(str(book.base_of(b)["грейд"]))
+		return ga < gb if ga != gb else a < b)
+	return out
+
+
+## Чого бракує на кування: порожньо — усього досить.
+func missing_to_forge(who: Node, base: String, book: ItemBook) -> Array:
+	var needs := recipe(base, book)
+	var out: Array = []
+	for name: String in needs:
+		var lack := int(needs[name]) - int(who.items.get(name, 0))
+		if lack > 0:
+			out.append("%s ×%d" % [name, lack])
+	return out
+
+
+## Скувати `base`: забрати матеріали, покласти в торбу нову річ — таку
+## саму, як із дропу (афікси кидає `ItemBook.make`). Повертає причину
+## відмови або порожньо; скуте — у `forged`.
+var forged: Item = null
+
+
+func forge(who: Node, base: String, book: ItemBook) -> String:
+	forged = null
+	var needs := recipe(base, book)
+	if needs.is_empty():
+		return "%s не кується" % base
+	var lacking := missing_to_forge(who, base, book)
+	if not lacking.is_empty():
+		return "бракує: %s" % ", ".join(lacking)
+	var item: Item = book.make(base)
+	if item == null:
+		return "%s не кується" % base
+	for name: String in needs:
+		who.take_item(name, int(needs[name]))
+	who.add_thing(item)
+	forged = item
+	return ""
 
 
 ## Що лишає зламана зброя (П-234, слово замовника 01.10.2026): «до
@@ -95,7 +165,7 @@ func craft_materials(item: Item) -> Dictionary:
 func break_yield(item: Item, book: ItemBook) -> Dictionary:
 	var r: Dictionary = rules.get("поломка", {})
 	var out := {}
-	var craft := craft_materials(item)
+	var craft := craft_materials(item, book)
 	for name: String in craft:
 		_add_share(out, name, int(craft[name]),
 				float(r.get("частка крафту", 0.1)))

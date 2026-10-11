@@ -132,6 +132,7 @@ func setup(world: Node) -> void:
 	_build_talk()
 	_build_ports()
 	_build_smith()
+	_build_forge()
 	_build_shop()
 	_build_warehouse()
 	_build_trade()
@@ -1115,6 +1116,9 @@ signal wants_port(at: int, town: String)
 signal wants_smith(at: int)
 signal wants_repair(at: int, thing_at: int)
 signal wants_enchant(at: int, thing_at: int)
+## Кування (П-258): вікно рецептів і «скувати оце».
+signal wants_forge(at: int)
+signal wants_craft(at: int, base: String)
 signal wants_learn_skill(at: int, key: String)
 ## Узяти наступну професію й злити два вміння в одне (П-224).
 signal wants_take_profession(at: int, key: String)
@@ -1141,6 +1145,7 @@ var _talk_bless: Button
 var _talk_mage: Button
 var _talk_super: Button
 var _talk_smith: Button
+var _talk_forge: Button
 var _talk_with := -1
 
 ## Підтвердження дії (П-159). Одне вікно на всі випадки: питання
@@ -1274,6 +1279,16 @@ func _build_talk() -> void:
 				wants_smith.emit(_talk_with)
 			_talk_box.visible = false)
 	page.add_child(_talk_smith)
+
+	_talk_forge = Button.new()
+	_talk_forge.text = "Кування"
+	_talk_forge.size = Vector2(TALK_INNER.x, 32)
+	_talk_forge.custom_minimum_size = _talk_forge.size
+	_talk_forge.pressed.connect(func() -> void:
+			if _talk_with >= 0:
+				wants_forge.emit(_talk_with)
+			_talk_box.visible = false)
+	page.add_child(_talk_forge)
 
 
 ## Карта світу: скільки точок на бік. Квадратна, бо квадратний і світ.
@@ -1593,11 +1608,12 @@ func show_talk(at: int, title: String, trades: bool,
 	_talk_mage.visible = mage
 	_talk_super.visible = super_buff
 	_talk_smith.visible = smith
+	_talk_forge.visible = smith
 	# Видимі кнопки — підряд згори: у кожного мешканця своя одна-дві, і
 	# на сталих місцях кнопка священика висіла б під трьома порожніми.
 	var row := 0
 	for button: Button in [_talk_trade, _talk_warehouse, _talk_guild,
-			_talk_bless, _talk_mage, _talk_smith, _talk_super]:
+			_talk_bless, _talk_mage, _talk_smith, _talk_forge, _talk_super]:
 		if button.visible:
 			button.position.y = 40 + row * 40
 			row += 1
@@ -1786,6 +1802,126 @@ func _smith_row(row: Dictionary) -> Control:
 			if _smith_with >= 0:
 				wants_enchant.emit(_smith_with, at))
 	line.add_child(charm)
+	return line
+
+
+## Кування (П-22, П-258): рецепти по грейдах — вкладка на грейд, бо
+## разом їх 158. Рядок: річ, її стати й ціна, скільки металу є з
+## потрібних, кнопка. Чого бракує — видно ДО натиску, як і в ремонті.
+const FORGE_INNER := Vector2(560, 400)
+
+var _forge_box: WindowBox
+var _forge_title: Label
+var _forge_list: VBoxContainer
+var _forge_tabs: HBoxContainer
+var _forge_with := -1
+var _forge_grade := "E"
+var _forge_rows: Array = []
+var _forge_metals: Dictionary = {}
+
+
+func _build_forge() -> void:
+	_forge_box = WindowBox.new()
+	_forge_box.name = "ВікноКування"
+	_forge_box.setup("Кування", FORGE_INNER)
+	_forge_box.set_anchors_preset(Control.PRESET_CENTER)
+	_forge_box.position = -_forge_box.size * 0.5
+	_root.add_child(_forge_box)
+	var page: Control = _forge_box.body
+	_forge_title = _text(15, page)
+	_forge_title.text = "—"
+	var hint := _text(11, page)
+	hint.position = Vector2(0, 20)
+	hint.modulate = CAPTION_COLOR
+	hint.text = "рецепт — метал грейду ×10; скута річ така сама, як із " \
+			+ "дропу: афікси випадають так само"
+	_forge_tabs = HBoxContainer.new()
+	_forge_tabs.position = Vector2(0, 40)
+	_forge_tabs.add_theme_constant_override("separation", 4)
+	page.add_child(_forge_tabs)
+	for grade: String in ItemBook.GRADES:
+		var tab := Button.new()
+		tab.name = "Грейд" + grade
+		tab.text = grade
+		tab.toggle_mode = true
+		tab.custom_minimum_size = Vector2(44, 26)
+		tab.pressed.connect(func() -> void:
+				_forge_grade = grade
+				_fill_forge())
+		_forge_tabs.add_child(tab)
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(0, 74)
+	scroll.size = Vector2(FORGE_INNER.x, FORGE_INNER.y - 74)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	_forge_list = VBoxContainer.new()
+	_forge_list.custom_minimum_size = Vector2(FORGE_INNER.x - 14, 0)
+	_forge_list.add_theme_constant_override("separation", 6)
+	scroll.add_child(_forge_list)
+
+
+## `rows` і `metals` — те, що порахував сервер (`world._send_forge`).
+func show_forge(at: int, title: String, rows: Array,
+		metals: Dictionary) -> void:
+	if _forge_box == null:
+		return
+	_forge_with = at
+	_forge_title.text = title
+	_forge_rows = rows
+	_forge_metals = metals
+	_fill_forge()
+	_forge_box.visible = true
+	_forge_box._keep_on_screen()
+
+
+func _fill_forge() -> void:
+	for tab: Button in _forge_tabs.get_children():
+		tab.set_pressed_no_signal(tab.text == _forge_grade)
+	for old in _forge_list.get_children():
+		old.queue_free()
+	for row: Dictionary in _forge_rows:
+		if str(row.get("грейд", "")) == _forge_grade:
+			_forge_list.add_child(_forge_row(row))
+
+
+func _forge_row(row: Dictionary) -> Control:
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 6)
+	var about := Label.new()
+	about.custom_minimum_size = Vector2(300, 0)
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	about.add_theme_font_size_override("font_size", 12)
+	var stats: Array = []
+	var own: Dictionary = row.get("стати", {})
+	for stat in own:
+		stats.append("%s +%d" % [stat, int(own[stat])])
+	about.text = "%s · %s\n%s · ціна %d" % [row.get("грейд", ""),
+			row.get("назва", ""),
+			", ".join(stats) if not stats.is_empty() else row.get("вид", ""),
+			int(row.get("ціна", 0))]
+	line.add_child(about)
+	var needs: Dictionary = row.get("речі", {})
+	var parts: Array = []
+	var enough := true
+	for name: String in needs:
+		var have := int(_forge_metals.get(name, 0))
+		parts.append("%s %d/%d" % [name, have, int(needs[name])])
+		enough = enough and have >= int(needs[name])
+	var stuff := Label.new()
+	stuff.custom_minimum_size = Vector2(130, 0)
+	stuff.add_theme_font_size_override("font_size", 12)
+	stuff.text = "\n".join(parts)
+	stuff.modulate = Color.WHITE if enough else Color(1.0, 0.6, 0.55)
+	line.add_child(stuff)
+	var make := Button.new()
+	make.custom_minimum_size = Vector2(100, 30)
+	make.text = "Скувати" if enough else "Бракує"
+	make.disabled = not enough
+	var base := str(row.get("назва", ""))
+	make.pressed.connect(func() -> void:
+			if _forge_with >= 0:
+				wants_craft.emit(_forge_with, base))
+	line.add_child(make)
 	return line
 
 

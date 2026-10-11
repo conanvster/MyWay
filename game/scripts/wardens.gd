@@ -57,6 +57,7 @@ func setup(map: Dictionary) -> void:
 	rules = map.get("охорона поселень", {})
 	settlements.clear()
 	_home_of.clear()
+	var towns: int = Array(map.get("міста", [])).size()
 	var places: Array = map.get("міста", []) + map.get("села", []) as Array
 	var at := 0
 	for place: Dictionary in places:
@@ -69,6 +70,8 @@ func setup(map: Dictionary) -> void:
 			"пости": [],
 			"вартові": [],
 			"чорний список": {},
+			# Місто, не село: лише в місті удар по гравцю не діє (П-88).
+			"місто": settlements.size() < towns,
 		}
 		for who: Dictionary in place.get("мешканці", []):
 			if str(who.get("ремесло", "")) == GUARD_CRAFT:
@@ -90,6 +93,16 @@ func setup(map: Dictionary) -> void:
 
 ## Здоров'я й захист мешканця — з даних, з запасом на випадок, коли
 ## ключа немає (тоді чесно друкуємо, що беремо сталі коду).
+## Чи точка в місті (П-88: тут удар по гравцю не діє). Села — ні: у них
+## немає ні точок появи, ні майстерень, заради яких правило писалось.
+func in_town(at: Vector3) -> bool:
+	for one: Dictionary in settlements:
+		if one["місто"] and Vector2(at.x, at.z).distance_to(one["центр"]) \
+				<= one["радіус"]:
+			return true
+	return false
+
+
 func resident_max_hp() -> int:
 	return int(rules.get("здоров'я мешканця", 6000))
 

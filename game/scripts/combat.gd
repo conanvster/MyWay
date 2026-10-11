@@ -63,6 +63,8 @@ func attack(me: int) -> bool:
 	if dist > a.ATTACK_RANGE:
 		_out_of_reach(me, "attack")
 		return false
+	if not _pvp_ok(me, a.target_id):
+		return false
 
 	# Куди дивиться жертва — брати ДО того, як нападник розвернеться до
 	# неї, інакше в бік себе самого (П-40).
@@ -356,6 +358,11 @@ func _victims_for(a: Node, me: int, skill: Skill, level: int,
 	if skill.power_share(level) > 0.0 and _forbidden(me, a.target_id):
 		_link.notice(me, "своїх не б'ють")
 		return []
+	var near: bool = a.global_position.distance_to(
+			victim.global_position) <= reach
+	if skill.power_share(level) > 0.0 and near \
+			and not _pvp_ok(me, a.target_id):
+		return []
 	if a.global_position.distance_to(victim.global_position) > reach:
 		if chase != "":
 			_out_of_reach(me, chase)
@@ -470,6 +477,24 @@ func _out_of_reach(me: int, action: String) -> void:
 var agreed_pvp: Callable
 
 
+## Флаг і позначка вбивця (П-26/П-87). Ставить світ; без нього (проби
+## бою) PvP іде, як ішов.
+var outlaws: Outlaws = null
+
+
+## Удар гравця (чи його прикликаного) по гравцю: у місті не діє (П-88),
+## інакше — флаг. Погоджений бій (арена, П-259) — поза флагом.
+func _pvp_ok(me: int, victim_id: int) -> bool:
+	var attacker := payee(me)
+	if outlaws == null or attacker <= 0 or victim_id <= 0 \
+			or _agreed(me, victim_id):
+		return true
+	if outlaws.allow_hit(attacker, victim_id):
+		return true
+	_link.notice(me, "у місті удар по гравцю не діє")
+	return false
+
+
 func _agreed(me: int, victim_id: int) -> bool:
 	var killer := payee(me)
 	if killer <= 0 or victim_id <= 0 or not agreed_pvp.is_valid():
@@ -492,8 +517,20 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		# речі не падають; у непогодженому (флаг, П-26/П-64) — падають, як
 		# від монстра.
 		var gone_all: Array = []
-		if not _agreed(me, victim_id):
-			gone_all = progress.lose_items(victim, goods, ground)
+		var agreed := _agreed(me, victim_id)
+		if not agreed:
+			# Позначений вбивця губить більше: ×1,1 за кожне своє вбивство
+			# (П-261) — рахунок ДО цієї смерті.
+			var more: float = outlaws.loss_multiplier(victim) \
+					if outlaws != null else 1.0
+			gone_all = progress.lose_items(victim, goods, ground, more)
+			if more > 1.0:
+				print("[pvp] %d позначений — речей падає ×%.2f"
+						% [victim_id, more])
+		# Убитий бачить факт, а не ім'я вбивці (П-88).
+		if not agreed and outlaws != null \
+				and outlaws.on_kill(payee(me), victim_id):
+			_link.notice(victim_id, "тебе вбито; вбивця позначений")
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)
 			print("[смерть] %d загубив %s" % [victim_id, gone])
@@ -552,6 +589,8 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 			if goods.has(essence):
 				_give(me, killer, essence, randi_range(int(rule.get("від", 1)),
 						int(rule.get("до", 1))))
+	if outlaws != null:
+		outlaws.monster_killed(killer, victim.level)
 	if on_reward.is_valid():
 		on_reward.call(me, killer, victim)
 

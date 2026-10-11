@@ -214,6 +214,8 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		# Взяте завдання переходу (П-227): без нього після перезаходу
 		# лічильник «0|10» почався б наново.
 		"quest": who.quest,
+		# Позначка вбивці (П-87): без неї вийти й зайти означало б її зняти.
+		"outlaw": who.outlaw,
 		"items": who.items,
 		"things": _things_row(who),
 		"warehouse_items": who.warehouse_items,
@@ -279,6 +281,10 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	var quest: Dictionary = row.get("quest", {})
 	who.quest = {"професія": str(quest.get("професія", "")),
 			"від": int(quest.get("від", 0))} if not quest.is_empty() else {}
+	var mark: Dictionary = row.get("outlaw", {})
+	who.outlaw = {"вбивств": int(mark.get("вбивств", 0)),
+			"згасає за": float(mark.get("згасає за", Outlaws.DECAY_TIME))} \
+			if int(mark.get("вбивств", 0)) > 0 else {}
 	who.items = _whole(row.get("items", {}))
 	who.warehouse_items = _whole(row.get("warehouse_items", {}))
 	who.gear = _whole(row.get("gear", {}))

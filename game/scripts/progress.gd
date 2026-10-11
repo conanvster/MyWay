@@ -89,7 +89,8 @@ func death_loss(who: Node) -> int:
 ## Повертає перелік того, що зникло, — щоб сказати гравцеві словами.
 ## `ground` є — втрачене лягає на землю біля загиблого (П-160), немає —
 ## зникає, як до 01.10.2026 (так ганяють пробу без світу).
-func lose_items(who: Node, goods: Object, ground: Ground = null) -> Array:
+func lose_items(who: Node, goods: Object, ground: Ground = null,
+		more: float = 1.0) -> Array:
 	var chances: Dictionary = grid.get("втрата речей", {})
 	if chances.is_empty():
 		return []
@@ -99,8 +100,9 @@ func lose_items(who: Node, goods: Object, ground: Ground = null) -> Array:
 		var kind: String = goods.kind_of(name) if goods != null else "ресурс"
 		if kind == "гроші":
 			continue                      # гроші поки не губляться
-		var chance: float = float(chances.get(
-				"ресурси" if kind == "ресурс" else "лут", 0.0))
+		# Позначеному вбивці — більше (П-261): `more` = 1,1 за вбивство.
+		var chance: float = minf(1.0, more * float(chances.get(
+				"ресурси" if kind == "ресурс" else "лут", 0.0)))
 		var count: int = int(who.items[name])
 		var gone := 0
 		for i in count:
@@ -118,8 +120,8 @@ func lose_items(who: Node, goods: Object, ground: Ground = null) -> Array:
 	# Поодинокі перебираємо з кінця: `drop_thing` зсуває номери.
 	for at in range(who.things.size() - 1, -1, -1):
 		var worn: bool = who.is_worn(at)
-		var chance: float = float(chances.get(
-				"вдягнене" if worn else "лут", 0.0))
+		var chance: float = minf(1.0, more * float(chances.get(
+				"вдягнене" if worn else "лут", 0.0)))
 		if randf() >= chance:
 			continue
 		var item: Item = who.drop_thing(at)

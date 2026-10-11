@@ -58,6 +58,10 @@ var trade: Trade
 var summons: Summons
 ## Охорона поселень і здоров'я мешканців (П-262). Лише на сервері.
 var wardens: Wardens
+## Флаг і позначка вбивці (П-26/П-87, П-261). Лише на сервері.
+var outlaws: Outlaws
+## Клієнт: номер гравця → скільки на ньому вбивств (колір імені, П-87).
+var _outlaw_kills: Dictionary = {}
 ## Речі на землі (П-160): викинуте й загублене при смерті.
 var ground := Ground.new()
 var runes: Runes
@@ -137,6 +141,11 @@ func _ready() -> void:
 	wardens = Wardens.new(creatures, link)
 	wardens.names = _names
 	wardens.setup(data.map)
+	outlaws = Outlaws.new(creatures)
+	outlaws.in_town = wardens.in_town
+	outlaws.on_changed = func(id: int, kills: int) -> void:
+			link.to_all(&"client_outlaw", [id, kills])
+	combat.outlaws = outlaws
 	combat.ground = ground
 	actions.ground = ground
 	combat.on_bag_changed = func(me: int) -> void:
@@ -360,6 +369,7 @@ func _physics_process(delta: float) -> void:
 		_tick_trade(delta)
 		summons.tick(delta)
 		wardens.tick(delta)
+		outlaws.tick(delta)
 		_tick_ground(delta)
 		_tick_range(delta)
 		if store != null and store.due(delta):
@@ -1456,6 +1466,7 @@ func _shrine_zones() -> Array:
 
 func _on_joined(id: int) -> void:
 	_tell_residents(id)
+	_tell_outlaws(id)
 	# 6 м запасу, як і в spawner.gd: падає сам, сідає на видиму поверхню.
 	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 6.0, 0))
 	_tell_shrines(id)
@@ -1468,6 +1479,9 @@ func _on_joined(id: int) -> void:
 				if name != _names.get(id, "") or not creatures.has(id):
 					return
 				Store.apply_row(creatures[id], row, data.items)
+				# Позначка вбивці прийшла з бази — колір імені всім (П-87).
+				link.to_all(&"client_outlaw",
+						[id, outlaws.kills_of(creatures[id])])
 				_rescue(creatures[id], name)
 				# Стартові скіли даються ПІСЛЯ читання: інакше прочитане
 				# з бази («скілів немає») затирає їх, і новий персонаж
@@ -1858,6 +1872,23 @@ func _resident(id: int, at: int) -> NPC:
 
 
 ## Поранені й убиті мешканці — тому, хто щойно зайшов (П-262).
+## Колір імені кожного позначеного — тому, хто щойно зайшов (П-87).
+func _tell_outlaws(peer: int) -> void:
+	for other: int in creatures:
+		if other > 0 and outlaws.kills_of(creatures[other]) > 0:
+			rpc_id(peer, "client_outlaw", other,
+					outlaws.kills_of(creatures[other]))
+
+
+@rpc("authority", "call_remote", "reliable")
+func client_outlaw(id: int, kills: int) -> void:
+	if kills > 0:
+		_outlaw_kills[id] = kills
+	else:
+		_outlaw_kills.erase(id)
+	_tag(id)
+
+
 func _tell_residents(peer: int) -> void:
 	for row: Array in wardens.state_rows():
 		rpc_id(peer, "client_resident_hp", row[0], row[1],
@@ -2863,6 +2894,7 @@ func _on_left(id: int) -> void:
 	# Стіл обміну закривається, а не висить: другий лишився б сам на сам
 	# із вікном, у якому вже ніхто не відповість.
 	summons.dismiss(id)
+	outlaws.forget(id)
 	var other: int = trade.forget(id)
 	if other != 0:
 		_trade_closed(other, "%s вийшов із гри" % _names.get(id, "гравець"))
@@ -3035,6 +3067,11 @@ func _tag(id: int) -> void:
 		return          # над собою підпис не потрібен — це й так ти
 	var title: String = _titles.get(id, "?")
 	var text := "%s  [%d]" % [title, who.level] if id < 0 else title
+	# Ім'я гравця — свій канал (П-87): біле → червоне за вбивствами; за
+	# різницею рівнів фарбуються лише монстри (П-126).
+	if id > 0:
+		who.show_tag(text, Outlaws.name_color(int(_outlaw_kills.get(id, 0))))
+		return
 	who.show_tag(text, HUD.level_color(who.level - _my_level))
 
 

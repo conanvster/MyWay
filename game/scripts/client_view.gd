@@ -1417,6 +1417,21 @@ var _wait_range := 0.0
 var _wait_left := 0.0
 
 
+## Перенесло (`world.client_place`): не бігти до старої точки й не
+## підходити до старої цілі — вони лишились там, звідки перенесло.
+func forget_intent() -> void:
+	var me: Node = _me()
+	if me != null:
+		me.walk_to = Vector3.ZERO
+	_wait_slot = -1
+	_wait_talk = -1
+	_wait_hit = false
+	_wait_target = 0
+	_wait_left = 0.0
+	_chases = 0
+	forget_resident()
+
+
 func set_bar(bar: Array) -> void:
 	_bar.assign(bar)
 

@@ -177,7 +177,7 @@ func send_to(id: int, spot: Vector2, why: String = "перенос") -> void:
 	if c == null:
 		return
 	var high: float = ground_height.call(spot.x, spot.y)
-	c.place_at(Vector3(spot.x, high + 6.0, spot.y), 0.0)
+	c.teleport_to(Vector3(spot.x, high + 6.0, spot.y), 0.0)
 	print("[%s] %d поставлено в (%.0f, %.0f) на висоті %.2f"
 			% [why, id, spot.x, spot.y, c.global_position.y])
 	# Окремим повідомленням, бо переставляння має бути стрибком:

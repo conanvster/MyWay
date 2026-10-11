@@ -1013,7 +1013,7 @@ func _raise_level(at: int, level: int, template: String, with_seed: int,
 ## Поставити гравця на вхід рівня `key` і сказати, де він.
 func _arrive(id: int, a: Node, key: int) -> void:
 	var entry: Dictionary = dungeons.open[key]
-	a.place_at(dungeons.entry_point(key), 0.0)
+	a.teleport_to(dungeons.entry_point(key), 0.0)
 	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
 	link.to_one(id, &"client_place", [id, a.global_position, a.facing])
 	link.notice(id, "підземелля «%s» · ворота %s · рівень %d з %d"
@@ -1091,7 +1091,7 @@ func leave_dungeon(id: int) -> void:
 	if flat > PORTAL_REACH:
 		link.notice(id, "вихід задалеко")
 		return
-	a.place_at(_beside_shrine(Dungeons.shrine_of(key)), 0.0)
+	a.teleport_to(_beside_shrine(Dungeons.shrine_of(key)), 0.0)
 	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
 	link.notice(id, "повернувся до святині")
 
@@ -1247,7 +1247,7 @@ func _shut(at: int, penalty: bool) -> void:
 					a.global_position.z)
 			if key < 0 or Dungeons.shrine_of(key) != at:
 				continue
-			a.place_at(back, 0.0)
+			a.teleport_to(back, 0.0)
 			link.to_watchers(id, &"client_place",
 					[id, a.global_position, a.facing])
 			link.to_one(id, &"client_place",
@@ -2683,7 +2683,7 @@ func duel_answer(id: int, yes: bool) -> void:
 		a.target_id = 0
 		link.to_one(one, &"client_arena", [slot])
 		# Обличчям одне до одного: перший на заході дивиться на схід.
-		a.place_at(Duels.start_point(slot, side),
+		a.teleport_to(Duels.start_point(slot, side),
 				PI * 0.5 if side == 0 else -PI * 0.5)
 		link.to_watchers(one, &"client_place", [one, a.global_position,
 				a.facing])
@@ -3069,7 +3069,7 @@ func _on_left(id: int) -> void:
 	var back: Variant = duels.forget(id)
 	var who: Node = creatures.get(id)
 	if back != null and who != null:
-		who.place_at(back, who.facing)
+		who.teleport_to(back, who.facing)
 		if rival != 0:
 			link.notice(rival, "%s вийшов із гри — перемога за тобою"
 					% _names.get(id, "гравець"))
@@ -3296,6 +3296,12 @@ func tint_of(id: int) -> Color:
 func client_place(id: int, pos: Vector3, look: float) -> void:
 	if creatures.has(id):
 		creatures[id].place_at(pos, look)
+	# Мене перенесло — свої наміри теж забути: куди біг мишею, кого
+	# вибрав і до кого підходив, щоб ударити (слово замовника 11.10.2026).
+	if id == multiplayer.get_unique_id():
+		client_target(0)
+		if view != null:
+			view.forget_intent()
 
 
 ## Сервер каже: без входу не пустимо (крок 5).
@@ -3751,7 +3757,7 @@ func _rescue(a: Node3D, who: String) -> void:
 	var high := ground_at(town.x, town.y)
 	# 6 м запасу, як при вході й у `combat.send_home`: падає сам і сідає
 	# на видиму поверхню, а не в ґрунт.
-	a.place_at(Vector3(town.x, high + 6.0, town.y), a.facing)
+	a.teleport_to(Vector3(town.x, high + 6.0, town.y), a.facing)
 	print("[база] ‼ %s: %s — переніс у найближче місто (%.0f, %.0f)"
 			% [who, why, town.x, town.y])
 

@@ -26,6 +26,12 @@ func remove(name: String) -> bool:
 	return _by_name.erase(name)
 
 
+## Зняти все — смерть (слово замовника 11.10.2026: «після смерті
+## повинні зніматися бафи та дебафи»).
+func clear() -> void:
+	_by_name.clear()
+
+
 func has(name: String) -> bool:
 	return _by_name.has(name)
 

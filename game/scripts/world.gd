@@ -1966,7 +1966,8 @@ func hit_resident(id: int, at: int) -> int:
 	a.busy_in = a.stats.swing_time()
 	a.in_fight = a.FIGHT_TIME
 	a.sit(false)
-	link.to_watchers(id, &"client_swing", [id, a.worn_in("зброя") != null])
+	link.to_watchers(id, &"client_swing", [id, a.worn_in("зброя") != null,
+			a.attack_ready_in])
 	var hit: int = wardens.hit_resident(id, at, a.stats.physical_attack())
 	link.to_all(&"client_resident_hp",
 			[at, wardens.hp_of(at), wardens.resident_max_hp()])
@@ -3606,7 +3607,7 @@ func client_guild(at: int, rows: Array,
 ## (П-162): бере рішення сервер (`combat.attack`), клієнту чуже
 ## спорядження не відомо.
 @rpc("authority", "call_remote", "reliable")
-func client_swing(id: int, armed: bool = false) -> void:
+func client_swing(id: int, armed: bool = false, gap: float = 0.0) -> void:
 	var a: Node = creatures.get(id)
 	# Людину веде view.swung() (П-162: Punch_Jab/Cross чи Sword_Attack) —
 	# старий generic swing() тут же одразу перебив би той самий вибір.
@@ -3615,7 +3616,7 @@ func client_swing(id: int, armed: bool = false) -> void:
 		if body != null:
 			body.swing()
 	if view != null:
-		view.swung(id, armed)
+		view.swung(id, armed, gap)
 
 
 ## Число шкоди над головою.

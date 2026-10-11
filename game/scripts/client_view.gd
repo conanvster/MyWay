@@ -38,6 +38,15 @@ const COMBAT_STANCE := 2.0    ## П-162: «2 секунди після бою»
 const STRIKE_HOLD := 0.7      ## П-162: сам удар — «не менше 0,7 с»
 const LOCOMOTION_HOLD := 1.0  ## П-162: хода/біг/плавання — «не менше 1 с»
 const HIT_FLASH := 0.6
+## Темп рухів (11.10.2026): швидкість, за якої кліп грає як у файлі.
+## Хода — база бігу без бафів (`Stats.move_speed`), біг — поріг бігу.
+const WALK_REF := 5.0
+const JOG_REF := JOG_SPEED
+## Пауза між ударами за середньої спритності й без бафів
+## (`Stats.attack_cooldown`). Коротша — замах швидший у стільки ж разів.
+const SWING_REF := 1.2
+const TEMPO_MIN := 0.6
+const TEMPO_MAX := 3.0
 ## Не дати першому ж кадру забити Enter/Exit одразу на Idle-каст.
 const CAST_ENTER_LOCK := 0.4
 const CAST_EXIT_LOCK := 0.35
@@ -413,6 +422,10 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 		moved: Vector3, delta: float) -> void:
 	var st: Dictionary = _anim.get(id, {})
 	var now := Time.get_ticks_msec() / 1000.0
+	# Темп: поки триває удар — його власний (`swung`), решта рухів — як у
+	# файлі; хода й біг нижче ставлять свій від швидкості.
+	body.set_tempo(st.get("темп_удару", 1.0)
+			if now < st.get("удар_до", 0.0) else 1.0)
 
 	if not a.is_alive():
 		# lay_down() (creature.gd) уже поставив Death01 в момент смерті;
@@ -484,12 +497,18 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 	# коливається біля порогу, чи то й ту саму хитку `backward`, шарпає
 	# Walk/Jog/Idle туди-сюди частіше, ніж за секунду виходить помітити.
 	var locked: String = st.get("лок_рух", "")
+	var shown := desired
 	if locked != "" and locked != desired and now < st.get("лок_до", 0.0):
-		body.show_move(locked, backward)
+		shown = locked
 	else:
-		body.show_move(desired, backward)
 		st["лок_рух"] = desired
 		st["лок_до"] = now + LOCOMOTION_HOLD
+	body.show_move(shown, backward)
+	# Ноги в такт швидкості: баф на біг — частіший крок, дебаф — рідший.
+	if shown == "Walk":
+		body.set_tempo(clampf(speed / WALK_REF, TEMPO_MIN, TEMPO_MAX))
+	elif shown == "Jog_Fwd":
+		body.set_tempo(clampf(speed / JOG_REF, TEMPO_MIN, TEMPO_MAX))
 	_anim[id] = st
 
 
@@ -504,7 +523,7 @@ func _underwater(a: Node3D) -> bool:
 
 ## Замахнувся: `armed` вирішує, який рух — сервер знає спорядження,
 ## клієнт ні. Punch_Jab/Punch_Cross чергуються (слово замовника).
-func swung(id: int, armed: bool) -> void:
+func swung(id: int, armed: bool, gap: float = 0.0) -> void:
 	var a: Node = _creatures.get(id)
 	var body: Node3D = a.model() if a != null else null
 	var rich: bool = body is SkinnedModel and a.has_method("apply_sex")
@@ -520,9 +539,17 @@ func swung(id: int, armed: bool) -> void:
 	# Спершу сам удар не менше STRIKE_HOLD (П-162), і лише ПІСЛЯ нього —
 	# COMBAT_STANCE стійки; інакше стійка перебивала б удар одразу на
 	# наступному кадрі, і його не встигали побачити.
+	# Бафом прискорений удар — швидший замах і коротше тримання: інакше
+	# наступний удар приходив би раніше, ніж скінчився попередній.
+	# Повільніше за файл не граємо: повільний боєць просто довше стоїть.
+	var tempo := 1.0
+	if gap > 0.0:
+		tempo = clampf(SWING_REF / gap, 1.0, TEMPO_MAX)
+	body.set_tempo(tempo)
+	st["темп_удару"] = tempo
 	var now := Time.get_ticks_msec() / 1000.0
-	st["удар_до"] = now + STRIKE_HOLD
-	st["бій_до"] = now + STRIKE_HOLD + COMBAT_STANCE
+	st["удар_до"] = now + STRIKE_HOLD / tempo
+	st["бій_до"] = now + STRIKE_HOLD / tempo + COMBAT_STANCE
 	_anim[id] = st
 
 

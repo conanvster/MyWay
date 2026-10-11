@@ -84,7 +84,9 @@ func attack(me: int) -> bool:
 	# Замах бачать ті, хто бачить того, хто б'є. Зброя — тут же: чи
 	# показати Sword_Attack, чи Punch_Jab/Punch_Cross (П-162), знає лише
 	# сервер (`worn_in`) — клієнту чуже спорядження не шлють узагалі.
-	_link.to_watchers(me, &"client_swing", [me, a.worn_in("зброя") != null])
+	# Третє — пауза між ударами: з неї клієнт рахує темп замаху.
+	_link.to_watchers(me, &"client_swing", [me, a.worn_in("зброя") != null,
+			a.attack_ready_in])
 	var power: float = a.stats.physical_attack()
 	if behind:
 		# Чуття жертви зрізає надбавку: сприйняття захищає від удару в

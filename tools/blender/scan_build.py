@@ -142,7 +142,9 @@ def main():
     if cfg["body"] == "legacy":
         raise SystemExit("‼ %s — тип «%s»: окремий білдер %s (ще не узагальнено)"
                          % (name, cfg["profile"], cfg.get("script")))
-    look = mob_look(name)
+    # Аватар (`not_mob` у профілі) — не вид mobs.json, вигляду там немає.
+    look = {"зріст": cfg.get("height", 1.0)} if cfg.get("not_mob") \
+        else mob_look(name)
     height = float(look.get("зріст", 1.0))
     stem = model_file(name, look)
     folder = os.path.join(ROOT, "art", "monsters", cfg["source"] + "-3d")

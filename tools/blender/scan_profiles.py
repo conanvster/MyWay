@@ -166,6 +166,13 @@ SPECIES = {
     "гнол-мисливець": dict(profile="гуманоїди-хутряні", who="hyena-headed gnoll hunter with a bone-tipped spear", tail=True, yaw=50),
     "гнол-воїн": dict(profile="гуманоїди-хутряні", who="gnoll warrior", template="гнол-мисливець"),
     "лисолюд-шаман": dict(profile="гуманоїди-хутряні", who="foxfolk shaman", tail=True, template="гнол-мисливець"),
+    # Орчиха-аватар (11.10.2026, слово замовника: «зроби локальним
+    # конвеєром … модель орка»; «додай в гру, я перевірю, які рухи є») —
+    # сітка Pixal3D з wiki/img/rasy/орк-жінка-v1.png як є, без пози Kontext.
+    "орк-жінка-v1-локально": dict(profile="гуманоїди",
+                                  who="female orc warrior with a long cloak",
+                                  weld_after=True, not_mob=True,
+                                  height=1.9),  # як орк у грі (проба races)
     "вовкулака-новак": dict(profile="гуманоїди-хутряні", who="young werewolf", tail=True, template="гнол-мисливець"),
 }
 

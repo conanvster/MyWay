@@ -24,6 +24,10 @@ extends SceneTree
 ##   W A S D — точку вперед/ліворуч/назад/праворуч, Q E — вниз/вгору;
 ##   клік по фігурі — навести на неї; 1 2 3 4 — ряд зайця/вовка/кажана/скорпіона;
 ##   R — загальний вид і самообертання; пробіл — знімок; Esc — вийти.
+##
+## Одна довільна модель (11.10.2026, слово замовника «додай в гру, я
+## перевірю, які рухи у цієї орчихи є») — усі її рухи, не лише MOVES:
+##     ./run.sh --звірі-скан --модель res://models/own/<файл>.glb [--зріст 1.9]
 ## Щойно людина торкнулась керування — камера сама вже не ходить.
 
 const KINDS := ["заєць", "вовк", "кажан", "скорпіон"]
@@ -113,7 +117,11 @@ func _go() -> void:
 
 	var widest := 0
 	var rows: Array = []
-	for kind: String in KINDS:
+	var single := _single(args)
+	if not single.is_empty():
+		rows.append(single)
+		widest = single["moves"].size()
+	for kind: String in ([] if not single.is_empty() else KINDS):
 		var look := _look(data, kind)
 		if look.is_empty():
 			print("  ‼ немає виду «%s» у data/mobs.json" % kind)
@@ -133,6 +141,10 @@ func _go() -> void:
 		rows.append({"kind": kind, "look": look, "moves": moves})
 		widest = maxi(widest, moves.size())
 
+	if rows.is_empty():
+		print("  ‼ показувати нічого")
+		quit(1)
+		return
 	var ground := MeshInstance3D.new()
 	var plate := BoxMesh.new()
 	plate.size = Vector3(widest * STEP_X + 4.0, 0.2, rows.size() * STEP_Z + 4.0)
@@ -183,7 +195,8 @@ func _go() -> void:
 				player.play(move)
 
 			var tag := Label3D.new()
-			tag.text = "%s: %s" % [row["kind"], move]
+			tag.text = move if not single.is_empty() \
+					else "%s: %s" % [row["kind"], move]
 			tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			tag.font_size = 40
 			tag.outline_size = 12
@@ -372,3 +385,34 @@ func _look(data: Dictionary, kind: String) -> Dictionary:
 		if row is Dictionary and str(row.get("назва", "")) == kind:
 			return row.get("вигляд", {})
 	return {}
+
+
+## `--модель <шлях> [--зріст N]` → рядок з усіма рухами файлу. Порожньо —
+## ключа немає; файлу немає — гучно й порожньо.
+func _single(args: PackedStringArray) -> Dictionary:
+	var at := args.find("--модель")
+	if at < 0 or at + 1 >= args.size():
+		return {}
+	var path := args[at + 1]
+	if not ResourceLoader.exists(path):
+		print("  ‼ немає моделі %s" % path)
+		return {}
+	var tall := 1.0
+	var h := args.find("--зріст")
+	if h >= 0 and h + 1 < args.size():
+		tall = float(args[h + 1])
+	var probe: Node3D = (load(path) as PackedScene).instantiate()
+	var player: AnimationPlayer = probe.find_child("AnimationPlayer", true,
+			false)
+	var moves: Array = []
+	if player != null:
+		for m: String in player.get_animation_list():
+			if m != "RESET":
+				moves.append(m)
+	probe.free()
+	print("  %s: рухів %d — %s" % [path.get_file(), moves.size(),
+			", ".join(PackedStringArray(moves))])
+	if moves.is_empty():
+		moves.append("RESET")
+	return {"kind": path.get_file().get_basename(),
+			"look": {"модель": path, "зріст": tall}, "moves": moves}

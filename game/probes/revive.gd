@@ -1,8 +1,8 @@
-extends SceneTree
+extends Node
 ## Проба вікна смерті: підйом у місто числами.
 ##
 ## Ганяти так:
-##     godot --headless --path game --script res://probes/revive.gd
+##     godot --headless --path game res://scenes/revive.tscn
 ##
 ## Досі труп гравця лежав двадцять хвилин і підводився сам (П-69) —
 ## гра після смерті просто спинялась. Кнопка «Повернутися в місто» робить
@@ -29,23 +29,24 @@ class Recorder extends Messenger:
 		return out
 
 
-func _init() -> void:
+func _ready() -> void:
+	Net.joined = true
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	await _revive()
 	await _window()
 	await _menu()
-	quit()
+	get_tree().quit()
 
 
 func _revive() -> void:
 	print("\n— підйом у місто —")
 	var hero: Node3D = AVATAR.instantiate()
-	root.add_child(hero)
-	await process_frame
+	get_tree().root.add_child(hero)
+	await get_tree().process_frame
 	hero.place_at(Vector3(40, 1.5, 40), 0.0)
 	var creatures := {1: hero}
 	var vision := Vision.new(creatures)
@@ -79,9 +80,9 @@ func _revive() -> void:
 func _window() -> void:
 	print("\n— вікно смерті —")
 	var hud := HUD.new()
-	root.add_child(hud)
-	hud.setup(root)
-	await process_frame
+	get_tree().root.add_child(hud)
+	hud.setup(get_tree().root)
+	await get_tree().process_frame
 	var heard := [false]
 	hud.wants_revive.connect(func() -> void: heard[0] = true)
 
@@ -105,13 +106,12 @@ func _window() -> void:
 func _menu() -> void:
 	print("\n— меню й стати —")
 	var hud := HUD.new()
-	root.add_child(hud)
-	hud.setup(root)
-	await process_frame
+	get_tree().root.add_child(hud)
+	hud.setup(get_tree().root)
+	await get_tree().process_frame
 	var menu: Control = hud.find_child("Меню", true, false)
 	var page: Control = hud.find_child("СторінкаСтатів", true, false)
-	var numbers: Label = hud.find_child("Числа", true, false)
-	if menu == null or page == null or numbers == null:
+	if menu == null or page == null:
 		print("  ‼ меню не зібралось")
 		return
 	var names := PackedStringArray()
@@ -135,8 +135,15 @@ func _menu() -> void:
 		if child is Button and child.text == "Стати":
 			child.pressed.emit()
 	print("  після натиску видно: %s" % [page.visible])
+	# Кожне число — своя мітка, названа полем (так сторінку зібрано з
+	# коміту «Вікна гри: паперова лялька»; одного тексту «Числа» вже немає).
 	print("  на сторінці:")
-	for line in numbers.text.split("\n"):
-		if line != "":
-			print("      %s" % line)
+	for field in ["рівень", "вільних очок", "сила", "здоров'я",
+			"фіз. атака", "маг. захист"]:
+		var value: Label = page.find_child(
+				field.validate_node_name(), true, false)
+		if value == null:
+			print("  ‼ немає поля «%s»" % field)
+			continue
+		print("      %s: %s" % [field, value.text])
 	hud.queue_free()

@@ -20,6 +20,7 @@ class Dummy extends Node:
 	var base_stats := Stats.new()
 	var stats := Stats.new()
 	var states := States.new()
+	var quest := {}
 
 
 func _ready() -> void:
@@ -46,6 +47,10 @@ func _go() -> void:
 	me.states.apply(State.new("клич хоробрості", "strength", 1.2, 15.0))
 	me.stats = me.states.applied_to(me.base_stats)
 	var world: Node = WORLD.new()
+	# Рядок статів з 10.10.2026 несе й лічильник квесту (П-227), а той
+	# читає професії — без даних світ падає на першому ж полі.
+	world.data = GameData.new()
+	world.data.load_all()
 	var row: Dictionary = world._stats_row(me)
 	world.free()
 	print("  рядок: %s" % [row])

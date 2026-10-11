@@ -1,8 +1,8 @@
-extends SceneTree
+extends Node
 ## Проба панелі: чи справді скіл можна перекласти й чи не покладеш чужого.
 ##
 ## Ганяти так:
-##     godot --headless --path game --script res://probes/bar.gd
+##     godot --headless --path game res://scenes/bar.tscn
 ##
 ## Перевіряє три речі:
 ##   1. вікно «Скіли» показує те, що вивчено, і віддає дані перетягування;
@@ -13,23 +13,24 @@ extends SceneTree
 const AVATAR := preload("res://scenes/avatar.tscn")
 
 
-func _init() -> void:
+func _ready() -> void:
+	Net.joined = true
 	call_deferred("_go")
 
 
 func _go() -> void:
-	await process_frame
+	await get_tree().process_frame
 	await _window()
 	_saving()
-	quit()
+	get_tree().quit()
 
 
 func _window() -> void:
 	print("\n— вікно «Скіли» й перетягування —")
 	var hud := HUD.new()
-	root.add_child(hud)
-	hud.setup(root)
-	await process_frame
+	get_tree().root.add_child(hud)
+	hud.setup(get_tree().root)
+	await get_tree().process_frame
 
 	var bar := ["attack", "next_mob", "скіл:енергетичний-промінь",
 			"скіл:енергетичний-вибух", "taunt", "next_player", "corpse_skill"]
@@ -39,7 +40,7 @@ func _window() -> void:
 		 "грейд": "E", "рівень": 1, "рівнів": 3, "мана": 8, "дальність": 4.0},
 		{"ключ": "енергетичний-промінь", "назва": "енергетичний промінь",
 		 "грейд": "E", "рівень": 2, "рівнів": 4, "мана": 17, "дальність": 13.0}])
-	await process_frame
+	await get_tree().process_frame
 
 	var grid: GridContainer = hud.find_child("Сітка", true, false)
 	print("  комірок у вікні: %d" % grid.get_child_count())
@@ -74,13 +75,13 @@ func _window() -> void:
 func _saving() -> void:
 	print("\n— розкладка переживає збереження —")
 	var hero: Node3D = AVATAR.instantiate()
-	root.add_child(hero)
+	get_tree().root.add_child(hero)
 	hero.bar.assign(["attack", "скіл:енергетичний-промінь", "", "", "", "", ""])
 	var row := Store.row_of("Проба", hero)
 	print("  у рядок пішло: %s" % [row.get("bar")])
 
 	var other: Node3D = AVATAR.instantiate()
-	root.add_child(other)
+	get_tree().root.add_child(other)
 	print("  у нового типова: %s" % [other.bar])
 	Store.apply_row(other, row)
 	print("  після читання:  %s" % [other.bar])

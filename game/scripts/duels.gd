@@ -51,6 +51,9 @@ var _slot_of: Dictionary = {}
 ## Місце -> збудований вузол арени.
 var _built: Dictionary = {}
 var names: Dictionary = {}
+## Гонець для журналу подій. Світ підставляє свого; без нього рядок
+## іде лише в консоль, як і було.
+var link: Messenger = Messenger.new()
 
 
 func _name(id: int) -> String:
@@ -165,7 +168,7 @@ func accept(to: int, a: Node, b: Node) -> Dictionary:
 	}
 	_slot_of[from] = slot
 	_slot_of[to] = slot
-	print("[арена] %s проти %s, місце %d" % [_name(from), _name(to), slot])
+	link.report(from, "[арена] %s проти %s, місце %d" % [_name(from), _name(to), slot])
 	return {"місце": slot, "хто": [from, to]}
 
 
@@ -180,7 +183,7 @@ func on_death(id: int) -> int:
 	var winner := opponent(id)
 	duel["кінець"] = RETURN_AFTER
 	duel["переміг"] = winner
-	print("[арена] %s переміг %s" % [_name(winner), _name(id)])
+	link.report(winner, "[арена] %s переміг %s" % [_name(winner), _name(id)])
 	return winner
 
 

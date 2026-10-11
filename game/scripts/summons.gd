@@ -88,7 +88,7 @@ func call_up(owner: int, what: Dictionary) -> Array:
 		m.summon_left = float(what.get("строк", 60.0))
 		_fit_to(m, master, int(row.get("рівень", 1)))
 		made.append(id)
-	print("[прикликання] %d прикликав %s ×%d на %.0f с"
+	_combat.report(owner, "[прикликання] %d прикликав %s ×%d на %.0f с"
 			% [owner, row.get("назва", "?"), count,
 			   float(what.get("строк", 60.0))])
 	return made

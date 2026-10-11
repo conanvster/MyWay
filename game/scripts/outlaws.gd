@@ -40,6 +40,9 @@ var _pairs: Dictionary = {}
 var in_town: Callable
 ## Хтось змінив рахунок — світ розішле колір імені: (id, вбивств).
 var on_changed: Callable
+## Гонець для журналу подій. Світ підставляє свого; без нього рядок
+## іде лише в консоль, як і було.
+var link: Messenger = Messenger.new()
 
 
 func _init(creatures: Dictionary = {}) -> void:
@@ -67,10 +70,10 @@ func allow_hit(attacker: int, victim: int) -> bool:
 	if pair.is_empty():
 		pair = {"перший": attacker, "відповів": false}
 		_pairs[key] = pair
-		print("[pvp] %d напав на %d — флагнутий" % [attacker, victim])
+		link.report(victim, "[pvp] %d напав на %d — флагнутий" % [attacker, victim])
 	elif int(pair["перший"]) != attacker and not pair["відповів"]:
 		pair["відповів"] = true
-		print("[pvp] %d відповів %d — обидва в PvP" % [attacker, victim])
+		link.report(victim, "[pvp] %d відповів %d — обидва в PvP" % [attacker, victim])
 	pair["лишилось"] = FLAG_TIME
 	return true
 
@@ -104,7 +107,7 @@ func on_kill(killer: int, victim: int) -> bool:
 	# повний строк дістає лише те, що щойно додалось.
 	var left := float(mark.get("згасає за", DECAY_TIME))
 	who.outlaw = {"вбивств": kills, "згасає за": left}
-	print("[pvp] %d убив %d без виклику — позначений, вбивств %d"
+	link.report(victim, "[pvp] %d убив %d без виклику — позначений, вбивств %d"
 			% [killer, victim, kills])
 	if on_changed.is_valid():
 		on_changed.call(killer, kills)

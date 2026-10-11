@@ -142,5 +142,5 @@ func call_for_help(id: int, victim: int) -> int:
 			o.add_threat(victim, 1.0)
 			called += 1
 	if called > 0:
-		print("[монстр] %d покликав своїх: %d" % [id, called])
+		_combat.report(id, "[монстр] %d покликав своїх: %d" % [id, called])
 	return called

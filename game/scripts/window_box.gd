@@ -42,6 +42,12 @@ var _plate: ColorRect
 var _title_plate: ColorRect
 var _shut: Button
 var _edges: Array = []
+## Кнопка «згорнути» — лише у вікон, що її попросили (`add_fold`).
+var _fold: Button
+## Розмір вмісту розгорнутого вікна: до нього вертаємось із згорнутого.
+var _inner := Vector2.ZERO
+## Згорнуте до самої смуги заголовка.
+var folded := false
 
 
 var _gothic := false
@@ -66,6 +72,7 @@ static func _font() -> FontVariation:
 
 func setup(caption: String, inner: Vector2, gothic: bool = false) -> void:
 	_gothic = gothic
+	_inner = inner
 	size = Vector2(inner.x + PAD * 2.0, inner.y + PAD * 2.0 + TITLE_H)
 	custom_minimum_size = size
 	# Вікно ловить мишу цілком: інакше клік по ньому проходить крізь у
@@ -170,13 +177,68 @@ func setup(caption: String, inner: Vector2, gothic: bool = false) -> void:
 ## Змінити розмір уже зібраного вікна. Потрібно «Скілам»: їхня висота
 ## залежить від того, скільки вивчено, а це відомо лише від сервера.
 func resize(inner: Vector2) -> void:
-	size = Vector2(inner.x + PAD * 2.0, inner.y + PAD * 2.0 + TITLE_H)
-	custom_minimum_size = size
+	_inner = inner
+	body.size = inner
+	_lay_out(Vector2(inner.x + PAD * 2.0,
+			TITLE_H if folded else inner.y + PAD * 2.0 + TITLE_H))
+
+
+## Кнопка «згорнути / розгорнути» поруч із хрестиком. Перше таке вікно —
+## «Лог» (11.10.2026): його тримають на екрані постійно, і заважати
+## світові воно не мусить.
+func add_fold() -> void:
+	_fold = Button.new()
+	_fold.name = "Згорнути"
+	_fold.text = "—"
+	_fold.tooltip_text = "згорнути / розгорнути"
+	_fold.size = CLOSE
+	_fold.custom_minimum_size = CLOSE
+	_fold.flat = true
+	_fold.add_theme_font_size_override("font_size", 14)
+	_fold.pressed.connect(func() -> void: set_folded(not folded))
+	_title_bar.add_child(_fold)
+	_lay_out(size)
+
+
+## Сховати хрестик: вікно, яке не закривають, а лише згортають. Інакше
+## закрите вже нічим не відкрити — кнопки в меню в нього немає.
+func no_close() -> void:
+	_shut.visible = false
+	_lay_out(size)
+
+
+## Згорнути до смуги заголовка або розгорнути назад. Вікно в нижній
+## половині екрана тримає НИЖНІЙ край: інакше згорнутий «Лог» у кутку
+## висів би смужкою посеред екрана, а розгорнутий ліз би за низ.
+func set_folded(on: bool) -> void:
+	if on == folded:
+		return
+	var keep_bottom: bool = global_position.y + size.y * 0.5 \
+			> get_viewport_rect().size.y * 0.5
+	var was := size.y
+	folded = on
+	body.visible = not on
+	_lay_out(Vector2(size.x, TITLE_H if on else _inner.y + PAD * 2.0 + TITLE_H))
+	if keep_bottom:
+		position.y += was - size.y
+	_keep_on_screen()
+
+
+## Розкласти тло, заголовок, кнопки й обрис під розмір `whole`.
+func _lay_out(whole: Vector2) -> void:
+	# Спершу мінімум, тоді розмір: менший за старий мінімум розмір
+	# Control мовчки підняв би назад, і вікно не згорнулось би.
+	custom_minimum_size = whole
+	size = whole
 	_plate.size = size
 	_title_bar.size = Vector2(size.x, TITLE_H)
 	_title_plate.size = _title_bar.size
 	_shut.position = Vector2(size.x - CLOSE.x - 6, 5)
-	body.size = inner
+	if _fold != null:
+		# Без хрестика кнопка стає в кут, на його місце.
+		_fold.position = _shut.position - Vector2(
+				CLOSE.x + 4 if _shut.visible else 0.0, 0)
+		_fold.text = "□" if folded else "—"
 	var shapes: Array = [Vector2(size.x, 1), Vector2(size.x, 1),
 			Vector2(1, size.y), Vector2(1, size.y)]
 	var spots: Array = [Vector2.ZERO, Vector2(0, size.y - 1),

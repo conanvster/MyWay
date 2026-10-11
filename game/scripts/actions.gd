@@ -251,7 +251,7 @@ func _taunt(me: int) -> void:
 	for id in t.threat:
 		most = maxf(most, t.threat[id])
 	t.add_threat(me, most - t.threat.get(me, 0.0) + 20.0)
-	print("[монстр] %d перемкнувся на %d" % [a.target_id, me])
+	_link.report(a.target_id, "[монстр] %d перемкнувся на %d" % [a.target_id, me])
 
 
 ## Заглушка замість справжніх умінь по трупах — продовжує строк.
@@ -266,4 +266,4 @@ func _corpse_skill(me: int) -> void:
 		_link.notice(me, "неможливо застосувати на даному типі цілі")
 		return
 	t.extend_corpse()
-	print("[труп] %d продовжено до %.0f с" % [a.target_id, t.corpse_left])
+	_link.report(a.target_id, "[труп] %d продовжено до %.0f с" % [a.target_id, t.corpse_left])

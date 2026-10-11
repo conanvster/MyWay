@@ -145,6 +145,7 @@ func _ready() -> void:
 	wardens.names = _names
 	wardens.setup(data.map)
 	outlaws = Outlaws.new(creatures)
+	outlaws.link = link
 	outlaws.in_town = wardens.in_town
 	outlaws.on_changed = func(id: int, kills: int) -> void:
 			link.to_all(&"client_outlaw", [id, kills])
@@ -163,6 +164,7 @@ func _ready() -> void:
 	dungeons.name = "Підземелля"
 	add_child(dungeons)
 	duels = Duels.new()
+	duels.link = link
 	duels.name = "Арени"
 	duels.names = _names
 	add_child(duels)
@@ -1131,7 +1133,7 @@ func _on_reward(me: int, killer: Node, victim: Node) -> void:
 func _check_branches(id: int, a: Node) -> void:
 	for title: String in data.professions.open_ready(a):
 		link.notice(id, "відкрито приховану гілку: %s" % title)
-		print("[професії] %d відкрив гілку «%s»" % [id, title])
+		link.report(id, "[професії] %d відкрив гілку «%s»" % [id, title])
 
 
 ## Хтось загинув (кличе `combat._kill`). Цікавить лише бос рівня
@@ -1968,11 +1970,11 @@ func hit_resident(id: int, at: int) -> int:
 	var hit: int = wardens.hit_resident(id, at, a.stats.physical_attack())
 	link.to_all(&"client_resident_hp",
 			[at, wardens.hp_of(at), wardens.resident_max_hp()])
-	print("[охорона] %d вдарив мешканця %d (%s) на %d, лишилось %d"
+	link.report(id, "[охорона] %d вдарив мешканця %d (%s) на %d, лишилось %d"
 			% [id, at, who.title(), hit, wardens.hp_of(at)])
 	if wardens.is_dead(at):
 		link.to_all(&"client_resident_down", [at])
-		print("[охорона] мешканця %d (%s) убито" % [at, who.title()])
+		link.report(id, "[охорона] мешканця %d (%s) убито" % [at, who.title()])
 	return hit
 
 
@@ -2148,7 +2150,7 @@ func ask_repair(at: int, thing_at: int) -> void:
 		return
 	link.notice(id, "%s: полагоджено «%s»" % [who.title(),
 			a.things[thing_at].title()])
-	print("[коваль] %d полагодив %s" % [id, a.things[thing_at].base])
+	link.report(id, "[коваль] %d полагодив %s" % [id, a.things[thing_at].base])
 	_after_bag(id, a)
 	_send_smith(id, at, who.title())
 
@@ -2169,7 +2171,7 @@ func ask_enchant(at: int, thing_at: int) -> void:
 	var text := Smith.rune_text(data.smith.last)
 	link.notice(id, "%s: на «%s» лягла руна — %s" % [who.title(),
 			a.things[thing_at].title(), text])
-	print("[коваль] %d зачарував %s: %s" % [id, a.things[thing_at].base, text])
+	link.report(id, "[коваль] %d зачарував %s: %s" % [id, a.things[thing_at].base, text])
 	_after_bag(id, a)
 	_send_smith(id, at, who.title())
 
@@ -2221,7 +2223,7 @@ func ask_craft(at: int, base: String) -> void:
 		return
 	link.notice(id, "%s: скуто «%s»" % [who.title(),
 			data.smith.forged.title()])
-	print("[коваль] %d скував %s" % [id, data.smith.forged.title()])
+	link.report(id, "[коваль] %d скував %s" % [id, data.smith.forged.title()])
 	_after_bag(id, a)
 	_send_forge(id, at, who.title())
 
@@ -2880,7 +2882,7 @@ func ask_take_quest(at: int, key: String) -> void:
 		link.notice(id, "завдання «%s»: %s" % [
 				str(data.professions.quest_of(key).get("назва", "")),
 				data.professions.quest_line(a)])
-		print("[професії] %d узяв завдання на «%s»" % [id, key])
+		link.report(id, "[професії] %d узяв завдання на «%s»" % [id, key])
 		send_stats(id)
 	rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 
@@ -2902,7 +2904,7 @@ func ask_take_profession(at: int, key: String) -> void:
 		rpc_id(id, "client_guild", at, _guild_rows(a), _guild_about(a))
 		return
 	link.notice(id, "тепер ти %s" % data.professions.name_of(key))
-	print("[професії] %d став: %s (етап %d)"
+	link.report(id, "[професії] %d став: %s (етап %d)"
 			% [id, key, data.professions.stage_of(key)])
 	_check_branches(id, a)
 	send_stats(id)
@@ -3247,6 +3249,8 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 
 ## Імена всього, що видно: номер -> як підписувати.
 var _titles: Dictionary = {}
+## Як у рядку журналу шукати номери (див. `named`). Збирається раз.
+var _id_word: RegEx
 ## Мій рівень: від нього рахується колір чужого імені.
 var _my_level := 1
 
@@ -3649,6 +3653,32 @@ func client_notice(text: String) -> void:
 	print("[гра] ", text)
 	if hud != null:
 		hud.notice(text)
+
+
+## Рядок журналу подій від сервера (`Messenger.report`) — у вікно «Лог».
+@rpc("authority", "call_remote", "reliable")
+func client_log(text: String) -> void:
+	if hud != null:
+		hud.log_line(named(text))
+
+
+## Номери істот у рядку журналу — їхніми іменами. Сервер пише номери
+## (так і в консолі); ім'я знає клієнт, бо бачить цю істоту. Міняємо
+## лише ті числа, що є номерами відомих істот: «лишилось 0», «рівня 1»,
+## «1200 с» номерами не бувають — монстри від'ємні, гравці величезні.
+## Кого клієнт уже не бачить — лишається номером.
+func named(text: String) -> String:
+	if _id_word == null:
+		_id_word = RegEx.create_from_string("(?<![\\d.,])-?\\d+(?![\\d.%]|,\\d)")
+	var out := ""
+	var from := 0
+	for m: RegExMatch in _id_word.search_all(text):
+		var id := int(m.get_string())
+		if not _titles.has(id):
+			continue
+		out += text.substr(from, m.get_start() - from) + str(_titles[id])
+		from = m.get_end()
+	return out + text.substr(from)
 
 
 @rpc("authority", "call_remote", "reliable")

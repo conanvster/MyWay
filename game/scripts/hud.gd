@@ -18,6 +18,22 @@ const CELL := 56.0         ## сторона комірки панелі
 const GAP := 6.0
 const MESSAGES := 5        ## скільки повідомлень тримати на екрані
 const MESSAGE_TIME := 6.0
+## Вікно «Лог»: розмір вмісту й скільки рядків тримати. Ширина — щоб
+## стати ліворуч від панелі скілів, не налазячи на неї.
+const LOG_INNER := Vector2(320, 150)
+const LOG_LINES := 300
+## Колір рядка журналу за міткою на початку — як у консолі сервера.
+const LOG_COLORS := {
+	"[бій]": Color(0.92, 0.92, 0.9),
+	"[скіл]": Color(0.6, 0.78, 1.0),
+	"[каст]": Color(0.6, 0.78, 1.0),
+	"[смерть]": Color(1.0, 0.45, 0.4),
+	"[pvp]": Color(1.0, 0.45, 0.4),
+	"[монстр]": Color(1.0, 0.7, 0.4),
+	"[рівень]": Color(0.55, 0.95, 0.55),
+	"[гра]": Color(1, 0.86, 0.6),
+}
+const LOG_OTHER := Color(0.78, 0.78, 0.74)
 const FLOAT_TIME := 1.1    ## скільки летить число шкоди
 const FLOAT_RISE := 46.0
 
@@ -104,6 +120,8 @@ var _level_text: Label
 var _cast_left := 0.0
 var _cast_full := 0.0
 var _messages: VBoxContainer
+var _log_box: WindowBox
+var _log_text: RichTextLabel
 var _cells: Array = []
 var _floats: Array = []
 var _coords_text: Label
@@ -123,6 +141,7 @@ func setup(world: Node) -> void:
 	_build_target()
 	_build_panel()
 	_build_cast()
+	_build_log()
 	_build_messages()
 	_build_dead()
 	_build_menu()
@@ -3167,11 +3186,58 @@ func _build_cast() -> void:
 	_cast_text.position = Vector2(6, 0)
 
 
-## Рядок повідомлень — ліворуч унизу. Старі зникають самі.
+## Вікно «Лог» — журнал подій, які сервер пише в консоль (слово
+## замовника 11.10.2026: «зроби вікно логу в грі, за замовчуванням у
+## нижньому лівому, можна перемістити, згорнути, розгорнути»). Видно
+## одразу, хрестика нема — лише згорнути. Текст можна виділити й
+## скопіювати; колесо гортає назад.
+func _build_log() -> void:
+	_log_box = WindowBox.new()
+	_log_box.name = "ВікноЛогу"
+	_log_box.setup("Лог", LOG_INNER)
+	_log_box.add_fold()
+	_log_box.no_close()
+	_log_box.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_log_box.position = Vector2(12, -_log_box.size.y - 12)
+	_log_box.visible = true
+	_root.add_child(_log_box)
+	_log_text = RichTextLabel.new()
+	_log_text.name = "Рядки"
+	_log_text.size = LOG_INNER
+	_log_text.bbcode_enabled = true
+	_log_text.scroll_following = true
+	_log_text.selection_enabled = true
+	_log_text.add_theme_font_size_override("normal_font_size", 13)
+	_log_text.mouse_filter = Control.MOUSE_FILTER_STOP
+	_log_box.body.add_child(_log_text)
+
+
+## Один рядок у «Лог»: час, мітка й текст кольором мітки.
+func log_line(text: String) -> void:
+	var tint: Color = LOG_OTHER
+	for tag: String in LOG_COLORS:
+		if text.begins_with(tag):
+			tint = LOG_COLORS[tag]
+			break
+	var clock: Dictionary = Time.get_time_dict_from_system()
+	_log_text.append_text("[color=#8a8a84]%02d:%02d:%02d[/color] [color=#%s]%s[/color]\n"
+			% [clock.hour, clock.minute, clock.second, tint.to_html(false),
+			text.replace("[", "[lb]")])
+	while _log_text.get_paragraph_count() > LOG_LINES:
+		_log_text.remove_paragraph(0)
+
+
+## Скільки рядків у «Лозі» — для проб.
+func log_count() -> int:
+	return _log_text.get_paragraph_count() - 1
+
+
+## Рядок повідомлень — ліворуч унизу, над «Логом». Старі зникають самі.
 func _build_messages() -> void:
 	_messages = VBoxContainer.new()
 	_messages.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_messages.position = Vector2(16, -140)
+	# Над вікном «Лог», а не поверх нього: обидва в лівому нижньому куті.
+	_messages.position = Vector2(16, -_log_box.size.y - 24 - MESSAGES * 20)
 	_messages.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_messages)
 
@@ -3454,6 +3520,8 @@ func update_level(level: int, respect: int, need: int) -> void:
 
 
 func notice(text: String) -> void:
+	# Повідомлення згасає за кілька секунд — у «Лозі» воно лишається.
+	log_line("[гра] " + text)
 	var line := _text(14, _messages)
 	line.text = text
 	line.modulate = Color(1, 0.86, 0.6)

@@ -24,6 +24,12 @@ func _init(creatures: Dictionary = {}, link: Messenger = null) -> void:
 	_link = link if link != null else Messenger.new()
 
 
+## Рядок у журнал подій — для поведінки монстрів і прикликань, що свого
+## гінця не мають, а йдуть через бій.
+func report(subject: int, text: String) -> void:
+	_link.report(subject, text)
+
+
 ## Обидва тепер у бою, і той, хто сидів, підводиться (П-101).
 func _mark_fight(a: Node, victim: Node) -> void:
 	a.in_fight = a.FIGHT_TIME
@@ -96,7 +102,7 @@ func attack(me: int) -> bool:
 		if not broke.is_empty():
 			_link.notice(me, "‼ «%s» зламалась — у торбі: %s"
 					% [broke["назва"], Smith.yield_text(broke["лишила"])])
-			print("[бій] %d зламав зброю %s, лишилось %s"
+			_link.report(me, "[бій] %d зламав зброю %s, лишилось %s"
 					% [me, broke["назва"], broke["лишила"]])
 			if on_bag_changed.is_valid():
 				on_bag_changed.call(me)
@@ -108,7 +114,7 @@ func attack(me: int) -> bool:
 	# Число шкоди над головою бачать ті самі, хто бачить постраждалого.
 	_link.to_watchers(a.target_id, &"client_damage",
 			[a.target_id, hit, behind])
-	print("[бій] %d вдарив %d%s, лишилось %d"
+	_link.report(a.target_id, "[бій] %d вдарив %d%s, лишилось %d"
 			% [me, a.target_id, " ЗІ СПИНИ" if behind else "", victim.hp])
 	if victim.hp <= 0:
 		_kill(me, a, victim, a.target_id)
@@ -268,7 +274,7 @@ func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 		_link.notice(me, "ти в місті")
 	if not skill.summon.is_empty() and on_summon.is_valid():
 		on_summon.call(me, skill.summon)
-	print("[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
+	_link.report(me, "[скіл] %d застосував %s рівня %d, цілей %d, мани лишилось %d"
 			% [me, skill.name, level, victims.size(), a.mp])
 
 
@@ -309,7 +315,7 @@ func _try_interrupt(victim: Node, id: int, hit: int) -> void:
 	var chance: float = Stats.interrupt_chance(hit, guard)
 	if randf() >= chance:
 		return
-	print("[каст] %d збито ударом на %d (опір %.0f, шанс %.0f%%)"
+	_link.report(id, "[каст] %d збито ударом на %d (опір %.0f, шанс %.0f%%)"
 			% [id, hit, guard, chance * 100.0])
 	victim.stop_cast()
 	victim.busy_in = 0.0
@@ -509,7 +515,7 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	if victim_id > 0:
 		var lost: int = progress.death_loss(victim)
 		_link.notice(victim_id, "втрачено %d поваги" % lost)
-		print("[смерть] %d втратив %d поваги, лишилось %d"
+		_link.report(victim_id, "[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
 		# І частина речей (друга половина П-27). Лягають на землю біля
 		# трупа (П-160) — підняти може будь-хто. PvP двох видів (П-259,
@@ -525,7 +531,7 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 					if outlaws != null else 1.0
 			gone_all = progress.lose_items(victim, goods, ground, more)
 			if more > 1.0:
-				print("[pvp] %d позначений — речей падає ×%.2f"
+				_link.report(victim_id, "[pvp] %d позначений — речей падає ×%.2f"
 						% [victim_id, more])
 		# Убитий бачить факт, а не ім'я вбивці (П-88).
 		if not agreed and outlaws != null \
@@ -533,8 +539,8 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 			_link.notice(victim_id, "тебе вбито; вбивця позначений")
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)
-			print("[смерть] %d загубив %s" % [victim_id, gone])
-	print("[бій] %d загинув, труп лежатиме %.0f с"
+			_link.report(victim_id, "[смерть] %d загубив %s" % [victim_id, gone])
+	_link.report(victim_id, "[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
 	# Гравець або його прикликаний убив монстра — винагорода гравцеві.
@@ -568,7 +574,7 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 	if levels > 0:
 		_link.notice(me, "рівень %d! очок статів: %d"
 				% [killer.level, killer.stat_points])
-		print("[рівень] %d узяв %d рівень" % [me, killer.level])
+		_link.report(me, "[рівень] %d узяв %d рівень" % [me, killer.level])
 
 	for row: Dictionary in victim.drop_table:
 		if randf() > float(row.get("шанс", 0.0)) * mult:

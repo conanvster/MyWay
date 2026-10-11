@@ -121,5 +121,15 @@ func _broken_file() -> void:
 			% [error_string(err), json.get_error_line()])
 	print("  поклик до й після: %.0f -> %.0f (числа не занулились)"
 			% [was, data.for_kind(1)["поклик"]])
-	print("  невідомий вид: %s (має бути порожньо, з гучним рядком вище)"
-			% [data.for_kind(99)])
+	# Невідомий — за межею бестіарію, а не стале число: 99 був «чужим»,
+	# доки видів не стало 218 (В-6). Вартовий (900) — роль, не вид.
+	var unknown := 0
+	for key: String in data.mobs:
+		unknown = maxi(unknown, int(key) + 1)
+	if unknown == Wardens.GUARD_KIND:
+		unknown += 1
+	var got: Dictionary = data.for_kind(unknown)
+	print("  невідомий вид %d: %s (має бути порожньо, з гучним рядком вище)"
+			% [unknown, got])
+	if not got.is_empty():
+		push_error("[проба] вид %d мав бути невідомим" % unknown)

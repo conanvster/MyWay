@@ -81,11 +81,17 @@ const STUCK_CHECK := 0.4
 const STUCK_MIN := 0.25
 const ESCAPE_BACK := 0.35
 const ESCAPE_TURN := 0.55
+## Рефлекс — КРОК, а не секунди: часи вище розраховані на біг без бафа.
+## Під бафом ×3 ті самі 0,9 с відносили гравця на 5 м назад — «тебе
+## відкидає» (слово замовника 11.10.2026). Швидше за цю — коротше.
+const ESCAPE_REF_SPEED := 5.0
 var _stuck_since := Vector3.ZERO
 var _stuck_clock := 0.0
 var _escape_left := 0.0
 var _escape_dir := Vector3.ZERO
 var _escape_diag := Vector3.ZERO
+## Частка рефлексу за швидкістю (`ESCAPE_REF_SPEED`): 1 — без бафа.
+var _escape_k := 1.0
 ## Заклинило: хоче йти, а не зрушив ані на міліметр, — і відступ назад
 ## теж не рятує. Так буває на гострому ребрі стіни підземелля: рушій
 ## рахує нормаль зіткнення навпаки, і капсулу тягне в стіну, в будь-який
@@ -620,7 +626,8 @@ func server_step(delta: float) -> void:
 	if _escape_left > 0.0:
 		# У фазі втечі: спершу назад, тоді по діагоналі — своя пряма на
 		# ціль тут ні до чого, вона й завела в кут.
-		dir = _escape_dir if _escape_left > ESCAPE_TURN else _escape_diag
+		dir = _escape_dir if _escape_left > ESCAPE_TURN * _escape_k \
+				else _escape_diag
 		_escape_left -= delta
 	elif raw_dir.length() > 0.1:
 		_stuck_clock += delta
@@ -633,7 +640,9 @@ func server_step(delta: float) -> void:
 				_escape_dir = -raw_dir
 				_escape_diag = raw_dir.rotated(Vector3.UP,
 						deg_to_rad(70.0) * side)
-				_escape_left = ESCAPE_BACK + ESCAPE_TURN
+				_escape_k = clampf(ESCAPE_REF_SPEED
+						/ maxf(0.1, stats.move_speed()), 0.05, 1.0)
+				_escape_left = (ESCAPE_BACK + ESCAPE_TURN) * _escape_k
 				dir = _escape_dir
 	else:
 		_stuck_clock = 0.0

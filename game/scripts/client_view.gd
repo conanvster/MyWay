@@ -866,7 +866,7 @@ func _talk_to_resident() -> void:
 	_wait_hit = false
 	if me == null or _resident < 0:
 		return
-	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE:
+	if me.where().distance_to(_resident_at) <= Shop.TALK_RANGE:
 		_link.to_server(&"ask_talk", [_resident])
 		return
 	_wait_talk = _resident
@@ -881,7 +881,7 @@ func _strike_resident() -> void:
 	var me: Node = _me()
 	if me == null or _resident < 0:
 		return
-	if me.global_position.distance_to(_resident_at) <= me.ATTACK_RANGE + 0.3:
+	if me.where().distance_to(_resident_at) <= me.ATTACK_RANGE + 0.3:
 		_link.to_server(&"strike_resident", [_resident])
 		return
 	_wait_talk = _resident
@@ -1124,13 +1124,13 @@ func _approach_resident(delta: float) -> void:
 		_say("до мешканця не дійти")
 		return
 	if _wait_hit:
-		if me.global_position.distance_to(_resident_at) <= me.ATTACK_RANGE:
+		if me.where().distance_to(_resident_at) <= me.ATTACK_RANGE:
 			_link.to_server(&"strike_resident", [_wait_talk])
 			me.walk_to = Vector3.ZERO
 			_wait_talk = -1
 			_wait_hit = false
 		return
-	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE * 0.85:
+	if me.where().distance_to(_resident_at) <= Shop.TALK_RANGE * 0.85:
 		_link.to_server(&"ask_talk", [_wait_talk])
 		me.walk_to = Vector3.ZERO
 		_wait_talk = -1
@@ -1579,12 +1579,20 @@ func approach(delta: float) -> void:
 		_wait_slot = -1
 		_say("до цілі не дійти")
 		return
-	if me.global_position.distance_to(target.global_position) <= _wait_range:
+	# За сервером, не за малюнком: намальовані й я, і ціль відстають, і
+	# під бафом на швидкість сервер проносив гравця крізь монстра, а
+	# зіткнення відкидало назад (слово замовника 11.10.2026).
+	var far: float = me.where().distance_to(target.server_position)
+	if far <= _wait_range:
 		_link.to_server(&"use_slot", [_wait_slot, _wait_shift])
 		me.walk_to = Vector3.ZERO
 		_wait_slot = -1
 		return
-	me.walk_to = target.global_position
+	# Майже дійшов, а сервер ще везе — не підганяти: докотиться сам.
+	if far <= _wait_range + me.lead():
+		me.walk_to = Vector3.ZERO
+		return
+	me.walk_to = target.server_position
 
 
 ## Своє повідомлення — тим самим шляхом, що й серверне: у показ і в

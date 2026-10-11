@@ -70,6 +70,21 @@ var is_local := false
 var walk_to := Vector3.ZERO
 ## Наскільки близько треба підійти, щоб рахувати, що дійшов.
 const ARRIVED := 0.8
+## Скільки секунд сервер ще везе після того, як клієнт сказав «стій»:
+## знімок раз на 0,05 с (20 Гц) плюс намір, що вже в дорозі.
+const LEAD := 0.12
+
+## Швидкість за знімками сервера, м/с — для запасу на зупинку.
+##
+## Слово замовника 11.10.2026: «під великим бафом на швидкість аватар
+## пригає через 3-4 метри, а потім повертається назад; до монстра
+## підходиш наскрізь, а потім тебе відкидає». Клієнт вирішував «дійшов»
+## за НАМАЛЬОВАНОЮ позицією, а вона через згладжування й знімки
+## відстає на ~0,15 с: на 5 м/с це пів метра, під бафом — метри. Сервер
+## тим часом проскакував точку, а фігура потім поверталась.
+var server_speed := 0.0
+var _seen_at := Vector3.ZERO
+var _seen_time := 0.0
 
 @onready var _rig: Node3D = $CameraRig
 
@@ -158,6 +173,33 @@ func die() -> void:
 	corpse_left = CORPSE_PLAYER
 
 
+## Де я насправді — за сервером, без згладжування. До першого знімка —
+## де намальований.
+func where() -> Vector3:
+	return server_position if _seen_time > 0.0 else global_position
+
+
+## Скільки ще проїду після «стій» — на стільки раніше й зупинятись.
+func lead() -> float:
+	return server_speed * LEAD
+
+
+## Оновити `server_speed` з нових знімків. Знімок без руху або тиша
+## довше за три знімки — стою.
+func _track_server() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if server_position != _seen_at:
+		var dt := now - _seen_time
+		var flat := Vector2(server_position.x - _seen_at.x,
+				server_position.z - _seen_at.z).length()
+		if _seen_time > 0.0 and dt > 0.0:
+			server_speed = minf(flat / dt, 60.0)
+		_seen_at = server_position
+		_seen_time = now
+	elif now - _seen_time > 0.15:
+		server_speed = 0.0
+
+
 ## Намір цього клієнта у СВІТОВИХ осях: перерахунок за поворотом камери
 ## робить клієнт, бо тільки він знає, куди дивиться.
 func sample_intent() -> Vector2:
@@ -174,12 +216,13 @@ func sample_intent() -> Vector2:
 		input.x += 1.0
 	# Клавіатура старша за мишу: щойно натиснув WASD — наказ іти
 	# скасовується. Інакше персонаж пручався б і йшов у свою точку.
+	_track_server()
 	if input != Vector2.ZERO:
 		walk_to = Vector3.ZERO
 	elif walk_to != Vector3.ZERO:
-		var to := walk_to - global_position
+		var to := walk_to - where()
 		to.y = 0.0
-		if to.length() <= ARRIVED:
+		if to.length() <= ARRIVED + lead():
 			walk_to = Vector3.ZERO
 			move_direction = Vector3.ZERO
 			return Vector2.ZERO

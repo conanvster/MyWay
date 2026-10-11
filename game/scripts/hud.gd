@@ -749,6 +749,67 @@ func _make_cell(parent: Control, at: Vector2, box: Vector2,
 	return {"press": press, "icon": icon, "count": count}
 
 
+## Прокручувана сітка комірок — прилавок крамаря й склад (11.10.2026).
+##
+## Слово замовника: «у крамаря багато чого доступно, але не можу вибрати,
+## бо не видно смуги прокрутки». Сітка була сталою, 4×6, і те, що в неї
+## не влізло, просто не показувалось. Тепер комірок стільки, скільки
+## речей (цілими рядами), видно `rows` рядів, решта — прокруткою: колесо
+## миші або смуга праворуч, яку видно завжди й яку видно ОКОМ.
+func _cell_scroll(page: Control, at: Vector2, columns: int,
+		rows: int) -> Dictionary:
+	var wide := columns * CELL_SIDE + (columns - 1) * CELL_GAP
+	var high := rows * CELL_SIDE + (rows - 1) * CELL_GAP
+	var scroll := ScrollContainer.new()
+	scroll.position = at
+	scroll.size = Vector2(wide + SCROLL_GAP + SCROLL_BAR, high)
+	scroll.custom_minimum_size = scroll.size
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	var bar := scroll.get_v_scroll_bar()
+	bar.custom_minimum_size.x = SCROLL_BAR
+	var track := StyleBoxFlat.new()
+	track.bg_color = Color(0.16, 0.16, 0.18, 0.95)
+	track.set_corner_radius_all(4)
+	bar.add_theme_stylebox_override("scroll", track)
+	for state: String in ["grabber", "grabber_highlight", "grabber_pressed"]:
+		var thumb := StyleBoxFlat.new()
+		thumb.bg_color = Color(0.85, 0.72, 0.4) if state == "grabber" \
+				else Color(1.0, 0.86, 0.5)
+		thumb.set_corner_radius_all(4)
+		bar.add_theme_stylebox_override(state, thumb)
+	page.add_child(scroll)
+	var sheet := Control.new()
+	sheet.custom_minimum_size = Vector2(wide + SCROLL_GAP, high)
+	sheet.mouse_filter = Control.MOUSE_FILTER_PASS
+	scroll.add_child(sheet)
+	return {"scroll": scroll, "sheet": sheet, "columns": columns,
+			"rows": rows, "cells": []}
+
+
+## Комірки під `count` речей: цілими рядами, не менше видимих. Зайві —
+## геть із дерева одразу (див. `notice`: `queue_free` сам не прибирає).
+func _cells_for(grid: Dictionary, count: int) -> Array:
+	var columns: int = grid["columns"]
+	var lines: int = maxi(grid["rows"], ceili(float(count) / columns))
+	var cells: Array = grid["cells"]
+	var sheet: Control = grid["sheet"]
+	while cells.size() < lines * columns:
+		var i := cells.size()
+		var at := Vector2((i % columns) * (CELL_SIDE + CELL_GAP),
+				int(i / columns) * (CELL_SIDE + CELL_GAP))
+		var cell := _make_cell(sheet, at, Vector2(CELL_SIDE, CELL_SIDE))
+		# Колесо над коміркою має гортати сітку, а не пропадати в кнопці.
+		cell["press"].mouse_filter = Control.MOUSE_FILTER_PASS
+		cells.append(cell)
+	while cells.size() > lines * columns:
+		var gone: Dictionary = cells.pop_back()
+		sheet.remove_child(gone["press"])
+		gone["press"].queue_free()
+	sheet.custom_minimum_size.y = lines * CELL_SIDE + (lines - 1) * CELL_GAP
+	return cells
+
+
 func _build_things() -> void:
 	var body_wide := CELL_SIDE * 2.0 + DOLL_WIDE + CELL_GAP * 2.0
 	var body_high := BODY_ROW * 5.0 + CELL_GAP * 4.0
@@ -1154,6 +1215,9 @@ const TALK_INNER := Vector2(240, 268)
 const SHOP_COLUMNS := 4
 const SHOP_ROWS := 6
 const HINT_H := 26.0
+## Смуга прокрутки сіток прилавка й складу — широка, щоб її бачили.
+const SCROLL_BAR := 14.0
+const SCROLL_GAP := 6.0
 
 var _talk_box: WindowBox
 var _talk_title: Label
@@ -1206,6 +1270,8 @@ var _shop_hint: Label
 var _shop_money: Label
 var _mine_cells: Array = []
 var _stock_cells: Array = []
+var _mine_grid: Dictionary = {}
+var _stock_grid: Dictionary = {}
 var _shop_with := -1
 var _buyback := 40
 ## Що зараз у торбі — щоб вікно торгівлі малювало те саме, що й «Речі».
@@ -1946,7 +2012,7 @@ func _forge_row(row: Dictionary) -> Control:
 
 func _build_shop() -> void:
 	var grid := Vector2(SHOP_COLUMNS * CELL_SIDE
-			+ (SHOP_COLUMNS - 1) * CELL_GAP,
+			+ (SHOP_COLUMNS - 1) * CELL_GAP + SCROLL_GAP + SCROLL_BAR,
 			SHOP_ROWS * CELL_SIDE + (SHOP_ROWS - 1) * CELL_GAP)
 	var inner := Vector2(grid.x * 2.0 + 28.0,
 			18.0 + grid.y + 10.0 + HINT_H + 4.0 + 26.0)
@@ -1967,14 +2033,12 @@ func _build_shop() -> void:
 	_shop_title.position = Vector2(grid.x + 28.0, 0)
 	_shop_title.modulate = CAPTION_COLOR
 
-	for i in SHOP_COLUMNS * SHOP_ROWS:
-		var at := Vector2((i % SHOP_COLUMNS) * (CELL_SIDE + CELL_GAP),
-				18.0 + int(i / SHOP_COLUMNS) * (CELL_SIDE + CELL_GAP))
-		_mine_cells.append(_make_cell(page, at,
-				Vector2(CELL_SIDE, CELL_SIDE)))
-		var to := at + Vector2(grid.x + 28.0, 0)
-		_stock_cells.append(_make_cell(page, to,
-				Vector2(CELL_SIDE, CELL_SIDE)))
+	_mine_grid = _cell_scroll(page, Vector2(0, 18.0), SHOP_COLUMNS,
+			SHOP_ROWS)
+	_stock_grid = _cell_scroll(page, Vector2(grid.x + 28.0, 18.0),
+			SHOP_COLUMNS, SHOP_ROWS)
+	_mine_cells = _cells_for(_mine_grid, 0)
+	_stock_cells = _cells_for(_stock_grid, 0)
 
 	# Рядок ціни: те, заради чого все й затівалось.
 	var strip := _plate(Vector2(inner.x, HINT_H),
@@ -2012,6 +2076,7 @@ func show_shop(at: int, title: String, goods: Array, buyback: int) -> void:
 
 
 func _fill_stock(goods: Array) -> void:
+	_stock_cells = _cells_for(_stock_grid, goods.size())
 	for i in _stock_cells.size():
 		var cell: Dictionary = _stock_cells[i]
 		var press: Button = cell["press"]
@@ -2049,6 +2114,7 @@ func _fill_mine() -> void:
 			rows.append(row)
 	_shop_money.text = "гроші: %d" % _money()
 
+	_mine_cells = _cells_for(_mine_grid, rows.size())
 	for i in _mine_cells.size():
 		var cell: Dictionary = _mine_cells[i]
 		var press: Button = cell["press"]
@@ -2135,25 +2201,29 @@ func _money() -> int:
 
 # ── склад (крок 5, П-145) ────────────────────────────────────────────
 #
-## Простий список кнопок, не сітка з іконками, як у прилавка: склад не
-## про вигляд, а про «куди це поділось» — рядок з назвою й кількістю
-## досить, щоб знайти річ.
-
-const WAREHOUSE_ROWS := 10
-const ROW_H := 26.0
+## Сітка з значками, як у прилавка (слово замовника 11.10.2026: «на
+## складі інтерфейс зроби схожим як у крамаря, з іконками в комірках»).
+## Досі тут був список кнопок із назвами. Ліворуч — торба, праворуч —
+## склад; обидві прокручуються (`_cell_scroll`), унизу рядок, що каже,
+## що під мишею.
 
 var _warehouse_box: WindowBox
-var _bag_rows: Array = []       ## кнопки зліва — з торби на склад
-var _kept_rows: Array = []      ## кнопки справа — зі складу в торбу
+var _bag_rows: Array = []       ## комірки зліва — з торби на склад
+var _kept_rows: Array = []      ## комірки справа — зі складу в торбу
+var _bag_grid: Dictionary = {}
+var _kept_grid: Dictionary = {}
+var _warehouse_hint: Label
 var _warehouse_with := -1
 var _warehouse_things: Array = []
 var _warehouse_stacks: Array = []
 
 
 func _build_warehouse() -> void:
-	var col := 220.0
-	var inner := Vector2(col * 2.0 + 20.0,
-			18.0 + WAREHOUSE_ROWS * (ROW_H + 2.0))
+	var grid := Vector2(SHOP_COLUMNS * CELL_SIDE
+			+ (SHOP_COLUMNS - 1) * CELL_GAP + SCROLL_GAP + SCROLL_BAR,
+			SHOP_ROWS * CELL_SIDE + (SHOP_ROWS - 1) * CELL_GAP)
+	var inner := Vector2(grid.x * 2.0 + 28.0,
+			18.0 + grid.y + 10.0 + HINT_H)
 	_warehouse_box = WindowBox.new()
 	_warehouse_box.name = "ВікноСкладу"
 	_warehouse_box.setup("Склад", inner)
@@ -2168,25 +2238,46 @@ func _build_warehouse() -> void:
 	var right := _text(11, page)
 	right.text = "склад — клікни, щоб забрати"
 	right.modulate = CAPTION_COLOR
-	right.position = Vector2(col + 20.0, 0)
+	right.position = Vector2(grid.x + 28.0, 0)
 
-	for i in WAREHOUSE_ROWS:
-		var y := 18.0 + i * (ROW_H + 2.0)
-		var giving := Button.new()
-		giving.size = Vector2(col, ROW_H)
-		giving.custom_minimum_size = giving.size
-		giving.position = Vector2(0, y)
-		giving.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		page.add_child(giving)
-		_bag_rows.append(giving)
+	_bag_grid = _cell_scroll(page, Vector2(0, 18.0), SHOP_COLUMNS,
+			SHOP_ROWS)
+	_kept_grid = _cell_scroll(page, Vector2(grid.x + 28.0, 18.0),
+			SHOP_COLUMNS, SHOP_ROWS)
+	_bag_rows = _cells_for(_bag_grid, 0)
+	_kept_rows = _cells_for(_kept_grid, 0)
 
-		var keeping := Button.new()
-		keeping.size = Vector2(col, ROW_H)
-		keeping.custom_minimum_size = keeping.size
-		keeping.position = Vector2(col + 20.0, y)
-		keeping.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		page.add_child(keeping)
-		_kept_rows.append(keeping)
+	var strip := _plate(Vector2(inner.x, HINT_H),
+			Color(0.13, 0.12, 0.09, 0.95), page)
+	strip.position = Vector2(0, 18.0 + grid.y + 10.0)
+	_warehouse_hint = _text(13, page)
+	_warehouse_hint.name = "Підказка"
+	_warehouse_hint.text = "наведи річ — покаже, що це"
+	_warehouse_hint.position = Vector2(8, 18.0 + grid.y + 14.0)
+	_warehouse_hint.modulate = Color(0.88, 0.86, 0.7)
+
+
+## Комірка складу: значок, кількість стосу, підказка при наведенні.
+func _show_kept(cell: Dictionary, row: Dictionary) -> String:
+	var name: String = str(row.get("назва", "?"))
+	cell["icon"].modulate = Color(1, 1, 1, 1)
+	cell["icon"].show_item(str(row.get("вид", "")),
+			str(row.get("слот", "")), str(row.get("грейд", "")),
+			_art_name(row))
+	var press: Button = cell["press"]
+	press.disabled = false
+	_cell_look(press, true)
+	var about := _trade_line(row)
+	var stats := str(row.get("стати", ""))
+	if stats != "":
+		about += " · " + stats
+	press.tooltip_text = about
+	press.mouse_entered.connect(func() -> void:
+			if _warehouse_hint != null:
+				_warehouse_hint.text = about)
+	cell["count"].text = "×%d" % int(row["скільки"]) \
+			if row.has("скільки") else ""
+	return name
 
 
 ## Ліворуч — торба (та сама, що й у прилавка): вдягнене й гроші не
@@ -2201,22 +2292,21 @@ func _fill_bag_side() -> void:
 		if str(row.get("назва", "")) != "гроші":
 			rows.append(row)
 
+	_bag_rows = _cells_for(_bag_grid, rows.size())
 	for i in _bag_rows.size():
-		var press: Button = _bag_rows[i]
+		var cell: Dictionary = _bag_rows[i]
+		var press: Button = cell["press"]
 		_unlink(press)
 		if i >= rows.size():
-			press.text = ""
-			press.disabled = true
+			_blank(cell)
 			continue
 		var row: Dictionary = rows[i]
-		var name: String = str(row.get("назва", "?"))
-		press.disabled = false
+		var name := _show_kept(cell, row)
 		# Перенесення в склад питає підтвердження (П-159). Забирання зі
 		# складу — ні: там нічого не втрачається, а рішення назвало саме
 		# «перенесення в склад».
 		if row.has("номер"):
 			var thing_at: int = int(row["номер"])
-			press.text = name
 			press.pressed.connect(func() -> void:
 					ask_confirm("Перенести «%s» у склад?" % name,
 							func() -> void:
@@ -2224,7 +2314,6 @@ func _fill_bag_side() -> void:
 										_warehouse_with, thing_at)))
 		else:
 			var count: int = int(row.get("скільки", 0))
-			press.text = "%s ×%d" % [name, count]
 			press.pressed.connect(func() -> void:
 					ask_count(func(n: int) -> String:
 								return "Перенести «%s» ×%d у склад?" \
@@ -2240,24 +2329,22 @@ func _fill_kept_side() -> void:
 	rows.append_array(_warehouse_things)
 	rows.append_array(_warehouse_stacks)
 
+	_kept_rows = _cells_for(_kept_grid, rows.size())
 	for i in _kept_rows.size():
-		var press: Button = _kept_rows[i]
+		var cell: Dictionary = _kept_rows[i]
+		var press: Button = cell["press"]
 		_unlink(press)
 		if i >= rows.size():
-			press.text = ""
-			press.disabled = true
+			_blank(cell)
 			continue
 		var row: Dictionary = rows[i]
-		var name: String = str(row.get("назва", "?"))
-		press.disabled = false
+		var name := _show_kept(cell, row)
 		if row.has("номер"):
 			var thing_at: int = int(row["номер"])
-			press.text = name
 			press.pressed.connect(func() -> void:
 					wants_withdraw_thing.emit(_warehouse_with, thing_at))
 		else:
 			var count: int = int(row.get("скільки", 0))
-			press.text = "%s ×%d" % [name, count]
 			# Забирання не питає (П-159) — окрім числа, коли в стосі
 			# більше однієї штуки (П-164).
 			press.pressed.connect(func() -> void:
@@ -2280,6 +2367,9 @@ func _fill_kept_side() -> void:
 ## зміна на столі її знімає (сервер). Хрестик — те саме, що «Скасувати».
 
 const TRADE_ROWS := 10
+## Висота рядка-кнопки. Досі жила в складі; склад став сіткою, а обмін
+## лишився списком.
+const ROW_H := 26.0
 const TRADE_COL := 210.0
 
 var _trade_box: WindowBox

@@ -221,11 +221,11 @@ func _report_confirm_store(box: Control) -> void:
 	_hud.show_warehouse(0)
 	var rows: Array = _hud._bag_rows
 	if rows.is_empty():
-		print("  ‼ рядків торби у складі немає")
+		print("  ‼ комірок торби у складі немає")
 		return
-	var press: Button = rows[0]
+	var press: Button = rows[0]["press"]
 	if press.disabled:
-		print("  ‼ перший рядок торби порожній")
+		print("  ‼ перша комірка торби порожня")
 		return
 	press.pressed.emit()
 	var text: Label = box.get_node("Вміст").get_child(0)

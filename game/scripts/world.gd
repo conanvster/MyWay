@@ -3035,7 +3035,14 @@ func _warehouse_thing_row(things: Array) -> Array:
 	var out: Array = []
 	for at in things.size():
 		var item: Item = things[at]
-		out.append({"номер": at, "назва": item.title(), "вид": item.kind})
+		var lines := PackedStringArray()
+		for stat_name in item.stats:
+			lines.append("%s +%d" % [stat_name, int(item.stats[stat_name])])
+		# Значок — як у торбі: за базою, слотом і грейдом (11.10.2026,
+		# склад тепер сітка з іконками, як у крамаря).
+		out.append({"номер": at, "назва": item.title(), "вид": item.kind,
+				"база": item.base, "слот": item.slot, "грейд": item.grade,
+				"стати": ", ".join(lines)})
 	return out
 
 
@@ -3044,6 +3051,7 @@ func _warehouse_stack_row(items: Dictionary) -> Array:
 	for name in items:
 		var base: Dictionary = data.items.base_of(str(name))
 		out.append({"назва": str(name), "вид": str(base.get("вид", "")),
+				"грейд": str(base.get("грейд", "")),
 				"скільки": int(items[name])})
 	return out
 

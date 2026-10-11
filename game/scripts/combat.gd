@@ -502,10 +502,15 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	_link.to_watchers(victim_id, &"client_died", [victim_id])
 	# Гравець або його прикликаний убив монстра — винагорода гравцеві.
 	var paid := payee(me)
-	if paid > 0 and side(victim_id) < 0 and _creatures.has(paid):
+	# Вартовий поселення (П-262) — не здобич: убивця дістає не повагу, а
+	# «чорний список» поселення (`Wardens.on_kill`).
+	var guard: bool = victim.get("settlement") != null \
+			and int(victim.get("settlement")) >= 0
+	if paid > 0 and side(victim_id) < 0 and not guard \
+			and _creatures.has(paid):
 		_reward(paid, _creatures[paid], victim)
 	if on_kill.is_valid():
-		on_kill.call(victim_id, victim)
+		on_kill.call(victim_id, victim, paid)
 
 
 ## Скільки дісталось убивці. Множник за різницю рівнів (П-104) б'є по

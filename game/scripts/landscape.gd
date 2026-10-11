@@ -1316,6 +1316,11 @@ func _one_city(city: Dictionary, first_dweller: int) -> int:
 
 	var dwellers: Array = city.get("мешканці", [])
 	for i in dwellers.size():
+		# Вартовий — не нерухомий мешканець, а істота, яку ставить сервер
+		# (`Wardens.post_guards`, П-262): клієнт бачить його, як монстра.
+		# Номер він однаково займає — нумерація мешканців не зсувається.
+		if str(dwellers[i].get("ремесло", "")) == Wardens.GUARD_CRAFT:
+			continue
 		_dweller(dwellers[i], first_dweller + i)
 
 	_fence(_on_ground(center), float(city.get("радіус", 20)))

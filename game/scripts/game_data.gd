@@ -220,6 +220,10 @@ func poll(delta: float) -> bool:
 ## Числа одного виду. Немає такого виду — гучно кажемо й даємо порожнє:
 ## монстр тоді працює на сталих значеннях mob.gd.
 func for_kind(kind: int) -> Dictionary:
+	# Вартовий поселення (П-262) — роль, а не вид бестіарію: його числа в
+	# мапі, а не в `mobs.json`.
+	if kind == Wardens.GUARD_KIND:
+		return map.get("охорона поселень", {}).get("вартовий", {})
 	var key := str(kind)
 	if not mobs.has(key):
 		push_error("[дані] виду %d немає в %s" % [kind, MOBS_PATH])

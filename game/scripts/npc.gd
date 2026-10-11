@@ -73,6 +73,15 @@ func show_name() -> void:
 	add_child(tag)
 
 
+## Здоров'я в підписі (П-262): «Ліда, крамар · 4210/6000». Повне — не
+## показується, щоб місто не рябіло числами.
+func show_health(hp: int, most: int) -> void:
+	var tag: Label3D = get_node_or_null("Підпис")
+	if tag == null:
+		return
+	tag.text = title() if hp >= most else "%s · %d/%d" % [title(), hp, most]
+
+
 func title() -> String:
 	return who if craft == "" else "%s, %s" % [who, craft]
 

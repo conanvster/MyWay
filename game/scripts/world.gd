@@ -56,6 +56,8 @@ var warehouse: Warehouse
 var trade: Trade
 ## Прикликані істоти (П-41).
 var summons: Summons
+## Охорона поселень і здоров'я мешканців (П-262). Лише на сервері.
+var wardens: Wardens
 ## Речі на землі (П-160): викинуте й загублене при смерті.
 var ground := Ground.new()
 var runes: Runes
@@ -132,6 +134,9 @@ func _ready() -> void:
 	trade = Trade.new()
 	trade.names = _names
 	summons = Summons.new(creatures, combat, data, spawn, remove)
+	wardens = Wardens.new(creatures, link)
+	wardens.names = _names
+	wardens.setup(data.map)
 	combat.ground = ground
 	actions.ground = ground
 	combat.on_bag_changed = func(me: int) -> void:
@@ -176,6 +181,11 @@ func _ready() -> void:
 			# Зони з даних (світ 2) сплять, доки поруч немає гравця.
 			spawner.dormant = not data.map.get("зони появи", []).is_empty()
 			spawner.start(_zones())
+			# Вартові — не на полігоні: там `check.sh` рахує випадковість
+			# прогону, і кожна нова істота її зсуває (див. `mobs.json → _про`).
+			print("[охорона] вартових поставлено: %d у %d поселеннях"
+					% [wardens.post_guards(spawn, spawner.next_id, ground_at),
+					   wardens.settlements.size()])
 			# Після спавнера: відновлене підземелля додає йому свої зони.
 			life.restore(_restore_dungeon, close_dungeon)
 		_mark_ready()
@@ -349,6 +359,7 @@ func _physics_process(delta: float) -> void:
 		_tick_water(delta)
 		_tick_trade(delta)
 		summons.tick(delta)
+		wardens.tick(delta)
 		_tick_ground(delta)
 		_tick_range(delta)
 		if store != null and store.due(delta):
@@ -1107,7 +1118,9 @@ func _check_branches(id: int, a: Node) -> void:
 ## Хтось загинув (кличе `combat._kill`). Цікавить лише бос рівня
 ## підземелля (Ф6): його смерть — прохід далі або, на останньому рівні,
 ## зачистка всього підземелля.
-func _on_kill(victim_id: int, victim: Node) -> void:
+func _on_kill(victim_id: int, victim: Node, killer_id: int = 0) -> void:
+	if victim_id < 0 and wardens != null:
+		wardens.on_kill(victim, killer_id)
 	if victim_id >= 0 or not victim.get("is_boss"):
 		return
 	var key := dungeons.index_at(victim.global_position.x,
@@ -1442,6 +1455,7 @@ func _shrine_zones() -> Array:
 
 
 func _on_joined(id: int) -> void:
+	_tell_residents(id)
 	# 6 м запасу, як і в spawner.gd: падає сам, сідає на видиму поверхню.
 	var a := spawn(id, Vector3(0, ground_at(0.0, 0.0) + 6.0, 0))
 	_tell_shrines(id)
@@ -1829,10 +1843,95 @@ func _resident(id: int, at: int) -> NPC:
 	var who: NPC = land.resident_at(at)
 	if who == null:
 		return null
+	# Убитий мешканець мовчить до перезапуску світу (П-73), а поселення,
+	# де гравець убив мешканця, відмовляє йому в послугах (П-262).
+	if wardens.is_dead(at):
+		link.notice(id, "%s мертвий" % who.title())
+		return null
+	if wardens.refuses(id, at):
+		link.notice(id, "%s не хоче мати з тобою справ" % who.title())
+		return null
 	if not shop.within(a, who):
 		link.notice(id, "%s задалеко" % who.title())
 		return null
 	return who
+
+
+## Поранені й убиті мешканці — тому, хто щойно зайшов (П-262).
+func _tell_residents(peer: int) -> void:
+	for row: Array in wardens.state_rows():
+		rpc_id(peer, "client_resident_hp", row[0], row[1],
+				wardens.resident_max_hp())
+		if wardens.is_dead(row[0]):
+			rpc_id(peer, "client_resident_down", row[0])
+
+
+## Здоров'я мешканця — у підписі над головою, поки не повне.
+@rpc("authority", "call_remote", "reliable")
+func client_resident_hp(at: int, hp: int, most: int) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	var who: NPC = land.resident_at(at) if land != null else null
+	if who != null:
+		who.show_health(hp, most)
+
+
+## Убитий мешканець зникає до перезапуску світу (П-73): ні фігури, ні
+## кліку по ньому.
+@rpc("authority", "call_remote", "reliable")
+func client_resident_down(at: int) -> void:
+	var land: Node = get_node_or_null("Landscape")
+	var who: NPC = land.resident_at(at) if land != null else null
+	if who == null:
+		return
+	who.visible = false
+	who.collision_layer = 0
+	view.forget_resident()
+
+
+## Удар по мешканцю (П-262): Ctrl+клік, як примусова атака в L2. Не через
+## ціль і чергу: мешканець не Creature, ціллю його не взяти. Відкат і
+## відстань — ті самі, що в звичайного удару; сервер нікому не вірить (P1).
+@rpc("any_peer", "call_remote", "reliable")
+func strike_resident(at: int) -> void:
+	if not Net.is_server:
+		return
+	hit_resident(multiplayer.get_remote_sender_id(), at)
+
+
+func hit_resident(id: int, at: int) -> int:
+	var a: Node = creatures.get(id)
+	var land: Node = get_node_or_null("Landscape")
+	if a == null or not a.is_alive() or land == null:
+		return 0
+	var who: NPC = land.resident_at(at)
+	if who == null or wardens.settlement_of(at) < 0:
+		return 0
+	if wardens.is_dead(at):
+		link.notice(id, "%s уже мертвий" % who.title())
+		return 0
+	if a.attack_ready_in > 0.0 or a.busy_in > 0.0:
+		return 0
+	# Мешканець — капсула завширшки з людину, тож до дальності удару
+	# додається його півширина, як у бою між істотами.
+	var reach: float = a.ATTACK_RANGE + 0.5
+	if a.global_position.distance_to(who.global_position) > reach:
+		link.notice(id, "%s задалеко" % who.title())
+		return 0
+	a.face_point(who.global_position)
+	a.attack_ready_in = a.stats.attack_cooldown()
+	a.busy_in = a.stats.swing_time()
+	a.in_fight = a.FIGHT_TIME
+	a.sit(false)
+	link.to_watchers(id, &"client_swing", [id, a.worn_in("зброя") != null])
+	var hit: int = wardens.hit_resident(id, at, a.stats.physical_attack())
+	link.to_all(&"client_resident_hp",
+			[at, wardens.hp_of(at), wardens.resident_max_hp()])
+	print("[охорона] %d вдарив мешканця %d (%s) на %d, лишилось %d"
+			% [id, at, who.title(), hit, wardens.hp_of(at)])
+	if wardens.is_dead(at):
+		link.to_all(&"client_resident_down", [at])
+		print("[охорона] мешканця %d (%s) убито" % [at, who.title()])
+	return hit
 
 
 ## Заговорити до мешканця. Відповідь — вікно розмови з кнопками.

@@ -132,6 +132,13 @@ func tick(delta: float) -> void:
 
 
 ## Монстр з'являється у випадковій точці своєї зони (П-66).
+## Новий номер монстра поза зонами — для вартових поселень (П-262):
+## номери мусять не перетинатися з тими, що роздає сама поява.
+func next_id() -> int:
+	_last_mob_id += 1
+	return -_last_mob_id
+
+
 func respawn(slot: int) -> int:
 	var zone: MobZone = _slots[slot]["zone"]
 	if zone.spent:

@@ -51,6 +51,7 @@ func _init(creatures: Dictionary = {}, world: Node3D = null,
 	_demo = OS.get_cmdline_user_args().has("--демо")
 	_windows = OS.get_cmdline_user_args().has("--вікна")
 	_shop_demo = OS.get_cmdline_user_args().has("--крамар")
+	_ward_demo = OS.get_cmdline_user_args().has("--варта")
 	_trade_demo = OS.get_cmdline_user_args().has("--обмін")
 	_trade_lead = OS.get_cmdline_user_args().has("--веде")
 
@@ -65,6 +66,12 @@ var _windows := false
 ## сервер перевіряє їх так само. Лазівки тут немає: якби вона була,
 ## перевірка «без грошей не купиш» проходила б і зі зламаним сервером.
 var _shop_demo := false
+## Показ б'є крамаря Ctrl+ударом (П-262) і друкує, що бачить: підпис зі
+## здоров'ям мешканця, де вартовий і що лишилось від себе.
+var _ward_demo := false
+var _ward_hits := 0
+var _ward_left := 0.0
+var _ward_time := 0.0
 var _shop_done := false
 var _shop_step := 0
 var _shop_left := 0.0
@@ -539,6 +546,8 @@ func demo(delta: float) -> void:
 	# Крамар старший за полювання: назбирав грошей — іди витрать.
 	if _demo_shop(delta):
 		return
+	if _demo_ward(delta):
+		return
 	if _demo_trade(delta):
 		return
 	# У режимі показу гравець ще й іде до найближчого монстра — інакше
@@ -689,7 +698,7 @@ func input(event: InputEvent) -> void:
 			use_slot(slot, event.shift_pressed)
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
-		click_at(event.position, event.double_click)
+		click_at(event.position, event.double_click, event.ctrl_pressed)
 
 
 ## Розкладка панелі — П-58; поки просто 1–7 підряд.
@@ -702,7 +711,7 @@ func slot_of(code: int) -> int:
 ## Перший клік по цілі бере її, наступні по вже вибраній — б'ють (П-20).
 ## Подвійний клік по мешканцю — одразу розмова (слово замовника
 ## 19.09.2026: «по подвійному кліку на NPC теж відкривається діалог»).
-func click_at(where: Vector2, double := false) -> void:
+func click_at(where: Vector2, double := false, force := false) -> void:
 	var me: Node = _me()
 	if me == null:
 		return
@@ -725,7 +734,12 @@ func click_at(where: Vector2, double := false) -> void:
 		# шкоди приходить вікно розмови (П-132). Окремої кнопки «говорити»
 		# не треба, і панель не росте від кожного нового мешканця.
 		_aim_resident(body)
-		if double:
+		# Ctrl+клік — удар по мешканцю (П-262), як примусова атака в L2:
+		# звичайний клік лишається розмовою, і випадково напасти на
+		# крамаря не вийде.
+		if force:
+			_strike_resident()
+		elif double:
 			_talk_to_resident()
 		return
 	if body is Shrine:
@@ -819,12 +833,29 @@ func _aim_resident(body: NPC) -> void:
 ## по мешканцю й подвійного кліку.
 func _talk_to_resident() -> void:
 	var me: Node = _me()
+	_wait_hit = false
 	if me == null or _resident < 0:
 		return
 	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE:
 		_link.to_server(&"ask_talk", [_resident])
 		return
 	_wait_talk = _resident
+	_wait_left = REACH_TIME
+	me.walk_to = _resident_at
+	_say("підходжу до мешканця")
+
+
+## Ударити вибраного мешканця: близько — одразу, далеко — підійти тим
+## самим підходом, що й до розмови, і вдарити вже на місці.
+func _strike_resident() -> void:
+	var me: Node = _me()
+	if me == null or _resident < 0:
+		return
+	if me.global_position.distance_to(_resident_at) <= me.ATTACK_RANGE + 0.3:
+		_link.to_server(&"strike_resident", [_resident])
+		return
+	_wait_talk = _resident
+	_wait_hit = true
 	_wait_left = REACH_TIME
 	me.walk_to = _resident_at
 	_say("підходжу до мешканця")
@@ -1062,6 +1093,13 @@ func _approach_resident(delta: float) -> void:
 		_wait_talk = -1
 		_say("до мешканця не дійти")
 		return
+	if _wait_hit:
+		if me.global_position.distance_to(_resident_at) <= me.ATTACK_RANGE:
+			_link.to_server(&"strike_resident", [_wait_talk])
+			me.walk_to = Vector3.ZERO
+			_wait_talk = -1
+			_wait_hit = false
+		return
 	if me.global_position.distance_to(_resident_at) <= Shop.TALK_RANGE * 0.85:
 		_link.to_server(&"ask_talk", [_wait_talk])
 		me.walk_to = Vector3.ZERO
@@ -1074,6 +1112,43 @@ func _approach_resident(delta: float) -> void:
 ## Кроки рознесені в часі не для краси: сервер відповідає окремими
 ## повідомленнями, і без пауз перевірка не встигала б розрізнити, на що
 ## саме він відповів.
+const WARD_HITS := 12
+
+
+func _demo_ward(delta: float) -> bool:
+	if not _ward_demo:
+		return false
+	var seller: NPC = _first_seller()
+	var me: Node = _me()
+	if seller == null or me == null:
+		return true
+	_ward_time += delta
+	_ward_left -= delta
+	if _ward_left > 0.0:
+		return true
+	_ward_left = 1.0
+	var guard: Node3D = null
+	for id: int in _creatures:
+		var c: Node = _creatures[id]
+		if id < 0 and "kind" in c and int(c.kind) == Wardens.GUARD_KIND:
+			guard = c
+	var tag: Label3D = seller.get_node_or_null("Підпис")
+	print("[варта] %.0f с · удар %d · підпис «%s» · вартовий %s · "
+			% [_ward_time, _ward_hits, tag.text if tag != null else "?",
+			   "за %.1f м" % guard.global_position.distance_to(
+					me.global_position) if guard != null else "не видно"]
+			+ "моє здоров'я %d" % me.hp)
+	if _ward_hits >= WARD_HITS or _ward_time > 40.0 or not me.is_alive():
+		print("[варта] кінець: ударів %d, живий %s" % [_ward_hits,
+				me.is_alive()])
+		_ward_demo = false
+		return true
+	_aim_resident(seller)
+	_strike_resident()
+	_ward_hits += 1
+	return true
+
+
 func _demo_shop(delta: float) -> bool:
 	if not _shop_demo or _shop_done:
 		return false
@@ -1244,6 +1319,8 @@ var _bar: Array[String] = []
 var _wait_slot := -1
 ## Номер мешканця, до якого йдемо говорити. -1 — нікуди.
 var _wait_talk := -1
+## Підхід до мешканця — щоб ударити (Ctrl+клік, П-262), а не заговорити.
+var _wait_hit := false
 var _wait_shift := false
 var _wait_target := 0
 var _wait_range := 0.0

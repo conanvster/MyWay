@@ -50,6 +50,9 @@ var home := Vector3.ZERO
 var kind := 0
 ## Бос рівня підземелля (Ф6) — ставить спавнер із зони.
 var is_boss := false
+## Поселення, яке вартує (П-262); -1 — звичайний монстр. Ставить
+## `Wardens.post_guards`.
+var settlement := -1
 var aggressive := false
 
 ## Хто скільки нашкодив. Монстр б'є того, у кого число найбільше (П-71).
@@ -146,6 +149,9 @@ func _apply_look() -> void:
 			skin.height = float(look.get("зріст", 1.0))
 			skin.fur = look.get("хутро", {})
 			skin.held = look.get("в_руці", {})
+			# Окремий набір рухів — для моделі людини (вартовий, П-262):
+			# у неї рухи лежать не в самому файлі, як у сканів звірів.
+			skin.anim_path = str(look.get("анімації", ""))
 			add_child(skin)
 			skin.build()
 	var body := model()

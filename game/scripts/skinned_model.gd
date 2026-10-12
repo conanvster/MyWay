@@ -107,6 +107,8 @@ var _skeleton: Skeleton3D
 var _player: AnimationPlayer
 var _bones: Dictionary = {}
 var _rest: Dictionary = {}
+## Заміри капсул волосся з тіла (`_blocker_sizes`) — для проб і журналу.
+var _hair_capsules: Dictionary = {}
 var _phase := 0.0
 var _speed := 0.0
 var _swing_left := 0.0
@@ -153,7 +155,7 @@ func build() -> void:
 			if at != -1:
 				_bones[name] = at
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
-	if _skeleton != null and _skeleton.find_bone("hair_C_1") != -1:
+	if _skeleton != null and not _hair_chains().is_empty():
 		_hair_springs()
 	_prepare_look()
 	if not held.is_empty():
@@ -298,25 +300,123 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 
 ## Волосся на пружних кістках (12.10.2026, слово замовника: «перука
 ## потрібно зробити окремим із волоссям, яке на вітру або під час руху хоч
-## трохи рухається»). Модель несе ланцюжки `hair_{L,C,R}_{1..4}` під
-## головою (`tools/blender/mixamo_zbirka.py --волосся`); тут — симулятор і
-## капсули на хребті й шиї, щоб пасма не заходили в спину.
-const HAIR_CHAINS := ["L", "C", "R"]
-const HAIR_LINKS := 4
+## трохи рухається»). Модель несе ланцюжки `hair_<ланцюжок>_<ланка>` під
+## головою (`tools/blender/mixamo_zbirka.py --волосся`): у ельфійки
+## v4 — L, C, R по 4 ланки (лише ззаду), з орчихи — 7 довкола голови
+## (0…6, від лівого плеча через спину до правого: передні пасма на плечах
+## ходили з заднім ланцюжком і проходили крізь груди). Тут — симулятор і
+## капсули на тілі, щоб пасма не заходили в спину, плечі, руки й стегна.
 const HAIR_STIFFNESS := 0.3
 const HAIR_DRAG := 0.3
 const HAIR_GRAVITY := 1.0
 const HAIR_RADIUS := 0.02
 ## [кістка, радіус, висота, зсув уздовж кістки] — у метрах моделі (до
-## `_fit`). Не лише хребет: волосся проходило крізь плечі на бігу (слово
-## замовника 12.10.2026: «крізь поверхню тіла ні одяг, ні волосся
-## проходити не будуть»).
+## `_fit`): запасні розміри (тонка ельфійка), якщо тіло не дало замірів.
+## Справжні — з тіла моделі (`_blocker_sizes`): капсули на ельфійку
+## пропускали волосся крізь широку орчиху (слово замовника 12.10.2026:
+## «орчиха більша … ноги також ширші»). Не лише хребет: волосся проходило
+## крізь плечі на бігу («крізь поверхню тіла ні одяг, ні волосся проходити
+## не будуть»).
 const HAIR_BLOCKERS := [
+		["mixamorig_Hips", 0.13, 0.25, 0.05],
 		["mixamorig_Spine", 0.11, 0.30, 0.05], ["mixamorig_Spine1", 0.11, 0.30, 0.05],
 		["mixamorig_Spine2", 0.12, 0.32, 0.06], ["mixamorig_Neck", 0.055, 0.14, 0.04],
 		["mixamorig_Head", 0.10, 0.22, 0.09],
 		["mixamorig_LeftShoulder", 0.06, 0.16, 0.06], ["mixamorig_RightShoulder", 0.06, 0.16, 0.06],
-		["mixamorig_LeftArm", 0.055, 0.30, 0.13], ["mixamorig_RightArm", 0.055, 0.30, 0.13]]
+		["mixamorig_LeftArm", 0.055, 0.30, 0.13], ["mixamorig_RightArm", 0.055, 0.30, 0.13],
+		["mixamorig_LeftForeArm", 0.045, 0.26, 0.12], ["mixamorig_RightForeArm", 0.045, 0.26, 0.12],
+		["mixamorig_LeftUpLeg", 0.08, 0.40, 0.2], ["mixamorig_RightUpLeg", 0.08, 0.40, 0.2]]
+
+
+## Ланцюжки пасом: [назва, ланок] — усі `hair_<назва>_1` у кістяку.
+func _hair_chains() -> Array:
+	var out := []
+	for i in _skeleton.get_bone_count():
+		var n := _skeleton.get_bone_name(i)
+		if n.begins_with("hair_") and n.ends_with("_1"):
+			var c := n.substr(5, n.length() - 7)
+			var k := 1
+			while _skeleton.find_bone("hair_%s_%d" % [c, k + 1]) != -1:
+				k += 1
+			out.append([c, k])
+	return out
+
+
+## Розміри капсул з тіла: вершини, де кістка має найбільшу вагу, — у
+## просторі кістки (bind pose); радіус — процентиль відстані від осі
+## кістки (Y): 80-й на руках і ногах, медіана на тулубі й голові (тулуб
+## плаский — бік далі за спину, кругла капсула відсувала б волосся від
+## спини; на голові — вуха); висота й зсув — 5…95-й процентилі вздовж
+## осі. Кістка без замірів (шия орчихи) — запасний розмір × відношення
+## тулуба до запасного. Повертає {кістка: [радіус, висота, зсув]}.
+func _blocker_sizes() -> Dictionary:
+	var tilo: MeshInstance3D = null
+	var naib := -1
+	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		if m.name.begins_with("Волосся") or m.skin == null or m.mesh == null:
+			continue
+		var n := 0
+		for s in m.mesh.get_surface_count():
+			n += m.mesh.surface_get_array_len(s)
+		if n > naib:
+			naib = n
+			tilo = m
+	var out := {}
+	if tilo == null:
+		return out
+	var skin := tilo.skin
+	var potribni := {}
+	for b: Array in HAIR_BLOCKERS:
+		potribni[b[0]] = true
+	var bind_kistka := {}       # індекс прив'язки → назва кістки
+	for i in skin.get_bind_count():
+		var nazva := str(skin.get_bind_name(i))
+		if nazva == "" and skin.get_bind_bone(i) >= 0:
+			nazva = _skeleton.get_bone_name(skin.get_bind_bone(i))
+		if potribni.has(nazva):
+			bind_kistka[i] = nazva
+	var r := {}                 # кістка → [відстані], [y]
+	for s in tilo.mesh.get_surface_count():
+		var a := tilo.mesh.surface_get_arrays(s)
+		var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var kb: PackedInt32Array = a[Mesh.ARRAY_BONES]
+		var kw: PackedFloat32Array = a[Mesh.ARRAY_WEIGHTS]
+		if kb.is_empty() or v.is_empty():
+			continue
+		var na := kb.size() / v.size()
+		for i in range(0, v.size(), 3):          # кожна третя — досить
+			var best := 0
+			for j in na:
+				if kw[i * na + j] > kw[i * na + best]:
+					best = j
+			var bi := kb[i * na + best]
+			if not bind_kistka.has(bi):
+				continue
+			var p := skin.get_bind_pose(bi) * v[i]
+			var k: String = bind_kistka[bi]
+			if not r.has(k):
+				r[k] = [PackedFloat32Array(), PackedFloat32Array()]
+			r[k][0].append(Vector2(p.x, p.z).length())
+			r[k][1].append(p.y)
+	for k: String in r:
+		var d: PackedFloat32Array = r[k][0]
+		var y: PackedFloat32Array = r[k][1]
+		if d.size() < 30:
+			continue
+		d.sort()
+		y.sort()
+		var tulub := k in ["mixamorig_Hips", "mixamorig_Spine", "mixamorig_Spine1",
+				"mixamorig_Spine2", "mixamorig_Neck", "mixamorig_Head"]
+		var rad := d[int(d.size() * (0.5 if tulub else 0.8))]
+		var y0 := y[int(y.size() * 0.05)]
+		var y1 := y[int(y.size() * 0.95)]
+		out[k] = [rad, maxf(y1 - y0 + rad, 2.0 * rad), (y0 + y1) * 0.5]
+	if out.has("mixamorig_Spine2"):
+		var kf: float = out["mixamorig_Spine2"][0] / 0.12
+		for b: Array in HAIR_BLOCKERS:
+			if not out.has(b[0]):
+				out[b[0]] = [b[1] * kf, b[2] * kf, b[3] * kf]
+	return out
 
 
 func _hair_springs() -> void:
@@ -335,11 +435,12 @@ func _hair_springs() -> void:
 	var sim := SpringBoneSimulator3D.new()
 	sim.name = "Волосся-пружини"
 	_skeleton.add_child(sim)
-	sim.set_setting_count(HAIR_CHAINS.size())
-	for i in HAIR_CHAINS.size():
-		var c: String = HAIR_CHAINS[i]
+	var chains := _hair_chains()
+	sim.set_setting_count(chains.size())
+	for i in chains.size():
+		var c: String = chains[i][0]
 		sim.set_root_bone_name(i, "hair_%s_1" % c)
-		sim.set_end_bone_name(i, "hair_%s_%d" % [c, HAIR_LINKS])
+		sim.set_end_bone_name(i, "hair_%s_%d" % [c, chains[i][1]])
 		sim.set_extend_end_bone(i, true)
 		sim.set_end_bone_length(i, 0.06)
 		sim.set_stiffness(i, HAIR_STIFFNESS)
@@ -347,15 +448,19 @@ func _hair_springs() -> void:
 		sim.set_gravity(i, HAIR_GRAVITY)
 		sim.set_radius(i, HAIR_RADIUS)
 		sim.set_enable_all_child_collisions(i, true)
+	var mirky := _blocker_sizes()
 	for b: Array in HAIR_BLOCKERS:
 		if _skeleton.find_bone(b[0]) == -1:
 			continue
+		var m: Array = mirky.get(b[0], [b[1], b[2], b[3]])
 		var cap := SpringBoneCollisionCapsule3D.new()
+		cap.name = "Капсула-" + str(b[0]).trim_prefix("mixamorig_")
 		cap.set_bone_name(b[0])
-		cap.set_radius(b[1])
-		cap.set_height(b[2])
-		cap.set_position_offset(Vector3(0, b[3], 0))
+		cap.set_radius(m[0])
+		cap.set_height(m[1])
+		cap.set_position_offset(Vector3(0, m[2], 0))
 		sim.add_child(cap)
+	_hair_capsules = mirky
 
 
 ## Зовнішність аватара (12.10.2026, слово замовника: «зачіски та колір

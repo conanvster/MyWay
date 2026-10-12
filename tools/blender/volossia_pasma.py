@@ -11,7 +11,12 @@
   зачесане  — гладке пряме назад до лопаток (як на кадрі-основі);
   напівхвіст — верх зібраний на потилиці в хвіст, низ і хвіст хвилясті;
   коса      — верх і боки зачесані назад у косу з трьох пасом, низ вільний;
-  каре      — коротке до підборіддя, кінці трохи всередину.
+  каре      — коротке до підборіддя, кінці трохи всередину;
+  пряме     — орчиха (12.10.2026, приклад замовника — рендер «ORC FEMALE»):
+              довге пряме, проділ посередині, бічні пасма частково
+              спереду на плечах і грудях, вуха — крізь волосся;
+  коси      — орчиха (приклад замовника — орчиха в обладунку): усе
+              зачесане назад до потилиці, ззаду три коси.
 
 Спільне:
   1. корені — на сфері черепа (підбір по маківці), лінія росту волосся
@@ -65,6 +70,8 @@ STYLI = {
     "напівхвіст": dict(kintsi=1.06, hv_a=(0.008, 0.015), hv_t=(11.0, 15.0), rozkyd=0.035),
     "коса": dict(kintsi=1.12, hv_a=(0.004, 0.010), hv_t=(12.0, 18.0), rozkyd=0.06),
     "каре": dict(kintsi=1.53, hv_a=(0.001, 0.003), hv_t=(7.0, 9.0), rozkyd=0.02),
+    "пряме": dict(kintsi=1.12, hv_a=(0.0, 0.002), hv_t=(14.0, 18.0), rozkyd=0.012),
+    "коси": dict(kintsi=1.10, hv_a=(0.0, 0.002), hv_t=(12.0, 18.0), rozkyd=0.01),
 }
 S = STYLI[STYL]
 
@@ -78,9 +85,15 @@ co = np.array([v.co[:] for v in bm_t.verts])
 # Руки в T-позі горизонтальні: пасма лягали на них і стирчали вбік, коли
 # руки опускались (проба в грі 12.10). Зіткнення — лише голова й тулуб.
 bm_t.verts.ensure_lookup_table()
-bmesh.ops.delete(bm_t, geom=[v for v in bm_t.verts if abs(v.co.x) > 0.20], context="VERTS")
-tree = BVHTree.FromBMesh(bm_t)
 ztop = co[:, 2].max()
+# Межа рук — півширина тулуба під грудьми (0,32…0,38 зросту від маківки,
+# нижче опущених кистей у T-позі)
+# + 5 см; стала 0,20 м зрізала плечі орчихи, і пасма провалювались у них.
+H_T = ztop - co[:, 2].min()
+grudy = co[(co[:, 2] < ztop - 0.32 * H_T) & (co[:, 2] > ztop - 0.38 * H_T)]
+MEZHA_X = float(np.percentile(np.abs(grudy[:, 0]), 99)) + 0.07 if len(grudy) else 0.20
+print("[пасма] межа рук |x| %.3f м" % MEZHA_X)
+bmesh.ops.delete(bm_t, geom=[v for v in bm_t.verts if abs(v.co.x) > MEZHA_X], context="VERTS")
 
 # Сфера черепа: вершини верхніх 7 см (вище кінчиків вух).
 verkh = co[co[:, 2] > ztop - 0.07]
@@ -92,6 +105,14 @@ R = float(math.sqrt(c4[3] + (c4[:3] ** 2).sum()))
 Z_OCHI = ztop - 0.12
 print("[пасма] стиль %s; череп: центр %s, R %.3f, маківка %.3f"
       % (STYL, tuple(round(v, 3) for v in C), R, ztop))
+# Вуха — геть із зіткнень: великі вуха орчихи відштовхували пасма вбік
+# (зачіска стирчала); на прикладі замовника вуха проходять крізь волосся.
+bm_t.verts.ensure_lookup_table()
+vukha = [v for v in bm_t.verts if abs(v.co.x - C.x) > R * 0.75
+         and Z_OCHI - 0.08 < v.co.z < Z_OCHI + 0.10 and (v.co - C).length > R + 0.012]
+print("[пасма] вершин вух без зіткнень: %d" % len(vukha))
+bmesh.ops.delete(bm_t, geom=vukha, context="VERTS")
+tree = BVHTree.FromBMesh(bm_t)
 
 
 def na_shkiri(d):
@@ -140,9 +161,10 @@ def koreni(n, shary=SHARY):
     return out
 
 
-def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None):
+def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=False):
     """Пасмо від p0: напрям — суміш пам'яті й поля `pole_f(p, i)`; хвиля
-    поперек; відштовхування від тіла; нижче очей — позаду вух."""
+    поперек; відштовхування від тіла; нижче очей — позаду вух (крім
+    `vpered`: бічні пасма стилю «пряме» лягають на плечі й груди)."""
     pts = [p0.copy()]
     d = d0.normalized()
     hv_a = random.uniform(*S["hv_a"]) if hv is None else hv
@@ -154,7 +176,7 @@ def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None):
         tsil = pole_f(p, i)
         d = (d * 0.55 + tsil * 0.45 + bik).normalized()
         q = p + d * KROK
-        if q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
+        if not vpered and q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
             q.y = C.y - PERED * 0.012
         q = vidshtovhnuty(q, zazor)
         # хвиля поперек напряму, у площині «вбік»
@@ -172,13 +194,14 @@ def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None):
     return pts
 
 
-def pole_vnyz(prodil=True):
-    """Від проділу вбік і вниз; ззаду — вниз за спину."""
+def pole_vnyz(prodil=True, bik_sila=0.5):
+    """Від проділу вбік і вниз; ззаду — вниз за спину. `bik_sila` 0,5 у
+    «пряме» розводила пасма коробкою ширше за вуха — там 0,15."""
     def f(p, i):
         v = p - C
         bok = Vector((1 if v.x > 0 else -1, 0, 0)) if prodil else Vector((0, 0, 0))
         if p.z > C.z + R * 0.3:
-            return (bok * 0.5 + NAZAD * 0.25 + VNYZ * 0.6).normalized()
+            return (bok * bik_sila + NAZAD * 0.25 + VNYZ * 0.6).normalized()
         return (VNYZ + NAZAD * 0.12).normalized()
     return f
 
@@ -261,6 +284,26 @@ if STYL in ("розпущене", "каре"):
     for p, n, z, d in vsi:
         pasma.append(rist(p, n * 0.3 + pole_vnyz()(p, 0), z, pole_vnyz(),
                           kintsi + random.uniform(-0.06, 0.04)))
+elif STYL == "пряме":
+    # бічні корені попереду вуха (≈ третина боків) — спереду на плечі
+    for p, n, z, d in vsi:
+        vpered = abs(d.x) > 0.45 and d.y * PERED > -0.15 and random.random() < 0.6
+        pole = pole_vnyz(bik_sila=0.15) if not vpered else (
+            lambda p_, i_, s_=(1 if d.x > 0 else -1): (VNYZ + Vector((s_ * 0.08, PERED * 0.18, 0))).normalized()
+            if p_.z > Z_OCHI - 0.15 else (VNYZ + Vector((0, PERED * 0.12, 0))).normalized())
+        pasma.append(rist(p, n * 0.3 + pole(p, 0), z, pole,
+                          kintsi + random.uniform(-0.05, 0.05) + (0.06 if vpered else 0.0),
+                          vpered=vpered))
+elif STYL == "коси":
+    T, n_t = tochka_potylytsi(-0.1)
+    T = T + n_t * 0.006
+    for p, n, z, d in vsi:
+        pasma.append(rist(p, (T - p).normalized(), z, pole_do(T), -10.0,
+                          maks=int((T - p).length / KROK) + 2, hv=0.0))
+    for dx in (-0.034, 0.0, 0.034):
+        pasma += kosa(T + n_t * 0.004 + Vector((dx, 0, -0.01 * abs(dx) / 0.034)),
+                      kintsi + random.uniform(-0.03, 0.03), 150)
+    kreslennia.append(("резинка", T, n_t))
 elif STYL == "зачесане":
     for p, n, z, d in vsi:
         pasma.append(rist(p, n * 0.2 + NAZAD, z, pole_nazad(),
@@ -291,8 +334,9 @@ elif STYL in ("напівхвіст", "коса"):
 # «Шапка»: короткі пасма впритул до шкіри, у напрямку стилю — голова
 # вкрита суцільно, крізь картки не світить лисина.
 for p, n, z, d in koreni(PASOM // 2, shary=(0.0025,)):
-    if STYL in ("напівхвіст", "коса", "зачесане"):
-        T_ = tochka_potylytsi(0.25)[0] if STYL != "зачесане" else C + NAZAD * R
+    if STYL in ("напівхвіст", "коса", "зачесане", "коси"):
+        T_ = (tochka_potylytsi(0.25)[0] if STYL != "коси" else tochka_potylytsi(-0.1)[0]) \
+            if STYL != "зачесане" else C + NAZAD * R
         pole = pole_do(T_) if STYL != "зачесане" else pole_nazad()
     else:
         pole = pole_vnyz()

@@ -180,31 +180,42 @@ def viddilyty_volossia(tilo):
 GEOM_KISTOK = {}
 
 
+# Ланцюжки довкола голови (12.10.2026, орчиха): кут від потилиці (0°),
+# «+» — до лівого плеча моделі. Перші три (лише ззаду: −0,6·x, 0, +0,6·x)
+# лишали передні пасма на плечах на задньому ланцюжку — на бігу вони
+# проходили крізь груди й плечі (слово замовника: «щоб воно падало вниз
+# та не проходило через шкіру моделі»).
+KUTY = (-135.0, -90.0, -45.0, 0.0, 45.0, 90.0, 135.0)
+LANKY = 4
+
+
 def kistky_volossia(arm, vol, verkh=None, svii_material=False):
-    """Три ланцюжки по 4 кістки вздовж пластини (ліво, центр, право) під
-    `mixamorig:Head`; ваги — плавно між ланцюжками й ланками; верхні 3 см
-    — частково голова. Друга й далі зачіска — лише ваги на ті самі кістки."""
+    """Сім ланцюжків по 4 кістки довкола голови (`KUTY`) під
+    `mixamorig:Head`: суглоби — медіана пасом у секторі ±20° на висоті
+    ланки; ваги — плавно між сусідніми ланцюжками за кутом і між ланками
+    за висотою; верхні 3 см — частково голова. Друга й далі зачіска —
+    лише ваги на ті самі кістки."""
     import numpy as np
     co = np.array([(vol.matrix_world @ v.co)[:] for v in vol.data.vertices])
-    LANKY = 4
+    imena = ["hair_%d_%d" % (c, k + 1) for c in range(len(KUTY)) for k in range(LANKY)]
     if GEOM_KISTOK:
-        xs, zs, z_t, z_b = (GEOM_KISTOK[k_] for k_ in ("xs", "zs", "z_t", "z_b"))
-        vazhi_volossia(vol, co, xs, zs, z_t, z_b, LANKY,
-                       ["hair_%s_%d" % (c, k + 1) for c in "LCR" for k in range(LANKY)])
+        vazhi_volossia(vol, co, GEOM_KISTOK, imena)
         return
     z_t, z_b = co[:, 2].max() - 0.01, co[:, 2].min() + 0.02
     if verkh is not None:          # зачіска з маківкою: ланцюжки від потилиці
         z_t = min(z_t, verkh)
-    x_l, x_r = np.percentile(co[:, 0], 8), np.percentile(co[:, 0], 92)
-    xs = [x_l * 0.6, 0.0, x_r * 0.6]
+    holova_w = arm.matrix_world @ arm.data.bones["mixamorig:Head"].head_local
+    cx, cy = holova_w.x, holova_w.y
     zs = np.linspace(z_t, z_b, LANKY + 1)
-    GEOM_KISTOK.update(xs=xs, zs=zs, z_t=z_t, z_b=z_b)
+    GEOM_KISTOK.update(cx=cx, cy=cy, zs=zs, z_t=z_t, z_b=z_b)
+    kut = np.degrees(np.arctan2(co[:, 0] - cx, co[:, 1] - cy))   # 0 — потилиця (+Y)
+    rad = np.hypot(co[:, 0] - cx, co[:, 1] - cy)
 
-    def y_v(x, z):
-        # лише пасма позаду (бокові пасма на грудях тягли ланцюжок уперед)
-        m = (np.abs(co[:, 0] - x) < 0.04) & (np.abs(co[:, 2] - z) < 0.04) \
-            & (co[:, 1] > 0.0)
-        return float(np.median(co[m, 1])) if m.any() else float(np.median(co[:, 1]))
+    def tochka(th, z):
+        m = (np.abs(((kut - th) + 180) % 360 - 180) < 20) & (np.abs(co[:, 2] - z) < 0.04)
+        r_ = float(np.median(rad[m])) if m.sum() > 10 else float(np.median(rad[np.abs(co[:, 2] - z) < 0.04])) \
+            if (np.abs(co[:, 2] - z) < 0.04).any() else 0.1
+        return Vector((cx + r_ * math.sin(math.radians(th)), cy + r_ * math.cos(math.radians(th)), z))
 
     inv = arm.matrix_world.inverted()
     bpy.ops.object.select_all(action="DESELECT")
@@ -213,21 +224,20 @@ def kistky_volossia(arm, vol, verkh=None, svii_material=False):
     bpy.ops.object.mode_set(mode="EDIT")
     eb = arm.data.edit_bones
     holova = eb["mixamorig:Head"]
-    imena = []
-    for c, x in zip("LCR", xs):
+    for c, th in enumerate(KUTY):
         bat = holova
         for k in range(LANKY):
-            b = eb.new("hair_%s_%d" % (c, k + 1))
-            b.head = inv @ Vector((x, y_v(x, zs[k]), zs[k]))
-            b.tail = inv @ Vector((x, y_v(x, zs[k + 1]), zs[k + 1]))
+            b = eb.new("hair_%d_%d" % (c, k + 1))
+            b.head = inv @ tochka(th, zs[k])
+            b.tail = inv @ tochka(th, zs[k + 1])
             b.parent = bat
             b.use_connect = k > 0
             bat = b
-            imena.append(b.name)
     bpy.ops.object.mode_set(mode="OBJECT")
-    vazhi_volossia(vol, co, xs, zs, z_t, z_b, LANKY, imena)
+    vazhi_volossia(vol, co, GEOM_KISTOK, imena)
+    print("[волосся] кістки: %d ланцюжків × %d, кути %s; z %.2f…%.2f"
+          % (len(KUTY), LANKY, KUTY, z_b, z_t))
     if svii_material:
-        print("[волосся] кістки:", ", ".join(imena), "; z %.2f…%.2f" % (z_b, z_t))
         return
     mat = bpy.data.materials.new("Волосся")
     mat.use_nodes = True
@@ -236,36 +246,35 @@ def kistky_volossia(arm, vol, verkh=None, svii_material=False):
     bsdf.inputs["Roughness"].default_value = 0.55
     vol.data.materials.clear()
     vol.data.materials.append(mat)
-    print("[волосся] кістки:", ", ".join(imena), "; z %.2f…%.2f" % (z_b, z_t))
 
 
-def vazhi_volossia(vol, co, xs, zs, z_t, z_b, LANKY, imena):
-    for g in list(vol.vertex_groups):
-        vol.vertex_groups.remove(g)
+def vazhi_volossia(vol, co, g, imena):
+    import numpy as np
+    for gr in list(vol.vertex_groups):
+        vol.vertex_groups.remove(gr)
     grupy = {n: vol.vertex_groups.new(name=n) for n in imena}
     gh = vol.vertex_groups.new(name="mixamorig:Head")
+    z_t, z_b = g["z_t"], g["z_b"]
+    kut = np.degrees(np.arctan2(co[:, 0] - g["cx"], co[:, 1] - g["cy"]))
+    ku = np.array(KUTY)
     for i, p in enumerate(co):
-        x, z = p[0], p[2]
-        # між ланцюжками
-        if x <= xs[0]:
-            ch = [(0, 1.0)]
-        elif x >= xs[2]:
-            ch = [(2, 1.0)]
-        else:
-            j = 0 if x < xs[1] else 1
-            f = (x - xs[j]) / (xs[j + 1] - xs[j])
-            ch = [(j, 1 - f), (j + 1, f)]
+        z = p[2]
+        f_ = min(max(kut[i], ku[0]), ku[-1])
+        j = min(int(np.searchsorted(ku, f_, side="right")) - 1, len(ku) - 2)
+        f = (f_ - ku[j]) / (ku[j + 1] - ku[j])
+        ch = [(j, 1 - f), (j + 1, f)]
         t = min(max((z_t - z) / (z_t - z_b), 0.0), 0.999) * LANKY
         k = int(t)
         fk = t - k
         holova_w = 1.0 if z >= z_t else (
             max(0.0, 1.0 - (z_t - z) / 0.03) if z > z_t - 0.03 else 0.0)
         for c_i, wc in ch:
-            c = "LCR"[c_i]
             w_tut = wc * (1 - holova_w)
-            grupy["hair_%s_%d" % (c, k + 1)].add([i], w_tut * (1 - 0.5 * fk), "ADD")
+            if w_tut <= 0:
+                continue
+            grupy["hair_%d_%d" % (c_i, k + 1)].add([i], w_tut * (1 - 0.5 * fk), "ADD")
             if k + 1 < LANKY:
-                grupy["hair_%s_%d" % (c, k + 2)].add([i], w_tut * 0.5 * fk, "ADD")
+                grupy["hair_%d_%d" % (c_i, k + 2)].add([i], w_tut * 0.5 * fk, "ADD")
         if holova_w > 0:
             gh.add([i], holova_w, "ADD")
 

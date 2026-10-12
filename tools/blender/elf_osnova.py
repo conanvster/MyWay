@@ -53,7 +53,9 @@ def shar(z, dz=0.006):
 
 # Заміри (метри, світ: X — праворуч кадру, Z — угору).
 nogy = [p for p in shar(z0 + H * 0.29) if p.x < 0]
-ruka = [v.co for v in tilo.data.vertices if v.co.x < -0.25]
+# лише вище 60% зросту: у орчихи (12.10.2026) стегна ширші за 0,25 м і
+# тягнули середню висоту руки вниз (1,206 замість ~1,36)
+ruka = [v.co for v in tilo.data.vertices if v.co.x < -0.25 and v.co.z > z0 + H * 0.6]
 kinchyk = min(p.x for p in ruka) if ruka else None
 pl = max(p.x for p in ruka) if ruka else None
 # пах: знизу вгору — перша висота, де між ногами вже немає щілини

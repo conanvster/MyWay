@@ -64,6 +64,17 @@ PROMT_ORK = (
 if "--орк" in sys.argv:
     sys.argv.remove("--орк")
     PROMT = PROMT_ORK
+# `--глина` (12.10.2026, орчиха ork2-lysa-s1303-hlyna-c1701 — замовник
+# обрав сіру глину без розфарбовування): ті самі риси, матеріал сірий.
+PROMT_HLYNA = (
+    "Extreme close-up of a grey clay sculpture head of an adult female orc, "
+    "front view, uniform matte grey untextured digital sculpt, completely "
+    "bald smooth skull, stern frowning face, heavy brow, deep-set eyes, "
+    "long pointed ears, finely sculpted details, plain grey background, "
+    "soft even lighting, sharp focus, 8k detail.")
+if "--глина" in sys.argv:
+    sys.argv.remove("--глина")
+    PROMT = PROMT_HLYNA
 
 
 def holova_ramka(maska):

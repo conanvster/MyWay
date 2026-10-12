@@ -154,6 +154,10 @@ def viddilyty_volossia(tilo):
                     q.append(j)
         rozmir.append(n)
     vybir = np.isin(mitka, [k for k, n in enumerate(rozmir) if n >= 200])
+    # лиса голова (орчиха s1303, 12.10.2026) — сканового волосся немає
+    if not vybir.any():
+        print("[волосся] сканового волосся немає (лиса голова)")
+        return None
     bm = bmesh.new()
     bm.from_mesh(me)
     for f in bm.faces:
@@ -410,7 +414,8 @@ if VOLOSSIA:
     vol = viddilyty_volossia(tilo_n)
     if ZACHISKY:
         # сканова пластина геть — на голову зачіски (`volossia_pasma.py`)
-        bpy.data.objects.remove(vol)
+        if vol is not None:
+            bpy.data.objects.remove(vol)
         for n_, shliakh in enumerate(ZACHISKY):
             with bpy.data.libraries.load(shliakh) as (src_, dst_):
                 dst_.objects = [n for n in src_.objects if n.startswith("Волосся")]
@@ -425,7 +430,7 @@ if VOLOSSIA:
                 nashi.append(vol)
                 kistky_volossia(arm, vol, verkh=1.58, svii_material=True)
                 print("[волосся] зачіска %s: вершин %d" % (vol.name, len(vol.data.vertices)))
-    else:
+    elif vol is not None:
         nashi.append(vol)
         kistky_volossia(arm, vol)
 arm.data.pose_position = "POSE"

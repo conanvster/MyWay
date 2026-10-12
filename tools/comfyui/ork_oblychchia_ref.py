@@ -137,7 +137,69 @@ def zshyty(holova_png, kudy):
     print("зшито", kudy.name, flush=True)
 
 
+# `--глина` (слово замовника: «не сподобалось жодне обличчя s1501…1503,
+# спробуй без розфарбовування — сіра глина»): тіло s1303 — сіре
+# попіксельно (лише яскравість Lab, форма та сама), голова — Kontext з
+# двох кадрів і лишається сірою скульптурою; перший прохід старив обличчя
+# й робив його чоловічим — жіночість і вік словами.
+PROMT_HLYNA = (
+    "Give the grey clay sculpture of a female orc in the first image the "
+    "face from the second image (a grey sculpture): the same heavy "
+    "protruding brow ridge, deep-set narrowed eyes, fierce scowling "
+    "expression, broad flat nose, strong jaw, high cheekbones, full lips "
+    "pressed together. She is a young adult woman with clearly feminine "
+    "features and smooth skin, no wrinkles. Completely bald smooth round "
+    "skull, no hair at all, the same long pointed ears. Keep everything "
+    "else of the first image: uniform matte grey clay material, untextured "
+    "digital sculpt, same front view and head position, same soft lighting, "
+    "same grey grid background.")
+
+
+def siryi(a):
+    """RGB → сіра глина: яскравість Lab, без кольору."""
+    import cv2
+    l_ = cv2.cvtColor(a, cv2.COLOR_RGB2LAB)[..., 0]
+    return np.repeat(l_[..., None], 3, 2)
+
+
+def hlyna(sidy):
+    import cv2
+    rk.PROMT = PROMT_HLYNA
+    maska = np.asarray(Image.open(D / (KADR.stem + "-maska.png")).convert("L")) > 127
+    x0, y0, x1, y1 = eo.holova_ramka(maska)
+    s = x1 - x0
+    kadr = siryi(np.asarray(Image.open(KADR).convert("RGB")))
+    Image.fromarray(kadr).save(D / (KADR.stem + "-hlyna.png"))
+    krop_p = D / (KADR.stem + "-hlyna-holova-krop.png")
+    Image.fromarray(kadr[y0:y1, x0:x1]).resize((1024, 1024), Image.LANCZOS).save(krop_p)
+    holova, obl = m.stage(str(krop_p)), m.stage(str(D / "ork-oblychchia-ref.png"))
+    m.free()
+    sylu = cv2.GaussianBlur(maska[y0:y1, x0:x1].astype(np.float32), (0, 0), s * 0.01)
+    for seed in sidy:
+        kudy = D / ("%s-hlyna-obl-s%d.png" % (KADR.stem, seed))
+        done = m.run(graf(holova, obl, seed, "ork_hlyna_%d" % seed))
+        out = done["outputs"]["13"]["images"][-1]
+        src = os.path.join(m.COMFY, "output", out["subfolder"], out["filename"])
+        shutil.copy(src, D / ("%s-hlyna-holova-obl-s%d.png" % (KADR.stem, seed)))
+        nova = siryi(np.asarray(Image.open(src).convert("RGB").resize((s, s), Image.LANCZOS)))
+        # яскравість — під тіло (середнє й розкид у силуеті старої голови)
+        st, nv = kadr[y0:y1, x0:x1].astype(np.float32), nova.astype(np.float32)
+        ms = sylu > 0.5
+        nv = (nv - nv[ms].mean()) / max(nv[ms].std(), 1e-3) * st[ms].std() + st[ms].mean()
+        el = np.zeros((s, s), np.float32)
+        cv2.ellipse(el, (s // 2, int(s * 0.45)), (int(s * 0.40), int(s * 0.42)), 0, 0, 360, 1.0, -1)
+        m_ = cv2.GaussianBlur(el, (0, 0), s * 0.04)[..., None]
+        zbir = kadr.copy()
+        zbir[y0:y1, x0:x1] = (st * (1 - m_) + nv.clip(0, 255) * m_).astype(np.uint8)
+        Image.fromarray(zbir).save(kudy)
+        print("готово", kudy.name, flush=True)
+    m.free()
+
+
 def main():
+    if "--глина" in sys.argv:
+        hlyna([int(a) for a in sys.argv[1:] if a.isdigit()] or [1601, 1602, 1603, 1604])
+        return
     if "--зшити" in sys.argv:
         for f in sorted(D.glob(KADR.stem + "-holova-obl-s*-zh-s*.png")):
             zshyty(f, D / f.name.replace("-holova-", "-"))

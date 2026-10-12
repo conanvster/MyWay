@@ -34,6 +34,13 @@ import avatar_ref_stopy as st  # noqa: E402
 KORIN = Path(__file__).resolve().parents[2]
 D = KORIN / "wiki/img/test/avatar"
 KADR = D / "el-odyn-s811.png"
+# `--кадр <файл>` (12.10.2026): будь-яка основа в D, напр. топлес s808;
+# імена похідних — від основи кадру, а не сталі s811.
+if "--кадр" in sys.argv:
+    _i = sys.argv.index("--кадр")
+    KADR = D / sys.argv[_i + 1]
+    del sys.argv[_i:_i + 2]
+OSN = KADR.stem
 K = 4
 DENOISE = 0.38
 PROMT = (
@@ -62,7 +69,7 @@ def holova_ramka(maska):
 def main():
     sidy = [int(a) for a in sys.argv[1:]] or [1, 2, 3]
     m.free()
-    maska_p = D / "el-odyn-s811-maska.png"
+    maska_p = D / (OSN + "-maska.png")
     if not maska_p.exists():
         m.cutout(str(KADR), str(maska_p))
     maska = np.asarray(Image.open(maska_p).convert("L")) > 127
@@ -70,15 +77,15 @@ def main():
     print("голова", ramka, flush=True)
     kadr = Image.open(KADR).convert("RGB")
     krop = kadr.crop(ramka).resize((1024, 1024), Image.LANCZOS)
-    krop_p = D / "el-holova-krop.png"
+    krop_p = D / (OSN + "-holova-krop.png")
     krop.save(krop_p)
     vsia = Image.new("L", (1024, 1024), 255)
-    vsia_p = D / "el-holova-vsia-maska.png"
+    vsia_p = D / (OSN + "-holova-vsia-maska.png")
     vsia.save(vsia_p)
     st.PROMT_MASKA = PROMT
     image, mask = m.stage(str(krop_p)), m.stage(str(vsia_p))
     for seed in sidy:
-        kudy = D / ("el-holova-s%d.png" % seed)
+        kudy = D / ("%s-holova-s%d.png" % (OSN, seed))
         if not kudy.exists():
             done = m.run(st.graf_maska(image, mask, seed,
                                        "el_holova_s%d" % seed, DENOISE))
@@ -92,16 +99,16 @@ def main():
     velyk = kadr.resize((kadr.width * K, kadr.height * K), Image.LANCZOS)
     x0, y0, x1, y1 = (v * K for v in ramka)
     s = x1 - x0
-    nova = Image.open(D / ("el-holova-s%d.png" % sidy[0])).convert("RGB") \
+    nova = Image.open(D / ("%s-holova-s%d.png" % (OSN, sidy[0]))).convert("RGB") \
         .resize((s, s), Image.LANCZOS)
     kraj = Image.new("L", (s, s), 0)
     ImageDraw.Draw(kraj).ellipse((s * 0.12, s * 0.06, s * 0.88, s * 0.94),
                                  fill=255)
     kraj = kraj.filter(ImageFilter.GaussianBlur(s * 0.06))
     velyk.paste(nova, (x0, y0), kraj)
-    velyk.save(D / "el-odyn-s811-4k.png")
+    velyk.save(D / (OSN + "-4k.png"))
     Image.open(maska_p).convert("L").resize(velyk.size, Image.NEAREST) \
-        .save(D / "el-odyn-s811-4k-maska.png")
+        .save(D / (OSN + "-4k-maska.png"))
     print("кадр 4K з сіда", sidy[0], flush=True)
 
 

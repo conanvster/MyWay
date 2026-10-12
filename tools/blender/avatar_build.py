@@ -61,6 +61,14 @@ if "--текстура" in ARGS:
     i_ = ARGS.index("--текстура")
     TEKSTURA = int(ARGS[i_ + 1])
     del ARGS[i_:i_ + 2]
+OBLYCHCHIA = "--обличчя" in ARGS
+OCHI = "--очі" in ARGS
+for k_ in ("--обличчя", "--очі"):
+    if k_ in ARGS:
+        ARGS.remove(k_)
+ODNA_OBOLONKA = "--одна-оболонка" in ARGS
+if ODNA_OBOLONKA:
+    ARGS.remove("--одна-оболонка")
 KOLINA = 0
 if "--коліна" in ARGS:
     i_ = ARGS.index("--коліна")
@@ -165,6 +173,31 @@ def main():
         v.co = (v.co - tsentr) * k
     print("[аватар] зріст скану %.3f → %.3f м (×%.3f), перед %+d"
           % (hi.z - lo.z, t_hi.z - t_lo.z, k, pered_manekena))
+    if ODNA_OBOLONKA:
+        # `--одна-оболонка` (12.10.2026, слово замовника: «артефакти колін»,
+        # «неприродні контури навколо очей»): Pixal3D дає ПОДВІЙНУ оболонку —
+        # зовнішню (нормалі назовні) і внутрішню на ~5 мм глибше (нормалі
+        # всередину, 46% вершин). Будь-яка правка форми зовнішньої (коліна)
+        # пускала внутрішню назовні темними «тріщинами». Внутрішня грань —
+        # та, чий промінь уздовж нормалі за 1,5 см упирається в поверхню.
+        import bmesh as _bm
+        from mathutils.bvhtree import BVHTree as _BVH
+        b_ = _bm.new()
+        b_.from_mesh(skan.data)
+        b_.normal_update()
+        tree_ = _BVH.FromBMesh(b_)
+        vnutr = []
+        for f in b_.faces:
+            c = f.calc_center_median()
+            hit = tree_.ray_cast(c + f.normal * 0.0004, f.normal, 0.015)
+            if hit[0] is not None:
+                vnutr.append(f)
+        do = len(b_.faces)
+        _bm.ops.delete(b_, geom=vnutr, context="FACES")
+        _bm.ops.remove_doubles(b_, verts=b_.verts, dist=0.0002)
+        b_.to_mesh(skan.data)
+        b_.free()
+        print("[аватар] одна оболонка: внутрішніх граней %d з %d" % (len(vnutr), do))
     if KOLINA:
         # `--коліна` (12.10.2026, «трохи вирівняй положення колін»):
         # Pixal3D ліпить наколінки кулями. Згладжувати ДО проєкції —
@@ -184,6 +217,10 @@ def main():
         print("[аватар] коліна: вершин %d, проходів %d" % (len(smuga), KOLINA))
     if REF:
         proektsiia(skan, pered_manekena)
+        if OBLYCHCHIA:
+            G_ = vyrivniaty_oblychchia(skan, pered_manekena)
+            if G_ is not None and OCHI:
+                zgladyty_ochi(skan, pered_manekena, G_)
 
     # 2. Руки: плече манекена → кінчик пальців. Числа рахуються тут, а
     # застосовуються в 2в — до СКЕЛЕТА й тіла манекена, не до скану
@@ -580,6 +617,174 @@ def main():
     print("[аватар] →", KUDY)
     if KADRY:
         kadry(arm, skan)
+
+
+def vyrivniaty_oblychchia(skan, pered):
+    """`--обличчя` (12.10.2026, слово замовника: «неприродні контури навколо
+    очей»): голова в кадрі й голова Pixal3D мають трохи різні пропорції, і
+    лінійна проєкція клала намальовані очі й губи на ~2 см вище за виліплені
+    — під очима виднілись ободки очниць. Тут: рендер голови скану спереду →
+    MediaPipe (`tools/oblychchia_holova.py`) → точки обличчя G у (x, z)
+    сітки; ті самі точки F на кадрі (`tools/oblychchia.py`). Нев'язку
+    розгортки «Проєкція» в точках G розносимо гаусовим RBF (σ 1,2 см), що
+    згасає поза обличчям. Повертає G (478×2, x/z) або None."""
+    import subprocess
+    import numpy as np
+    venv = os.path.expanduser("~/Програми/cv-venv/bin/python")
+    tut = os.path.dirname(os.path.abspath(REF_MASKA))
+    npy_f = os.path.join(tut, os.path.basename(REF)[:-4] + "-tochky.npy")
+    if not os.path.exists(npy_f):
+        r = subprocess.run([venv, os.path.join(ROOT, "tools", "oblychchia.py"),
+                            os.path.abspath(REF), os.path.abspath(REF_MASKA), npy_f],
+                           capture_output=True, text=True)
+        print(r.stdout.strip() or r.stderr[-300:])
+    F = np.load(npy_f)
+    me = skan.data
+    mw = skan.matrix_world
+    co = np.array([(mw @ v.co)[:] for v in me.vertices])
+    ztop = co[:, 2].max()
+    # 1. Рендер голови спереду (Workbench, текстура Pixal3D).
+    sc = bpy.context.scene
+    stari = {o: o.hide_render for o in sc.objects}
+    for o in sc.objects:
+        o.hide_render = o is not skan
+    RES, SCALE = 1024, 0.30
+    cz = ztop - 0.12
+    hd = co[co[:, 2] > ztop - 0.25]
+    cx = float(np.median(hd[:, 0]))
+    kam_d = bpy.data.cameras.new("obl")
+    kam_d.type = "ORTHO"
+    kam_d.ortho_scale = SCALE
+    kam = bpy.data.objects.new("obl", kam_d)
+    sc.collection.objects.link(kam)
+    kam.location = (cx, pered * 3.0, cz)
+    kam.rotation_euler = (Vector((cx, 0, cz)) - Vector(kam.location)).to_track_quat(
+        "-Z", "Y").to_euler()
+    stara_kam, stary_eng = sc.camera, sc.render.engine
+    sc.camera = kam
+    sc.render.engine = "BLENDER_WORKBENCH"
+    sc.display.shading.light = "FLAT"
+    sc.display.shading.color_type = "TEXTURE"
+    sc.render.film_transparent = True
+    sc.render.resolution_x = sc.render.resolution_y = RES
+    sc.render.resolution_percentage = 100
+    png = os.path.join(tut, os.path.basename(REF)[:-4] + "-holova-render.png")
+    sc.render.filepath = png
+    bpy.ops.render.render(write_still=True)
+    sc.camera, sc.render.engine = stara_kam, stary_eng
+    sc.render.film_transparent = False
+    bpy.data.objects.remove(kam)
+    for o, b_ in stari.items():
+        o.hide_render = b_
+    npy_g = png[:-4] + ".npy"
+    r = subprocess.run([venv, os.path.join(ROOT, "tools", "oblychchia_holova.py"),
+                        png, npy_g], capture_output=True, text=True)
+    print(r.stdout.strip() or r.stderr[-300:])
+    if r.returncode != 0:
+        print("[аватар] ‼ обличчя: точок на рендері немає — без вирівнювання")
+        return None
+    Lg = np.load(npy_g)
+    # камера з боку `pered`: праворуч кадру +X, якщо pered < 0
+    sx = 1.0 if pered < 0 else -1.0
+    G = np.stack([cx + sx * (Lg[:, 0] / RES - 0.5) * SCALE,
+                  cz + (0.5 - Lg[:, 1] / RES) * SCALE], 1)
+    # 2. Розгортка «Проєкція»: лінійна від (x, z) — підбір по самих вершинах.
+    uvl = me.uv_layers["Проєкція"].data
+    vi_l = np.empty(len(me.loops), dtype=np.int64)
+    me.loops.foreach_get("vertex_index", vi_l)
+    uv = np.empty(len(me.loops) * 2, dtype=np.float32)
+    uvl.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2).astype(float)
+    xz = co[vi_l][:, [0, 2]]
+    A = np.c_[np.ones(len(xz)), xz]
+    cu = np.linalg.lstsq(A[::7], uv[::7, 0], rcond=None)[0]
+    cv = np.linalg.lstsq(A[::7], uv[::7, 1], rcond=None)[0]
+    w_, h_ = bpy.data.images.load(os.path.abspath(REF)).size
+    Fu = F[:, 0] / w_
+    Fv = 1.0 - F[:, 1] / h_
+    Ag = np.c_[np.ones(len(G)), G]
+    R = np.stack([Fu - Ag @ cu, Fv - Ag @ cv], 1)
+    zsuv_cm = np.abs(R[:, 1]).mean() / abs(cv[2]) * 100
+    # 3. RBF: лише кути з передньої півсфери голови
+    nr = np.array([(mw.to_3x3() @ v.normal)[:] for v in me.vertices])[vi_l]
+    tut_m = (xz[:, 1] > G[:, 1].min() - 0.06) & (nr[:, 1] * pered > -0.3)
+    S2 = 2 * 0.012 ** 2
+    idx = np.where(tut_m)[0]
+    for s0 in range(0, len(idx), 20000):
+        ch = idx[s0:s0 + 20000]
+        d2 = ((xz[ch, None, :] - G[None, :, :]) ** 2).sum(-1)
+        wg = np.exp(-d2 / S2)
+        uv[ch] += (wg @ R) / (wg.sum(1, keepdims=True) + 0.05)
+    uvl.foreach_set("uv", uv.astype(np.float32).ravel())
+    print("[аватар] обличчя: точок %d, середній зсув текстури %.1f см, кутів %d"
+          % (len(G), zsuv_cm, len(idx)))
+    return G
+
+
+def zgladyty_ochi(skan, pered, G):
+    """`--очі` (12.10.2026): Pixal3D ліпить навколо очей валики-«окуляри».
+    Контури очей — точки G (x, z сітки, з `vyrivniaty_oblychchia`); у зоні
+    (контур ×2,4) глибина стає гладкою квадратичною поверхнею, підібраною
+    по кільцю ×2,6…×3,2, з ледь заглибленою очною щілиною; ×2,4…×3,0 —
+    плавний перехід. Малюнок очей дає текстура (вже вирівняна)."""
+    import numpy as np
+    OKO = ([33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
+           [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466])
+    me = skan.data
+    co = np.array([v.co[:] for v in me.vertices])
+    # попереду голови — за положенням, не за нормаллю (нормаль-фільтр
+    # лишав вершини складок на місці — смуга розривів, 12.10.2026)
+    hd = co[co[:, 2] > G[:, 1].min() - 0.02]
+    cy = float(np.median(hd[:, 1]))
+    pered_m = (co[:, 1] - cy) * pered > 0.0
+    vsi_zony = set()
+    for idx in OKO:
+        p = G[idx]
+        c = p.mean(0)
+        ax = max((p[:, 0].max() - p[:, 0].min()) / 2, 1e-3)
+        az = max((p[:, 1].max() - p[:, 1].min()) / 2, 1e-3)
+        dx, dz = co[:, 0] - c[0], co[:, 2] - c[1]
+        k = np.sqrt((dx / ax) ** 2 + (dz / az) ** 2)
+        th = np.arctan2(dz, dx)
+        r_dir = 1.0 / np.sqrt((np.cos(th) / ax) ** 2 + (np.sin(th) / az) ** 2)
+        d = (k - 1.0) * r_dir          # метри від контуру назовні (<0 — в оці)
+        opora = pered_m & (d >= 0.008) & (d <= 0.014)
+        zona = pered_m & (d < 0.010)
+        if opora.sum() < 12:
+            print("[аватар] ‼ очі: мало опорних вершин", int(opora.sum()))
+            continue
+        X_, Z_ = co[opora, 0], co[opora, 2]
+        A = np.stack([np.ones_like(X_), X_, Z_, X_ * X_, X_ * Z_, Z_ * Z_], 1)
+        coef = np.linalg.lstsq(A, co[opora, 1], rcond=None)[0]
+        for vi in np.where(zona)[0]:
+            x, z = co[vi, 0], co[vi, 2]
+            y_f = coef @ np.array([1, x, z, x * x, x * z, z * z])
+            if d[vi] < 0.002:          # очна щілина — ледь заглиблена
+                y_f -= pered * 0.002 * min(1.0, (0.002 - d[vi]) / 0.004)
+            t = 1.0 if d[vi] <= 0.006 else (0.010 - d[vi]) / 0.004
+            me.vertices[vi].co.y += (y_f - me.vertices[vi].co.y) * t
+        print("[аватар] очі: око x %.3f z %.3f — вершин %d, опорних %d"
+              % (c[0], c[1], int(zona.sum()), int(opora.sum())))
+        vsi_zony.update(np.where(zona)[0].tolist())
+    me.update()
+    # Сплющені на одну поверхню уламки другої оболонки мерехтіли
+    # («крихта» в оці): грані зони, повернуті назад, — геть; зона — м'яко.
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    bm.normal_update()
+    nazad = [f for f in bm.faces if all(v.index in vsi_zony for v in f.verts)
+             and f.normal.y * pered < 0.2]
+    bmesh.ops.delete(bm, geom=nazad, context="FACES")
+    bm.verts.ensure_lookup_table()
+    zv = [v for v in bm.verts if v.index in vsi_zony and v.link_faces]
+    for _ in range(3):
+        bmesh.ops.smooth_vert(bm, verts=zv, factor=0.4, use_axis_x=False,
+                              use_axis_y=True, use_axis_z=False)
+    bm.to_mesh(me)
+    bm.free()
+    print("[аватар] очі: прибрано граней назад %d" % len(nazad))
 
 
 def proektsiia(skan, pered):

@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://6yyj0avuj68x"
-path="res://.godot/imported/elf-s808-mixamo_волосся-long01-волосся-long01.png-33a20e78bd21d52c552d1c09353152c0.ctex"
+uid="uid://cepnof2eshc5q"
+path="res://.godot/imported/elf-s808-mixamo_волосинки.png-8dad811226640037e2b88708be4b375e.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "d3781e5068839b7b0b84cf2b52b38cfd"
+"md5": "b1e71617ed404e5bb41421c99094fd90"
 }
 
 [deps]
 
-source_file="res://models/own/avatary/elf-s808-mixamo/elf-s808-mixamo_волосся-long01-волосся-long01.png"
-dest_files=["res://.godot/imported/elf-s808-mixamo_волосся-long01-волосся-long01.png-33a20e78bd21d52c552d1c09353152c0.ctex"]
+source_file="res://models/own/avatary/elf-s808-mixamo/elf-s808-mixamo_волосинки.png"
+dest_files=["res://.godot/imported/elf-s808-mixamo_волосинки.png-8dad811226640037e2b88708be4b375e.ctex"]
 
 [params]
 

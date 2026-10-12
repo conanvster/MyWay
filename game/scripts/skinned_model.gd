@@ -306,9 +306,16 @@ const HAIR_STIFFNESS := 0.3
 const HAIR_DRAG := 0.3
 const HAIR_GRAVITY := 1.0
 const HAIR_RADIUS := 0.02
-## [кістка, радіус, висота] — у метрах моделі (до `_fit`).
-const HAIR_BLOCKERS := [["mixamorig_Spine2", 0.09, 0.32],
-		["mixamorig_Spine1", 0.09, 0.30], ["mixamorig_Neck", 0.05, 0.14]]
+## [кістка, радіус, висота, зсув уздовж кістки] — у метрах моделі (до
+## `_fit`). Не лише хребет: волосся проходило крізь плечі на бігу (слово
+## замовника 12.10.2026: «крізь поверхню тіла ні одяг, ні волосся
+## проходити не будуть»).
+const HAIR_BLOCKERS := [
+		["mixamorig_Spine", 0.11, 0.30, 0.05], ["mixamorig_Spine1", 0.11, 0.30, 0.05],
+		["mixamorig_Spine2", 0.12, 0.32, 0.06], ["mixamorig_Neck", 0.055, 0.14, 0.04],
+		["mixamorig_Head", 0.10, 0.22, 0.09],
+		["mixamorig_LeftShoulder", 0.06, 0.16, 0.06], ["mixamorig_RightShoulder", 0.06, 0.16, 0.06],
+		["mixamorig_LeftArm", 0.055, 0.30, 0.13], ["mixamorig_RightArm", 0.055, 0.30, 0.13]]
 
 
 func _hair_springs() -> void:
@@ -321,6 +328,7 @@ func _hair_springs() -> void:
 				var mat: BaseMaterial3D = src.duplicate()
 				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 				mat.alpha_scissor_threshold = 0.45
+				mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE
 				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 				m.set_surface_override_material(i, mat)
 	var sim := SpringBoneSimulator3D.new()
@@ -345,6 +353,7 @@ func _hair_springs() -> void:
 		cap.set_bone_name(b[0])
 		cap.set_radius(b[1])
 		cap.set_height(b[2])
+		cap.set_position_offset(Vector3(0, b[3], 0))
 		sim.add_child(cap)
 
 

@@ -404,6 +404,9 @@ func _proba(args: PackedStringArray) -> void:
 		return
 	if "--глина" in args:
 		_zastosuvaty(null, true)
+	if "--без-пружин" in args:
+		for n in _skin_node.find_children("Волосся-пружини", "", true, false):
+			n.free()
 	if "--кут" in args:
 		_yaw = deg_to_rad(float(args[args.find("--кут") + 1]))
 		_kamera()

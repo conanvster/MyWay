@@ -16,6 +16,15 @@
 
 Вихід — `wiki/img/test/avatar/el-korotke-s903b-kysti-s<сід>.png`;
 основа — `el-korotke-s903b.png` (копія кадру ComfyUI).
+
+`--пересадити` (13.10.2026, слово замовника: «кісті візьми з
+el_cn_202_00001_.png або el_cn_101_00001_.png»): кисті — пікселі кадру
+`el-cn-101.png` (розкриті долоні, п'ять розведених пальців, рука
+горизонтальна; у 202 кисті підняті й обмотані): від зап'ястя (край наруча)
+до кінчиків, афінно на зап'ястя ельфійки — уздовж руки за пропорцією
+(кисть ≈ 10,5% зросту), поперек — за товщиною зап'ястя (ельфійка
+тонша); стара кисть — геть (`cv2.inpaint` тла), колір шкіри — Lab під
+передпліччя, перехід на зап'ясті 10 px. Вихід — `el-korotke-s903b-k101.png`.
 """
 import os
 import shutil
@@ -57,9 +66,106 @@ def kvadrat(sylu, pravа):
     return x0, y_t - s // 2, x0 + s, y_t + s // 2
 
 
+DONOR = D / "el-cn-101.png"
+# зап'ястя донора — край наруча (профіль товщини й яскравості, 13.10)
+DONOR_ZAP = {"ліва": 142, "права": 870}
+
+
+def profil(sylu, x, y0=100, y1=400):
+    col = np.where(sylu[y0:y1, x])[0]
+    return (col.min() + y0, col.max() + y0) if len(col) else None
+
+
+def peresadyty():
+    sylu_t = np.asarray(Image.open(D / (KADR.stem + "-maska.png")).convert("L")) > 127
+    if not (D / "el-cn-101-maska.png").exists():
+        m.cutout(str(DONOR), str(D / "el-cn-101-maska.png"))
+    sylu_s = np.asarray(Image.open(D / "el-cn-101-maska.png").convert("L")) > 127
+    kadr = np.asarray(Image.open(KADR).convert("RGB")).copy()
+    dzh = np.asarray(Image.open(DONOR).convert("RGB"))
+    ys = np.where(sylu_t.any(1))[0]
+    H = ys.max() - ys.min()
+    L_t = 0.105 * H
+    for bik, sgn in (("ліва", -1), ("права", 1)):
+        # ціль: кінчик і зап'ястя (найтонше місце за 60…150 px від кінчика)
+        xs = np.where(sylu_t[100:400].any(0))[0]
+        x_tip = xs.min() if sgn < 0 else xs.max()
+        tov = {}
+        for d in range(60, 150):
+            pr = profil(sylu_t, x_tip - sgn * d)
+            if pr:
+                tov[d] = pr[1] - pr[0]
+        d_w = min(tov, key=lambda d: (tov[d], d))
+        x_wt = x_tip - sgn * d_w
+        p0, p1 = profil(sylu_t, x_wt), profil(sylu_t, x_wt - sgn * 30)
+        W_t = np.array([x_wt, (p0[0] + p0[1]) / 2])
+        lik = np.array([x_wt - sgn * 30, (p1[0] + p1[1]) / 2])
+        os_t = (W_t - lik) / np.linalg.norm(W_t - lik)          # до кінчиків
+        th_t = p0[1] - p0[0] + 1
+        # донор
+        x_ws = DONOR_ZAP[bik]
+        q0, q1 = profil(sylu_s, x_ws), profil(sylu_s, x_ws - sgn * 25)
+        W_s = np.array([x_ws, (q0[0] + q0[1]) / 2])
+        lik_s = np.array([x_ws - sgn * 25, (q1[0] + q1[1]) / 2])
+        os_s = (W_s - lik_s) / np.linalg.norm(W_s - lik_s)
+        th_s = q0[1] - q0[0] + 1
+        xs_s = np.where(sylu_s[100:400].any(0))[0]
+        x_tip_s = xs_s.min() if sgn < 0 else xs_s.max()
+        L_s = abs(x_tip_s - x_ws)
+        sa, sc = L_t / L_s, float(np.clip(th_t / th_s, 0.55, 1.0))
+        # афінна: донорська система (уздовж, поперек) → цільова
+        n_s, n_t = np.array([-os_s[1], os_s[0]]), np.array([-os_t[1], os_t[0]])
+        A_s = np.c_[os_s, n_s]                                     # 2×2
+        A_t = np.c_[os_t * sa, n_t * sc]
+        Mx = A_t @ np.linalg.inv(A_s)
+        M = np.c_[Mx, W_t - Mx @ W_s]
+        print("[кисті] %s: ціль зап'ястя %s товщ %d, кінчик %d; донор зап'ястя %s товщ %d, довж %d; ×%.2f уздовж, ×%.2f поперек"
+              % (bik, W_t.round(), th_t, x_tip, W_s.round(), th_s, L_s, sa, sc), flush=True)
+        # кисть донора — лише за зап'ястям
+        yy, xx = np.mgrid[0:1024, 0:1024]
+        za = ((np.c_[xx.ravel(), yy.ravel()] - W_s) @ os_s).reshape(1024, 1024)
+        # (звуження на 1 px проти облямівки рвало мізинець — облямівку
+        # прибирає `--шліфувати`)
+        km = (sylu_s & (za > -2)).astype(np.float32)
+        kyst = cv2.warpAffine(dzh, M, (1024, 1024), flags=cv2.INTER_LANCZOS4)
+        km_t = cv2.warpAffine(km, M, (1024, 1024), flags=cv2.INTER_LINEAR)
+        # колір шкіри — під передпліччя ельфійки (20…60 px до зап'ястя)
+        zt = ((np.c_[xx.ravel(), yy.ravel()] - W_t) @ os_t).reshape(1024, 1024)
+        pered = sylu_t & (zt < -20) & (zt > -60)
+        nova_s = (km_t > 0.5)
+        lab_k = cv2.cvtColor(kyst, cv2.COLOR_RGB2LAB).astype(np.float32)
+        lab_t = cv2.cvtColor(kadr, cv2.COLOR_RGB2LAB).astype(np.float32)
+        for c in range(3):
+            a_, b_ = lab_k[..., c][nova_s], lab_t[..., c][pered]
+            lab_k[..., c] = (lab_k[..., c] - a_.mean()) / max(a_.std(), 1e-3) * b_.std() + b_.mean()
+        kyst = cv2.cvtColor(lab_k.clip(0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB)
+        # стара кисть геть: усе за зап'ястям у силуеті — тло
+        stara = (sylu_t & (zt > 2)).astype(np.uint8)
+        stara = cv2.dilate(stara, np.ones((3, 3), np.uint8), iterations=3)
+        kadr = cv2.inpaint(kadr, stara, 5, cv2.INPAINT_TELEA)
+        # вставка: м'який край і перехід на зап'ясті (10 px)
+        perekhid = np.clip((zt + 2) / 10.0, 0, 1)
+        alfa = (cv2.GaussianBlur(km_t, (0, 0), 0.8) * perekhid)[..., None]
+        kadr = (kadr * (1 - alfa) + kyst * alfa).astype(np.uint8)
+    kudy = D / (KADR.stem + "-k101.png")
+    Image.fromarray(kadr).save(kudy)
+    print("готово", kudy.name, flush=True)
+
+
 def main():
+    global KADR, DENOISE
+    if "--пересадити" in sys.argv:
+        peresadyty()
+        return
+    # `--шліфувати`: те саме перемалювання, але кадр — пересаджені кисті й
+    # слабкий шум (тон і краї пальців, форма лишається)
+    if "--шліфувати" in sys.argv:
+        KADR = D / (KADR.stem + "-k101.png")
+        DENOISE = 0.45
     if not KADR.exists():
         shutil.copy(DZHERELO, KADR)
+    if "--шліфувати" in sys.argv:            # силует нових кистей, не старих
+        m.cutout(str(KADR), str(D / (KADR.stem + "-maska.png")))
     maska_p = D / (KADR.stem + "-maska.png")
     if not maska_p.exists():
         m.cutout(str(KADR), str(maska_p))

@@ -75,6 +75,12 @@ PROMT_HLYNA = (
 if "--глина" in sys.argv:
     sys.argv.remove("--глина")
     PROMT = PROMT_HLYNA
+# `--коротке` (13.10.2026, ельфійка el-korotke-k1811 — коротке волосся):
+# промпт ельфійки описує довге волосся — слабкий шум домальовував пасма.
+if "--коротке" in sys.argv:
+    sys.argv.remove("--коротке")
+    PROMT = PROMT.replace("long straight silver-white hair parted in the middle",
+                          "very short cropped silver-white hair close to the scalp")
 
 
 def holova_ramka(maska):

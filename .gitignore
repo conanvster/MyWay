@@ -31,3 +31,6 @@ art/monsters/*-3d/*
 !art/monsters/*-3d/*.json
 art/monsters/_до-шаблону/
 wiki/img/
+
+# Рухи Mixamo (Adobe): дозволено вживати в грі, не поширювати сирі файли — лише диск
+art/mixamo/

@@ -17,7 +17,7 @@ extends Node
 ## Під рухами — зовнішність, якщо модель її вміє (`SkinnedModel.customize`):
 ## зачіска й колір зачіски, очі (колір, форма, підводка), вуха, ніс, губи
 ## (форма й колір), колір шкіри. Угорі списку — «Ельфійки — усі версії»
-## (`avatary/elfiiky.json`): ✔ поточна, ✘ забраковані з причиною (підказка
+## (`avatary/elfiiky.json`) і «Орчиха — усі версії» (`avatary/orky.json`): ✔ поточна, ✘ забраковані з причиною (підказка
 ## й рядок унизу).
 ## Модель збирає той самий `SkinnedModel`, що й гра (зріст і хутро — з
 ## `data/mobs.json`), тож видно те, що побачить гравець.
@@ -43,6 +43,10 @@ const SKINS_DIR := "res://models/own/skins/"
 ## зроблено і забраковано»). Старі версії — `avatary/_arkhiv/` (лише диск,
 ## дістаються з git: `git show <коміт>:<шлях>`).
 const ELFIIKY := "res://models/own/avatary/elfiiky.json"
+## Те саме для орчихи (12.10.2026, замовник: «не бачу в ./run.sh --моделі» —
+## у розділі «Аватари» вона губилась під назвою файлу).
+const VERSII := [["Орчиха — усі версії", "res://models/own/avatary/orky.json"],
+		["Ельфійки — усі версії", ELFIIKY]]
 ## Вибір зовнішності (там само: «зачіски та колір зачіски, Очі, Вуха, Ніс,
 ## Губи, Колір скіна»). null — як у текстурі моделі.
 const KOLORY_VOLOSSIA := [["як є", null], ["сивий", Color(0.92, 0.93, 0.96)],
@@ -111,16 +115,18 @@ func _zibraty_spysok() -> void:
 				if p != "" and not mobs.has(p):
 					mobs[p] = {"nazva": str(v.get("назва", "")), "look": look}
 	var bachyly := {}
-	var el: Variant = JSON.parse_string(FileAccess.get_file_as_string(ELFIIKY)) \
-			if FileAccess.file_exists(ELFIIKY) else null
-	if el is Array:
+	for vr: Array in VERSII:
+		var el: Variant = JSON.parse_string(FileAccess.get_file_as_string(vr[1])) \
+				if FileAccess.file_exists(vr[1]) else null
+		if not el is Array:
+			continue
 		for e: Dictionary in el:
 			var p := str(e.get("шлях", ""))
 			if not ResourceLoader.exists(p):
 				continue
 			bachyly[p] = true
 			_modeli.append({"nazva": "%s %s" % ["✔" if e.get("стан", "") == "поточна" else "✘",
-					str(e.get("назва", p.get_file()))], "rozdil": "Ельфійки — усі версії",
+					str(e.get("назва", p.get_file()))], "rozdil": vr[0],
 					"path": p, "height": float(e.get("зріст", 1.82)), "fur": {}, "held": {},
 					"pro": str(e.get("чому", ""))})
 	for r: Array in ROZDILY:

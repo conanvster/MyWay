@@ -189,7 +189,7 @@ KUTY = (-135.0, -90.0, -45.0, 0.0, 45.0, 90.0, 135.0)
 LANKY = 4
 
 
-def kistky_volossia(arm, vol, verkh=None, svii_material=False):
+def kistky_volossia(arm, vol, verkh=None, svii_material=False, niz=None):
     """Сім ланцюжків по 4 кістки довкола голови (`KUTY`) під
     `mixamorig:Head`: суглоби — медіана пасом у секторі ±20° на висоті
     ланки; ваги — плавно між сусідніми ланцюжками за кутом і між ланками
@@ -204,6 +204,8 @@ def kistky_volossia(arm, vol, verkh=None, svii_material=False):
     z_t, z_b = co[:, 2].max() - 0.01, co[:, 2].min() + 0.02
     if verkh is not None:          # зачіска з маківкою: ланцюжки від потилиці
         z_t = min(z_t, verkh)
+    if niz is not None:            # кілька зачісок: низ — за найдовшою (13.10.2026)
+        z_b = niz + 0.02
     holova_w = arm.matrix_world @ arm.data.bones["mixamorig:Head"].head_local
     cx, cy = holova_w.x, holova_w.y
     zs = np.linspace(z_t, z_b, LANKY + 1)
@@ -425,20 +427,28 @@ if VOLOSSIA:
         # сканова пластина геть — на голову зачіски (`volossia_pasma.py`)
         if vol is not None:
             bpy.data.objects.remove(vol)
-        for n_, shliakh in enumerate(ZACHISKY):
+        # Кістки будує перша зачіска, тож низ ланцюжків — за найдовшою з усіх
+        # (13.10.2026: першим стояло «каре» — ланцюжки 1,48…1,58 м, і довгі
+        # пасма «прямого» стирчали вбік без кісток).
+        zavant = []
+        for shliakh in ZACHISKY:
             with bpy.data.libraries.load(shliakh) as (src_, dst_):
                 dst_.objects = [n for n in src_.objects if n.startswith("Волосся")]
-            for vol in dst_.objects:
-                bpy.context.scene.collection.objects.link(vol)
-                mw = vol.matrix_world.copy()
-                vol.parent = arm
-                vol.matrix_parent_inverse = arm.matrix_world.inverted()
-                vol.matrix_world = mw
-                am = vol.modifiers.new("Armature", "ARMATURE")
-                am.object = arm
-                nashi.append(vol)
-                kistky_volossia(arm, vol, verkh=1.58, svii_material=True)
-                print("[волосся] зачіска %s: вершин %d" % (vol.name, len(vol.data.vertices)))
+            zavant += list(dst_.objects)
+        for vol in zavant:
+            bpy.context.scene.collection.objects.link(vol)
+        bpy.context.view_layer.update()
+        niz = min(min((vol.matrix_world @ v.co).z for v in vol.data.vertices) for vol in zavant)
+        for vol in zavant:
+            mw = vol.matrix_world.copy()
+            vol.parent = arm
+            vol.matrix_parent_inverse = arm.matrix_world.inverted()
+            vol.matrix_world = mw
+            am = vol.modifiers.new("Armature", "ARMATURE")
+            am.object = arm
+            nashi.append(vol)
+            kistky_volossia(arm, vol, verkh=1.58, svii_material=True, niz=niz)
+            print("[волосся] зачіска %s: вершин %d" % (vol.name, len(vol.data.vertices)))
     elif vol is not None:
         nashi.append(vol)
         kistky_volossia(arm, vol)

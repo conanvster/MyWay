@@ -53,6 +53,19 @@ PROMT = (
     "focus, photorealistic, 8k detail.")
 
 
+# `--орк` (12.10.2026, орчиха-основа ork2-lysa-s1301): те саме, але
+# обличчя орчихи — промпт ельфійки перемальовував би її в ельфа.
+PROMT_ORK = (
+    "Extreme close-up studio portrait of an adult female orc, front view, "
+    "olive-green skin with fine natural pores and texture, stern frowning "
+    "face, heavy brow, dark eyes with detailed irises, long pointed ears, "
+    "short white hair, plain grey background, soft even lighting, sharp "
+    "focus, photorealistic, 8k detail.")
+if "--орк" in sys.argv:
+    sys.argv.remove("--орк")
+    PROMT = PROMT_ORK
+
+
 def holova_ramka(maska):
     """Квадрат голови: верх силуету, висота голови ≈ 1/8 зросту."""
     ys, xs = np.where(maska)

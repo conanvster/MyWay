@@ -16,7 +16,12 @@ Mixamo на цьому ж персонажі (60 fps), тож перенос р�
   5. експорт .glb з усіма діями.
 
     blender -b --factory-startup -P tools/blender/mixamo_zbirka.py -- \\
-        <основа.blend> <вихід.glb> <зі_шкірою.fbx> <рух.fbx>...
+        <основа.blend> <вихід.glb> <зі_шкірою.fbx> <рух.fbx>... [--волосся]
+
+`--зачіска <волосся.blend>` (з `mpfb_volossia.py`) — замість сканової пластини
+зачіска MakeHuman на тих самих ланцюжках (ланцюжки від потилиці, 1,58 м).
+`--волосся` — пластину волосся зі спини окремою сіткою на трьох ланцюжках
+кісток `hair_{L,C,R}_{1..4}` під головою (для `SpringBoneSimulator3D`).
 
 Назва дії — друге поле імені файлу (`elf808v2__02_khoda__walking.fbx` →
 `02_khoda`) і переклад у RUKHY.
@@ -28,6 +33,14 @@ import bpy
 from mathutils import Vector
 
 a = sys.argv[sys.argv.index("--") + 1:]
+VOLOSSIA = "--волосся" in a
+a = [x for x in a if x != "--волосся"]
+ZACHISKA = None
+if "--зачіска" in a:
+    i_ = a.index("--зачіска")
+    ZACHISKA = a[i_ + 1]
+    del a[i_:i_ + 2]
+    VOLOSSIA = True
 OSNOVA, VYKHID, SHKIRA, RUKHY_F = a[0], a[1], a[2], a[3:]
 RUKHY = {"01_spokii": "Idle", "02_khoda": "Walk", "03_bih": "Run",
          "04_strybok": "Jump", "05_udar_mechem": "Sword_Slash",
@@ -56,6 +69,175 @@ def fcurves_of(action):
 def nazva(f):
     k = os.path.basename(f).split("__")[1]
     return RUKHY.get(k, k)
+
+
+def viddilyty_volossia(tilo):
+    """Пластина волосся зі спини — окремою сіткою (12.10.2026).
+
+    Скан — подвійна оболонка ~5 мм. Промінь ззаду наперед крізь (x, z):
+    з волоссям три пари стінок (волосся, спина, груди), без нього дві;
+    волосся — перша пара до першого проміжку > 2,5 см. Колір не годиться:
+    бліда шкіра ельфійки майже біла."""
+    import collections
+    import bmesh
+    import numpy as np
+    from mathutils.bvhtree import BVHTree
+    me = tilo.data
+    mw = tilo.matrix_world
+    co = np.array([(mw @ v.co)[:] for v in me.vertices])
+    nv = len(co)
+    dg = bpy.context.evaluated_depsgraph_get()
+    tree = BVHTree.FromObject(tilo, dg)   # у координатах об'єкта
+    inv = mw.inverted()
+
+    def shary(x, z):
+        ys = []
+        p = inv @ Vector((x, 2.0, z))
+        d = (inv.to_3x3() @ Vector((0, -1, 0))).normalized()
+        for _ in range(12):
+            hit = tree.ray_cast(p, d, 6.0)
+            if hit[0] is None:
+                break
+            ys.append((mw @ hit[0]).y)
+            p = hit[0] + d * 0.0005
+        return ys
+
+    oblast = (co[:, 1] > 0.0) & (co[:, 2] > 0.98) & (co[:, 2] < 1.58) \
+        & (np.abs(co[:, 0]) < 0.3)
+    vybir = np.zeros(nv, bool)
+    kesh = {}
+    for i in np.where(oblast)[0]:
+        kl = (round(co[i, 0], 3), round(co[i, 2], 3))
+        if kl not in kesh:
+            ys = shary(co[i, 0], co[i, 2])
+            gr = None
+            if len(ys) >= 6:
+                for k in range(len(ys) - 1):
+                    if ys[k] - ys[k + 1] > 0.025:
+                        gr = (ys[k] + ys[k + 1]) / 2
+                        break
+            kesh[kl] = gr
+        if kesh[kl] is not None and co[i, 1] > kesh[kl]:
+            vybir[i] = True
+    sus = [[] for _ in range(nv)]
+    for e in me.edges:
+        a_, b_ = e.vertices
+        sus[a_].append(b_)
+        sus[b_].append(a_)
+    mitka = np.full(nv, -1)
+    rozmir = []
+    for s0 in np.where(vybir)[0]:
+        if mitka[s0] >= 0:
+            continue
+        q = collections.deque([s0])
+        mitka[s0] = len(rozmir)
+        n = 0
+        while q:
+            i = q.popleft()
+            n += 1
+            for j in sus[i]:
+                if vybir[j] and mitka[j] < 0:
+                    mitka[j] = mitka[s0]
+                    q.append(j)
+        rozmir.append(n)
+    vybir = np.isin(mitka, [k for k, n in enumerate(rozmir) if n >= 200])
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    for f in bm.faces:
+        f.select = all(vybir[v.index] for v in f.verts)
+    bm.to_mesh(me)
+    bm.free()
+    bpy.ops.object.select_all(action="DESELECT")
+    tilo.select_set(True)
+    bpy.context.view_layer.objects.active = tilo
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.separate(type="SELECTED")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    vol = next(o for o in bpy.context.selected_objects if o is not tilo)
+    vol.name = "Волосся"
+    print("[волосся] вершин %d (з %d кандидатів), тіло %d"
+          % (len(vol.data.vertices), int(oblast.sum()), len(tilo.data.vertices)))
+    return vol
+
+
+def kistky_volossia(arm, vol, verkh=None, svii_material=False):
+    """Три ланцюжки по 4 кістки вздовж пластини (ліво, центр, право) під
+    `mixamorig:Head`; ваги — плавно між ланцюжками й ланками; верхні 3 см
+    — частково голова."""
+    import numpy as np
+    co = np.array([(vol.matrix_world @ v.co)[:] for v in vol.data.vertices])
+    z_t, z_b = co[:, 2].max() - 0.01, co[:, 2].min() + 0.02
+    if verkh is not None:          # зачіска з маківкою: ланцюжки від потилиці
+        z_t = min(z_t, verkh)
+    x_l, x_r = np.percentile(co[:, 0], 8), np.percentile(co[:, 0], 92)
+    xs = [x_l * 0.6, 0.0, x_r * 0.6]
+    LANKY = 4
+    zs = np.linspace(z_t, z_b, LANKY + 1)
+
+    def y_v(x, z):
+        # лише пасма позаду (бокові пасма на грудях тягли ланцюжок уперед)
+        m = (np.abs(co[:, 0] - x) < 0.04) & (np.abs(co[:, 2] - z) < 0.04) \
+            & (co[:, 1] > 0.0)
+        return float(np.median(co[m, 1])) if m.any() else float(np.median(co[:, 1]))
+
+    inv = arm.matrix_world.inverted()
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    holova = eb["mixamorig:Head"]
+    imena = []
+    for c, x in zip("LCR", xs):
+        bat = holova
+        for k in range(LANKY):
+            b = eb.new("hair_%s_%d" % (c, k + 1))
+            b.head = inv @ Vector((x, y_v(x, zs[k]), zs[k]))
+            b.tail = inv @ Vector((x, y_v(x, zs[k + 1]), zs[k + 1]))
+            b.parent = bat
+            b.use_connect = k > 0
+            bat = b
+            imena.append(b.name)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for g in list(vol.vertex_groups):
+        vol.vertex_groups.remove(g)
+    grupy = {n: vol.vertex_groups.new(name=n) for n in imena}
+    gh = vol.vertex_groups.new(name="mixamorig:Head")
+    for i, p in enumerate(co):
+        x, z = p[0], p[2]
+        # між ланцюжками
+        if x <= xs[0]:
+            ch = [(0, 1.0)]
+        elif x >= xs[2]:
+            ch = [(2, 1.0)]
+        else:
+            j = 0 if x < xs[1] else 1
+            f = (x - xs[j]) / (xs[j + 1] - xs[j])
+            ch = [(j, 1 - f), (j + 1, f)]
+        t = min(max((z_t - z) / (z_t - z_b), 0.0), 0.999) * LANKY
+        k = int(t)
+        fk = t - k
+        holova_w = 1.0 if z >= z_t else (
+            max(0.0, 1.0 - (z_t - z) / 0.03) if z > z_t - 0.03 else 0.0)
+        for c_i, wc in ch:
+            c = "LCR"[c_i]
+            w_tut = wc * (1 - holova_w)
+            grupy["hair_%s_%d" % (c, k + 1)].add([i], w_tut * (1 - 0.5 * fk), "ADD")
+            if k + 1 < LANKY:
+                grupy["hair_%s_%d" % (c, k + 2)].add([i], w_tut * 0.5 * fk, "ADD")
+        if holova_w > 0:
+            gh.add([i], holova_w, "ADD")
+    if svii_material:
+        print("[волосся] кістки:", ", ".join(imena), "; z %.2f…%.2f" % (z_b, z_t))
+        return
+    mat = bpy.data.materials.new("Волосся")
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    bsdf.inputs["Base Color"].default_value = (0.86, 0.85, 0.82, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.55
+    vol.data.materials.clear()
+    vol.data.materials.append(mat)
+    print("[волосся] кістки:", ", ".join(imena), "; z %.2f…%.2f" % (z_b, z_t))
 
 
 def mezhi(obs):
@@ -181,6 +363,25 @@ for o in nashi:
                                                     porozhni))
 for o in mx_ms:
     bpy.data.objects.remove(o)
+if VOLOSSIA:
+    tilo_n = max(nashi, key=lambda o: len(o.data.vertices))
+    vol = viddilyty_volossia(tilo_n)
+    if ZACHISKA:
+        # сканова пластина геть — на голову зачіска MakeHuman (`mpfb_volossia.py`)
+        bpy.data.objects.remove(vol)
+        with bpy.data.libraries.load(ZACHISKA) as (src_, dst_):
+            dst_.objects = ["Волосся"]
+        vol = dst_.objects[0]
+        bpy.context.scene.collection.objects.link(vol)
+        mw = vol.matrix_world.copy()
+        vol.parent = arm
+        vol.matrix_parent_inverse = arm.matrix_world.inverted()
+        vol.matrix_world = mw
+        am = vol.modifiers.new("Armature", "ARMATURE")
+        am.object = arm
+    nashi.append(vol)
+    kistky_volossia(arm, vol, verkh=1.58 if ZACHISKA else None,
+                    svii_material=bool(ZACHISKA))
 arm.data.pose_position = "POSE"
 
 # 4. Дії.

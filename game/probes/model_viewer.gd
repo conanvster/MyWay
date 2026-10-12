@@ -18,7 +18,7 @@ extends Node
 ## `data/mobs.json`), тож видно те, що побачить гравець.
 ##
 ## Проба без рук (для перевірок): `-- --проба <частина назви> [--глина]
-## [--рух <назва>] --знімок <файл.png>` — обрати, показати, зняти, вийти.
+## [--рух <назва>] [--кут <градуси, 0 — спереду, 180 — ззаду>] --знімок <файл.png>` — обрати, показати, зняти, вийти.
 ##
 ## Камера: ліва кнопка + тягнути — обертати; права/середня — зсув; колесо —
 ## ближче/далі; F — показати всю модель; пробіл — знімок у user://.
@@ -404,12 +404,21 @@ func _proba(args: PackedStringArray) -> void:
 		return
 	if "--глина" in args:
 		_zastosuvaty(null, true)
+	if "--кут" in args:
+		_yaw = deg_to_rad(float(args[args.find("--кут") + 1]))
+		_kamera()
 	var ap := _player()
 	if "--рух" in args and ap != null:
 		ap.play(args[args.find("--рух") + 1])
 	print("[переглядач] модель %s, рухів %d, скінів %d" % [_vybrana["nazva"],
 			0 if ap == null else ap.get_animation_list().size(), _kartynky().size()])
-	for i in 40:
+	var kadriv := 40
+	if "--кадрів" in args:
+		kadriv = int(args[args.find("--кадрів") + 1])
+	if "--відстань" in args:
+		_dist = float(args[args.find("--відстань") + 1])
+		_kamera()
+	for i in kadriv:
 		await get_tree().process_frame
 	if "--знімок" in args:
 		get_viewport().get_texture().get_image().save_png(args[args.find("--знімок") + 1])

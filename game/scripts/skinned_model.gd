@@ -153,6 +153,8 @@ func build() -> void:
 			if at != -1:
 				_bones[name] = at
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
+	if _skeleton != null and _skeleton.find_bone("hair_C_1") != -1:
+		_hair_springs()
 	if not held.is_empty():
 		_hold(held)
 	if _player != null:
@@ -291,6 +293,59 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 		# `_fit`. Ділимо на масштаб від кістяка до самої моделі.
 		thing.scale = Vector3.ONE / _scale_down_to(_skeleton)
 		grip.add_child(thing)
+
+
+## Волосся на пружних кістках (12.10.2026, слово замовника: «перука
+## потрібно зробити окремим із волоссям, яке на вітру або під час руху хоч
+## трохи рухається»). Модель несе ланцюжки `hair_{L,C,R}_{1..4}` під
+## головою (`tools/blender/mixamo_zbirka.py --волосся`); тут — симулятор і
+## капсули на хребті й шиї, щоб пасма не заходили в спину.
+const HAIR_CHAINS := ["L", "C", "R"]
+const HAIR_LINKS := 4
+const HAIR_STIFFNESS := 0.3
+const HAIR_DRAG := 0.3
+const HAIR_GRAVITY := 1.0
+const HAIR_RADIUS := 0.02
+## [кістка, радіус, висота] — у метрах моделі (до `_fit`).
+const HAIR_BLOCKERS := [["mixamorig_Spine2", 0.09, 0.32],
+		["mixamorig_Spine1", 0.09, 0.30], ["mixamorig_Neck", 0.05, 0.14]]
+
+
+func _hair_springs() -> void:
+	# Пасма — смужки з прозорою текстурою волосинок: без відсікання прозорого
+	# зачіска виглядала суцільною сірою шторою (12.10.2026).
+	for m: MeshInstance3D in find_children("Волосся*", "MeshInstance3D", true, false):
+		for i in m.get_surface_override_material_count():
+			var src := m.get_active_material(i)
+			if src is BaseMaterial3D:
+				var mat: BaseMaterial3D = src.duplicate()
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.45
+				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+				m.set_surface_override_material(i, mat)
+	var sim := SpringBoneSimulator3D.new()
+	sim.name = "Волосся-пружини"
+	_skeleton.add_child(sim)
+	sim.set_setting_count(HAIR_CHAINS.size())
+	for i in HAIR_CHAINS.size():
+		var c: String = HAIR_CHAINS[i]
+		sim.set_root_bone_name(i, "hair_%s_1" % c)
+		sim.set_end_bone_name(i, "hair_%s_%d" % [c, HAIR_LINKS])
+		sim.set_extend_end_bone(i, true)
+		sim.set_end_bone_length(i, 0.06)
+		sim.set_stiffness(i, HAIR_STIFFNESS)
+		sim.set_drag(i, HAIR_DRAG)
+		sim.set_gravity(i, HAIR_GRAVITY)
+		sim.set_radius(i, HAIR_RADIUS)
+		sim.set_enable_all_child_collisions(i, true)
+	for b: Array in HAIR_BLOCKERS:
+		if _skeleton.find_bone(b[0]) == -1:
+			continue
+		var cap := SpringBoneCollisionCapsule3D.new()
+		cap.set_bone_name(b[0])
+		cap.set_radius(b[1])
+		cap.set_height(b[2])
+		sim.add_child(cap)
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

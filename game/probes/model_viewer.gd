@@ -14,11 +14,19 @@ extends Node
 ##   * будь-яка картинка-скін: файли поруч із моделлю з тим самим
 ##     початком імені (`<модель>_*.png|jpg`) і тека
 ##     `res://models/own/skins/<модель>/` — сюди класти скіни на пробу.
+## Під рухами — зовнішність, якщо модель її вміє (`SkinnedModel.customize`):
+## зачіска й колір зачіски, очі (колір, форма, підводка), вуха, ніс, губи
+## (форма й колір), колір шкіри. Угорі списку — «Ельфійки — усі версії»
+## (`avatary/elfiiky.json`): ✔ поточна, ✘ забраковані з причиною (підказка
+## й рядок унизу).
 ## Модель збирає той самий `SkinnedModel`, що й гра (зріст і хутро — з
 ## `data/mobs.json`), тож видно те, що побачить гравець.
 ##
 ## Проба без рук (для перевірок): `-- --проба <частина назви> [--глина]
-## [--рух <назва>] [--кут <градуси, 0 — спереду, 180 — ззаду>] --знімок <файл.png>` — обрати, показати, зняти, вийти.
+## [--рух <назва>] [--кут <градуси, 0 — спереду, 180 — ззаду>] [--відстань м]
+## [--ціль x,y,z] [--без-волосся] [--скін <частина назви>]
+## [--вигляд "зачіска=коса;колір_волосся=#9e1f1a;ніс=кирпатий"]
+## --знімок <файл.png>` — обрати, показати, зняти, вийти.
 ##
 ## Камера: ліва кнопка + тягнути — обертати; права/середня — зсув; колесо —
 ## ближче/далі; F — показати всю модель; пробіл — знімок у user://.
@@ -30,12 +38,39 @@ const ROZDILY := [
 	["Гуманоїди (процедурні)", ["res://models/own/humanoids/"], false],
 ]
 const SKINS_DIR := "res://models/own/skins/"
+## Усі зроблені ельфійки, разом із забракованими (слово замовника
+## 12.10.2026: «покажи у виборі персонажів … усі моделі ельфійок які було
+## зроблено і забраковано»). Старі версії — `avatary/_arkhiv/` (лише диск,
+## дістаються з git: `git show <коміт>:<шлях>`).
+const ELFIIKY := "res://models/own/avatary/elfiiky.json"
+## Вибір зовнішності (там само: «зачіски та колір зачіски, Очі, Вуха, Ніс,
+## Губи, Колір скіна»). null — як у текстурі моделі.
+const KOLORY_VOLOSSIA := [["як є", null], ["сивий", Color(0.92, 0.93, 0.96)],
+		["сірий", Color(0.48, 0.48, 0.5)], ["солом'яний", Color(0.9, 0.78, 0.5)],
+		["червоний", Color(0.62, 0.12, 0.1)], ["рудий", Color(0.8, 0.38, 0.16)],
+		["каштановий", Color(0.36, 0.21, 0.12)], ["чорний", Color(0.1, 0.09, 0.09)],
+		["білий", Color(1, 1, 1)]]
+const KOLORY_OCHEI := [["як є", null], ["блакитні", Color(0.3, 0.55, 0.9)],
+		["зелені", Color(0.3, 0.65, 0.35)], ["сірі", Color(0.55, 0.6, 0.65)],
+		["бурштинові", Color(0.85, 0.55, 0.15)], ["фіалкові", Color(0.55, 0.35, 0.85)],
+		["червоні", Color(0.8, 0.1, 0.1)], ["карі", Color(0.35, 0.2, 0.1)]]
+const KOLORY_GUB := [["як є", null], ["рожеві", Color(0.85, 0.5, 0.55)],
+		["ягідні", Color(0.55, 0.15, 0.3)], ["червоні", Color(0.75, 0.1, 0.12)],
+		["бліді", Color(0.82, 0.66, 0.62)]]
+const KOLORY_SHKIRY := [["як є", null], ["місячно-бліда", Color(0.88, 0.86, 0.85)],
+		["світла", Color(0.86, 0.72, 0.64)], ["смаглява", Color(0.7, 0.52, 0.4)],
+		["бронзова", Color(0.55, 0.38, 0.26)], ["оливкова", Color(0.68, 0.6, 0.45)],
+		["сіро-блакитна", Color(0.55, 0.6, 0.7)], ["попелясто-сіра", Color(0.5, 0.5, 0.52)]]
+const PIDVODKA := [["немає", 0.0], ["легка", 0.45], ["темна", 0.85]]
+const RYSY_NAZVY := {"ніс": ["Ніс", "прямий"], "губи": ["Губи", "звичайні"],
+		"очі": ["Форма очей", "звичайні"], "вуха": ["Вуха", "звичайні"]}
 
 var _modeli: Array = []          ## {nazva, rozdil, path, height, fur, held, anim}
 var _list: ItemList
 var _poshuk: LineEdit
 var _rukhy: VBoxContainer
 var _skiny: VBoxContainer
+var _vyhliad: VBoxContainer
 var _info: Label
 var _world: Node3D
 var _skin_node: SkinnedModel
@@ -76,6 +111,18 @@ func _zibraty_spysok() -> void:
 				if p != "" and not mobs.has(p):
 					mobs[p] = {"nazva": str(v.get("назва", "")), "look": look}
 	var bachyly := {}
+	var el: Variant = JSON.parse_string(FileAccess.get_file_as_string(ELFIIKY)) \
+			if FileAccess.file_exists(ELFIIKY) else null
+	if el is Array:
+		for e: Dictionary in el:
+			var p := str(e.get("шлях", ""))
+			if not ResourceLoader.exists(p):
+				continue
+			bachyly[p] = true
+			_modeli.append({"nazva": "%s %s" % ["✔" if e.get("стан", "") == "поточна" else "✘",
+					str(e.get("назва", p.get_file()))], "rozdil": "Ельфійки — усі версії",
+					"path": p, "height": float(e.get("зріст", 1.82)), "fur": {}, "held": {},
+					"pro": str(e.get("чому", ""))})
 	for r: Array in ROZDILY:
 		for dir: String in r[1]:
 			for p: String in _faily(dir, r[2]):
@@ -125,6 +172,8 @@ func _pokazaty_spysok(filtr: String) -> void:
 			_list.set_item_custom_fg_color(z, Color(0.95, 0.8, 0.45))
 		var k := _list.add_item("   " + m["nazva"])
 		_list.set_item_metadata(k, i)
+		if str(m.get("pro", "")) != "":
+			_list.set_item_tooltip(k, str(m["pro"]))
 
 
 # ── сцена й інтерфейс ───────────────────────────────────────────────────
@@ -210,6 +259,8 @@ func _ui() -> void:
 	pv.add_child(r)
 	_rukhy = VBoxContainer.new()
 	pv.add_child(_rukhy)
+	_vyhliad = VBoxContainer.new()
+	pv.add_child(_vyhliad)
 
 	_info = Label.new()
 	_info.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
@@ -243,11 +294,14 @@ func _obrano(at: int) -> void:
 	_skin_node.rotation_degrees.y = 180.0
 	_spysok_ruhiv()
 	_spysok_skiniv()
+	_spysok_vyhliadu()
 	_aim = Vector3(0, _vybrana["height"] * 0.5, 0)
 	_dist = maxf(2.0, _vybrana["height"] * 2.2)
 	_kamera()
 	_info.text = "%s · %s · зріст %.2f м" % [_vybrana["nazva"],
 			_vybrana["path"], _vybrana["height"]]
+	if str(_vybrana.get("pro", "")) != "":
+		_info.text += "\n" + str(_vybrana["pro"])
 
 
 func _maie_ruhy(p: String) -> bool:
@@ -287,6 +341,61 @@ func _spysok_ruhiv() -> void:
 		_rukhy.add_child(b)
 
 
+# ── зовнішність ─────────────────────────────────────────────────────────
+
+func _spysok_vyhliadu() -> void:
+	for c in _vyhliad.get_children():
+		c.queue_free()
+	var o := _skin_node.look_options()
+	var styles: Array = o["зачіски"]
+	var rysy: Dictionary = o["риси"]
+	if styles.is_empty() and rysy.is_empty() and not o["маски"]:
+		return
+	_vyhliad.add_child(HSeparator.new())
+	if not styles.is_empty():
+		var it: Array = []
+		for st: String in styles:
+			it.append([st, st])
+		it.append(["без волосся", "без"])
+		_vybir("Зачіска", it, "зачіска")
+		_vybir("Колір зачіски", KOLORY_VOLOSSIA, "колір_волосся")
+	if o["маски"]:
+		_vybir("Очі — колір", KOLORY_OCHEI, "колір_очей")
+		_vybir("Очі — підводка", PIDVODKA, "підводка")
+	for k: String in ["очі", "вуха", "ніс", "губи"]:
+		if not rysy.has(k):
+			continue
+		var it: Array = [[RYSY_NAZVY[k][1], ""]]
+		for v: String in rysy[k]:
+			it.append([v.replace("-", " "), v])
+		_vybir(RYSY_NAZVY[k][0], it, k)
+		if k == "губи" and o["маски"]:
+			_vybir("Губи — колір", KOLORY_GUB, "колір_губ")
+	if o["маски"]:
+		_vybir("Колір шкіри", KOLORY_SHKIRY, "колір_шкіри")
+
+
+## Підпис і список; кольори — зі зразком. Вибір → `SkinnedModel.customize`.
+func _vybir(nazva: String, items: Array, kliuch: String) -> void:
+	var l := Label.new()
+	l.text = nazva
+	_vyhliad.add_child(l)
+	var ob := OptionButton.new()
+	ob.custom_minimum_size = Vector2(190, 0)
+	ob.clip_text = true
+	for i in items.size():
+		var v: Variant = items[i][1]
+		if v is Color:
+			var img := Image.create(14, 14, false, Image.FORMAT_RGB8)
+			img.fill(v)
+			ob.add_icon_item(ImageTexture.create_from_image(img), items[i][0], i)
+		else:
+			ob.add_item(items[i][0], i)
+	ob.item_selected.connect(func(i: int) -> void:
+		_skin_node.customize({kliuch: items[i][1]}))
+	_vyhliad.add_child(ob)
+
+
 # ── скіни ───────────────────────────────────────────────────────────────
 
 func _spysok_skiniv() -> void:
@@ -324,7 +433,8 @@ func _kartynky() -> Array:
 	if d != null:
 		for f in d.get_files():
 			if (f.ends_with(".png") or f.ends_with(".jpg")) \
-					and (f.begins_with(stem + "_") or dir.ends_with(stem + "/")):
+					and (f.begins_with(stem + "_") or dir.ends_with(stem + "/")) \
+					and not ("маски" in f or "волосинки" in f):
 				out.append(dir + f)
 	var sd := DirAccess.open(SKINS_DIR + stem + "/")
 	if sd != null:
@@ -346,7 +456,8 @@ func _zastosuvaty(tex: Texture2D, glyna: bool) -> void:
 		if glyna:
 			m.material_override = _gl
 		elif tex == null:
-			m.material_override = null
+			m.material_override = _skin_node.skin_material() \
+					if m == _skin_node.body_mesh() else null
 		else:
 			var src: Material = m.get_active_material(0)
 			var mat: StandardMaterial3D = (src.duplicate() if src is StandardMaterial3D
@@ -392,18 +503,41 @@ func _unhandled_input(e: InputEvent) -> void:
 
 func _proba(args: PackedStringArray) -> void:
 	var shukaty := args[args.find("--проба") + 1]
+	var znaid := -1
 	for k in _list.item_count:
-		if _list.get_item_metadata(k) != null \
-				and _list.get_item_text(k).find(shukaty) >= 0:
-			_list.select(k)
-			_obrano(k)
+		if _list.get_item_metadata(k) == null:
+			continue
+		var t := _list.get_item_text(k).strip_edges()
+		if t == shukaty:          # точна назва — перед частковою
+			znaid = k
 			break
+		if znaid < 0 and t.find(shukaty) >= 0:
+			znaid = k
+	if znaid >= 0:
+		_list.select(znaid)
+		_obrano(znaid)
 	if _vybrana.is_empty():
 		print("[переглядач] ‼ немає моделі «%s»" % shukaty)
 		get_tree().quit(1)
 		return
+	if "--вигляд" in args:      # ключ=значення;… — як у меню (кольори — #rrggbb)
+		var look := {}
+		for pair: String in args[args.find("--вигляд") + 1].split(";"):
+			var kv := pair.split("=")
+			if kv.size() == 2:
+				look[kv[0]] = Color(kv[1]) if kv[1].begins_with("#") else \
+						(float(kv[1]) if kv[1].is_valid_float() else kv[1])
+		_skin_node.customize(look)
 	if "--глина" in args:
 		_zastosuvaty(null, true)
+	if "--скін" in args:         # частина назви картинки-скіна
+		for p: String in _kartynky():
+			if p.get_file().find(args[args.find("--скін") + 1]) >= 0:
+				_zastosuvaty(load(p) as Texture2D, false)
+				break
+	if "--без-волосся" in args:
+		for m: MeshInstance3D in _skin_node.find_children("Волосся*", "MeshInstance3D", true, false):
+			m.visible = false
 	if "--без-пружин" in args:
 		for n in _skin_node.find_children("Волосся-пружини", "", true, false):
 			n.free()
@@ -420,6 +554,10 @@ func _proba(args: PackedStringArray) -> void:
 		kadriv = int(args[args.find("--кадрів") + 1])
 	if "--відстань" in args:
 		_dist = float(args[args.find("--відстань") + 1])
+		_kamera()
+	if "--ціль" in args:            # x,y,z — куди дивиться камера
+		var c := args[args.find("--ціль") + 1].split(",")
+		_aim = Vector3(float(c[0]), float(c[1]), float(c[2]))
 		_kamera()
 	for i in kadriv:
 		await get_tree().process_frame

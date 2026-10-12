@@ -155,6 +155,7 @@ func build() -> void:
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
 	if _skeleton != null and _skeleton.find_bone("hair_C_1") != -1:
 		_hair_springs()
+	_prepare_look()
 	if not held.is_empty():
 		_hold(held)
 	if _player != null:
@@ -355,6 +356,153 @@ func _hair_springs() -> void:
 		cap.set_height(b[2])
 		cap.set_position_offset(Vector3(0, b[3], 0))
 		sim.add_child(cap)
+
+
+## Зовнішність аватара (12.10.2026, слово замовника: «зачіски та колір
+## зачіски, Очі, Вуха, Ніс, Губи, Колір скіна»). Модель може нести:
+##   * кілька зачісок — сітки `Волосся-<стиль>` (видно одну);
+##   * форм-ключі рис — `Ніс-…`, `Губи-…`, `Очі-…`, `Вуха-…`
+##     (`tools/blender/elf_rysy.py`);
+##   * маски `<модель>_маски.png` поруч із файлом моделі — тоді тіло
+##     малюється `avatar_skin.gdshader` (колір шкіри, очей, губ, скальпу).
+## `customize()` бере словник:
+##   «зачіска» (стиль або «без»), «колір_волосся», «колір_шкіри»,
+##   «колір_очей», «колір_губ» (Color або null — як у текстурі),
+##   «підводка» (0…1), «ніс», «губи», «очі», «вуха» (назва варіанта після
+##   дефіса в імені ключа або «звичайні»).
+const SKIN_SHADER := preload("res://shaders/avatar_skin.gdshader")
+var _body_mesh: MeshInstance3D
+var _skin_mat: ShaderMaterial
+var _look: Dictionary = {}
+
+
+## Що з вибору зовнішності ця модель уміє: {«зачіски»: […],
+## «риси»: {«ніс»: […], …}, «маски»: bool}.
+func look_options() -> Dictionary:
+	var styles: Array = []
+	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+		var st := str(m.name).trim_prefix("Волосся-")
+		if not st in styles and st != "пружини":
+			styles.append(st)
+	var rysy := {}
+	if _body_mesh != null and _body_mesh.mesh is ArrayMesh:
+		var am: ArrayMesh = _body_mesh.mesh
+		for i in am.get_blend_shape_count():
+			var n := str(am.get_blend_shape_name(i))
+			var parts := n.split("-", true, 1)
+			if parts.size() == 2:
+				var k := parts[0].to_lower()
+				if not rysy.has(k):
+					rysy[k] = []
+				rysy[k].append(parts[1])
+	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null}
+
+
+func _prepare_look() -> void:
+	var best := 0
+	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		if str(m.name).begins_with("Волосся") or m.mesh == null:
+			continue
+		var n := m.mesh.get_surface_count()
+		var v := 0
+		for i in n:
+			v += m.mesh.surface_get_array_len(i)
+		if v > best:
+			best = v
+			_body_mesh = m
+	# одна зачіска видима — перша за абеткою в моделі (типово перша в збірці)
+	var first := true
+	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+		m.visible = first
+		first = false
+	var masks_path := path.get_basename() + "_маски.png"
+	if _body_mesh == null or not ResourceLoader.exists(masks_path):
+		return
+	var src := _body_mesh.get_active_material(0)
+	var albedo: Texture2D = src.albedo_texture if src is BaseMaterial3D else null
+	if albedo == null:
+		return
+	_skin_mat = ShaderMaterial.new()
+	_skin_mat.shader = SKIN_SHADER
+	_skin_mat.set_shader_parameter("albedo_tex", albedo)
+	_skin_mat.set_shader_parameter("masks_tex", load(masks_path))
+	var ref := _skin_ref(albedo, load(masks_path))
+	_skin_mat.set_shader_parameter("skin_ref", ref)
+	_skin_mat.set_shader_parameter("skin_tint", ref)
+	_body_mesh.material_override = _skin_mat
+
+
+## Середній тон шкіри текстури: пікселі поза масками й не порожні.
+static func _skin_ref(albedo: Texture2D, masks: Texture2D) -> Vector3:
+	var img := albedo.get_image()
+	var mi := masks.get_image()
+	if img == null:
+		return Vector3(0.8, 0.68, 0.62)
+	if img.is_compressed():
+		img.decompress()
+	if mi != null and mi.is_compressed():
+		mi.decompress()
+	var s := Vector3.ZERO
+	var n := 0
+	for y in range(0, img.get_height(), img.get_height() / 96):
+		for x in range(0, img.get_width(), img.get_width() / 96):
+			var c := img.get_pixel(x, y)
+			if c.get_luminance() < 0.25:
+				continue
+			if mi != null:
+				var m := mi.get_pixel(x * mi.get_width() / img.get_width(),
+						y * mi.get_height() / img.get_height())
+				if maxf(maxf(m.r, m.b), m.a) > 0.1:
+					continue
+			s += Vector3(c.r, c.g, c.b)
+			n += 1
+	return s / maxf(n, 1) if n > 0 else Vector3(0.8, 0.68, 0.62)
+
+
+func body_mesh() -> MeshInstance3D:
+	return _body_mesh
+
+
+func skin_material() -> ShaderMaterial:
+	return _skin_mat
+
+
+func customize(look: Dictionary) -> void:
+	_look.merge(look, true)
+	var style := str(_look.get("зачіска", ""))
+	if style != "":
+		for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+			m.visible = str(m.name) == "Волосся-" + style
+	var hc: Variant = _look.get("колір_волосся")
+	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+		var mat := m.get_surface_override_material(0)
+		if mat is BaseMaterial3D:
+			(mat as BaseMaterial3D).albedo_color = hc if hc is Color else Color.WHITE
+	if _skin_mat != null:
+		var ref: Vector3 = _skin_mat.get_shader_parameter("skin_ref")
+		var sc: Variant = _look.get("колір_шкіри")
+		_skin_mat.set_shader_parameter("skin_tint",
+				Vector3(sc.r, sc.g, sc.b) if sc is Color else ref)
+		_skin_mat.set_shader_parameter("hair_mix", 1.0 if hc is Color else 0.0)
+		if hc is Color:
+			_skin_mat.set_shader_parameter("hair_color", Vector3(hc.r, hc.g, hc.b))
+		var ec: Variant = _look.get("колір_очей")
+		_skin_mat.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)
+		if ec is Color:
+			_skin_mat.set_shader_parameter("eye_color", Vector3(ec.r, ec.g, ec.b))
+		var lc: Variant = _look.get("колір_губ")
+		_skin_mat.set_shader_parameter("lips_mix", 0.85 if lc is Color else 0.0)
+		if lc is Color:
+			_skin_mat.set_shader_parameter("lips_color", Vector3(lc.r, lc.g, lc.b))
+		_skin_mat.set_shader_parameter("liner", float(_look.get("підводка", 0.0)))
+	if _body_mesh != null and _body_mesh.mesh is ArrayMesh:
+		var am: ArrayMesh = _body_mesh.mesh
+		for i in am.get_blend_shape_count():
+			var parts := str(am.get_blend_shape_name(i)).split("-", true, 1)
+			if parts.size() < 2:
+				continue
+			var want := str(_look.get(parts[0].to_lower(), ""))
+			_body_mesh.set_blend_shape_value(i, 1.0 if want == parts[1] else 0.0)
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

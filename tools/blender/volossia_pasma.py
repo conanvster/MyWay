@@ -1,27 +1,34 @@
-"""Зачіска з сотень пасом (hair cards) під голову скан-аватара (12.10.2026).
+"""Зачіски з пасом-карток (hair cards) під голову скан-аватара (12.10.2026).
 
 Слово замовника: «очікував, що волосся буде складатися з більшої кількості
 пасм, як на прикладах різні типи перук»; «крізь поверхню тіла ні одяг, ні
-волосся проходити не будуть». Зачіска MakeHuman long01 була кількома
-широкими смугами, бічні пасма лежали на плечах спереду й проходили крізь
-них у русі.
+волосся проходити не будуть»; друга ітерація: «додай … зачіски та колір
+зачіски» (приклади — напівхвіст з хвилястим низом, напівзібране з косою,
+розпущене хвилясте) і «Волосся здається не покриває всю голову».
 
-  1. корені — промені з центру голови на шкіру голови (маківка, потилиця,
-     боки над вухами; чоло відкрите), кілька шарів (об'єм);
-  2. кожне пасмо «спадає»: крок 1,5 см униз і трохи назад, після кроку —
-     відштовхування від тіла (BVH найближча точка, зазор за шаром), тож у
-     позі спокою пасма лежать НА плечах і спині, не в них;
-  3. пасмо → смужка-картка 0,8–1,6 см, звужена на кінці, лежить уздовж
-     поверхні волосся; хвиля й розкид — випадкові на пасмо;
-  4. текстура волосинок генерується (сріблясто-біла, прозорість між
-     волосинками й на кінцях);
-  5. → `<вихід.blend>` з об'єктом «Волосся» (як `mpfb_volossia.py`).
+Стилі (`--стиль`):
+  розпущене — довге хвилясте, проділ посередині;
+  зачесане  — гладке пряме назад до лопаток (як на кадрі-основі);
+  напівхвіст — верх зібраний на потилиці в хвіст, низ і хвіст хвилясті;
+  коса      — верх і боки зачесані назад у косу з трьох пасом, низ вільний;
+  каре      — коротке до підборіддя, кінці трохи всередину.
+
+Спільне:
+  1. корені — на сфері черепа (підбір по маківці), лінія росту волосся
+     нижче на чолі й скронях, ніж першого разу (маківка була рідкою),
+     + «шапка» коротких пасом впритул до шкіри — голова вкрита скрізь;
+  2. пасмо росте кроками 1,5 см за полем напрямку стилю; після кожного
+     кроку — відштовхування від тіла (BVH, зазор шару), нижче очей —
+     лише позаду площини вух (не на обличчя й груди);
+  3. пасмо → картка 1,2–2,2 см, звужена на кінці;
+  4. текстура волосинок нейтрально-світла: колір задає гра (множник
+     матеріалу), тож одна сітка — будь-який колір;
+  5. → `<вихід.blend>` з об'єктом «Волосся-<стиль>».
 
     blender -b -P tools/blender/volossia_pasma.py -- <основа.blend> <вихід.blend>
-        [--пасом 520] [--кінці 1.05] [--колір 0.92,0.91,0.88] [--зерно 7]
+        [--стиль розпущене] [--пасом 1300] [--зерно 7]
 """
 import math
-import os
 import random
 import sys
 
@@ -39,111 +46,125 @@ def arg(k, typ, default):
     return typ(ARGS[ARGS.index(k) + 1]) if k in ARGS else default
 
 
-PASOM = arg("--пасом", int, 1100)
-KINTSI = arg("--кінці", float, 1.05)          # висота кінчиків, м
-KOLIR = [float(c) for c in arg("--колір", str, "0.92,0.91,0.88").split(",")]
+STYL = arg("--стиль", str, "розпущене")
+PASOM = arg("--пасом", int, 1300)
 random.seed(arg("--зерно", int, 7))
+KOLIR = (0.93, 0.92, 0.90)          # нейтральний: колір — множником у грі
 KROK = 0.015
-SHARY = (0.004, 0.009, 0.015)                 # зазор над шкірою — шари об'єму
+SHARY = (0.004, 0.008, 0.013)
+PERED = -1.0                        # перед моделі в основі — −Y
+NAZAD = Vector((0, -PERED, 0))
+VNYZ = Vector((0, 0, -1))
+
+# Стиль: висота кінчиків (м), хвиля (амплітуда, м; період у кроках),
+# розкид, частка «верхніх» коренів, що йдуть у хвіст/косу.
+STYLI = {
+    # період хвилі 12–18 кроків (18–27 см): 5–8 кроків давали «гофре»
+    "розпущене": dict(kintsi=1.02, hv_a=(0.008, 0.016), hv_t=(12.0, 17.0), rozkyd=0.04),
+    "зачесане": dict(kintsi=1.22, hv_a=(0.0, 0.002), hv_t=(14.0, 18.0), rozkyd=0.015),
+    "напівхвіст": dict(kintsi=1.06, hv_a=(0.008, 0.015), hv_t=(11.0, 15.0), rozkyd=0.035),
+    "коса": dict(kintsi=1.12, hv_a=(0.004, 0.010), hv_t=(12.0, 18.0), rozkyd=0.06),
+    "каре": dict(kintsi=1.53, hv_a=(0.001, 0.003), hv_t=(7.0, 9.0), rozkyd=0.02),
+}
+S = STYLI[STYL]
 
 bpy.ops.wm.open_mainfile(filepath=OSNOVA)
 tilo = max([o for o in bpy.context.scene.objects if o.type == "MESH"],
            key=lambda o: len(o.data.vertices))
-dg = bpy.context.evaluated_depsgraph_get()
 bm_t = bmesh.new()
 bm_t.from_mesh(tilo.data)
 bm_t.transform(tilo.matrix_world)
-tree = BVHTree.FromBMesh(bm_t)
 co = np.array([v.co[:] for v in bm_t.verts])
+# Руки в T-позі горизонтальні: пасма лягали на них і стирчали вбік, коли
+# руки опускались (проба в грі 12.10). Зіткнення — лише голова й тулуб.
+bm_t.verts.ensure_lookup_table()
+bmesh.ops.delete(bm_t, geom=[v for v in bm_t.verts if abs(v.co.x) > 0.20], context="VERTS")
+tree = BVHTree.FromBMesh(bm_t)
 ztop = co[:, 2].max()
-hd = co[co[:, 2] > ztop - 0.24]
-# центр голови: середина перерізу на висоті очей (вуха поза ±7 см)
-zc = ztop - 0.12
-sl = hd[(np.abs(hd[:, 2] - zc) < 0.01)]
-cx = float(np.median(sl[:, 0]))
-sl = sl[np.abs(sl[:, 0] - cx) < 0.07]
-cy = float((sl[:, 1].min() + sl[:, 1].max()) / 2)
-C = Vector((cx, cy, zc))
-PERED = -1.0 if sl[:, 1].min() - cy < -(sl[:, 1].max() - cy) * 0.9 else 1.0
-# перед моделі в основі — −Y (як у `elf_osnova.py`)
-PERED = -1.0
-print("[пасма] центр голови %s, маківка %.3f" % (tuple(round(v, 3) for v in C), ztop))
+
+# Сфера черепа: вершини верхніх 7 см (вище кінчиків вух).
+verkh = co[co[:, 2] > ztop - 0.07]
+A = np.c_[2 * verkh, np.ones(len(verkh))]
+c4 = np.linalg.lstsq(A, (verkh ** 2).sum(1), rcond=None)[0]
+C = Vector(c4[:3])
+R = float(math.sqrt(c4[3] + (c4[:3] ** 2).sum()))
+# центр голови по висоті очей (для правила «нижче очей — позаду вух»)
+Z_OCHI = ztop - 0.12
+print("[пасма] стиль %s; череп: центр %s, R %.3f, маківка %.3f"
+      % (STYL, tuple(round(v, 3) for v in C), R, ztop))
 
 
 def na_shkiri(d):
-    """Точка шкіри голови в напрямку d від центру (промінь іззовні)."""
     p0 = C + d * 0.4
     hit = tree.ray_cast(p0, -d, 0.5)
     return (hit[0], hit[1]) if hit[0] is not None else (None, None)
 
 
 def vidshtovhnuty(p, zazor):
-    """Якщо точка ближче до тіла за `zazor` (або всередині) — на поверхню
-    + зazor уздовж нормалі."""
     loc, nrm, _, dist = tree.find_nearest(p, 0.2)
     if loc is None:
         return p
-    v = p - loc
-    vseredyni = v.dot(nrm) < 0
-    if vseredyni or dist < zazor:
+    if (p - loc).dot(nrm) < 0 or dist < zazor:
         return loc + nrm * zazor
     return p
 
 
 def korin_dozvolenyi(d):
-    """Напрямок кореня: чоло (перед, нижче 35° від маківки) — ні; вуха й
-    обличчя — ні (нижче центру голови спереду/збоку)."""
-    vpered = d.y * PERED          # >0 — до обличчя
-    vys = d.z                     # 1 — маківка
-    if vpered > 0.35 and vys < 0.82:
-        return False              # лінія росту на чолі
-    if vys < 0.15 and vpered > -0.55:
-        return False              # вуха/скроні — лише ззаду нижче
-    return vys > -0.35
+    """Лінія росту: чоло — до ~40° над горизонталлю, скроні — перед вухами
+    вище мочок, ззаду — до потилиці."""
+    vpered = d.y * PERED
+    vys = d.z
+    if vpered > 0.45 and vys < 0.50:
+        return False              # чоло
+    if vpered > 0.0 and vys < 0.12:
+        return False              # скроні/вуха спереду
+    if abs(d.x) > 0.80 and vys < 0.28 and vpered > -0.45:
+        return False              # вуха
+    return vys > -0.45
 
 
-# 1. Корені.
-koreni = []
-sproby = 0
-while len(koreni) < PASOM and sproby < PASOM * 40:
-    sproby += 1
-    th = math.acos(random.uniform(-0.35, 1.0))
-    ph = random.uniform(0, 2 * math.pi)
-    d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
-    if not korin_dozvolenyi(d):
-        continue
-    p, n = na_shkiri(d)
-    if p is None:
-        continue
-    shar = SHARY[len(koreni) % len(SHARY)]
-    koreni.append((p + n * shar, n, shar))
-print("[пасма] коренів %d (спроб %d)" % (len(koreni), sproby))
+def koreni(n, shary=SHARY):
+    out, sproby = [], 0
+    while len(out) < n and sproby < n * 60:
+        sproby += 1
+        th = math.acos(random.uniform(-0.45, 1.0))
+        ph = random.uniform(0, 2 * math.pi)
+        d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
+        if not korin_dozvolenyi(d):
+            continue
+        p, nrm = na_shkiri(d)
+        if p is None:
+            continue
+        shar = shary[len(out) % len(shary)]
+        out.append((p + nrm * shar, nrm, shar, d))
+    return out
 
 
-# 2. Спадання.
-def pasmo(p0, n0, zazor):
+def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None):
+    """Пасмо від p0: напрям — суміш пам'яті й поля `pole_f(p, i)`; хвиля
+    поперек; відштовхування від тіла; нижче очей — позаду вух."""
     pts = [p0.copy()]
-    nazad = Vector((0, -PERED, 0))
-    # передні корені — зачесані назад через маківку
-    vpered = (p0.y - C.y) * PERED > 0.0
-    d = ((n0 * 0.3 + nazad * 0.7 + Vector((0, 0, 0.2))) if vpered
-         else (n0 * 0.7 + Vector((0, 0, 1)) * 0.3)).normalized()
-    kinets = KINTSI + random.uniform(-0.07, 0.05)
-    hvylia_f = random.uniform(0, 6.28)
-    hvylia_a = random.uniform(0.0, 0.006)
-    bik = Vector((random.uniform(-1, 1), 0, 0)) * 0.03
-    while len(pts) < 120:
+    d = d0.normalized()
+    hv_a = random.uniform(*S["hv_a"]) if hv is None else hv
+    hv_t = random.uniform(*S["hv_t"])
+    hv_f = random.uniform(0, 6.28)
+    bik = Vector((random.uniform(-1, 1), random.uniform(-0.3, 0.3), 0)) * S["rozkyd"]
+    for i in range(maks):
         p = pts[-1]
-        # тяжіння, трохи назад, розкид убік, пам'ять напрямку
-        d = (d * 0.55 + Vector((0, 0, -1)) * 0.45 + nazad * 0.08 + bik).normalized()
+        tsil = pole_f(p, i)
+        d = (d * 0.55 + tsil * 0.45 + bik).normalized()
         q = p + d * KROK
-        # нижче очей — лише позаду площини вух: не на обличчя й груди
-        if q.z < C.z + 0.01 and (q.y - C.y) * PERED > -0.012:
+        if q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
             q.y = C.y - PERED * 0.012
         q = vidshtovhnuty(q, zazor)
-        # хвиля поперек
-        t = len(pts) * 0.35 + hvylia_f
-        q += Vector((math.sin(t), 0, 0)) * hvylia_a
+        # хвиля поперек напряму, у площині «вбік»
+        poperek = d.cross(Vector((0, 0, 1)))
+        if poperek.length < 0.2:
+            poperek = Vector((1, 0, 0))
+        poperek.normalize()
+        sila = min(1.0, max(0.0, (Z_OCHI - q.z) / 0.08))   # хвиля нижче вух
+        q += poperek * (math.sin(i * 2 * math.pi / hv_t + hv_f)
+                        - math.sin((i - 1) * 2 * math.pi / hv_t + hv_f)) * hv_a * sila
         d = (q - p).normalized() if (q - p).length > 1e-5 else d
         pts.append(q)
         if q.z < kinets:
@@ -151,25 +172,153 @@ def pasmo(p0, n0, zazor):
     return pts
 
 
-pasma = [pasmo(p, n, z) for p, n, z in koreni]
+def pole_vnyz(prodil=True):
+    """Від проділу вбік і вниз; ззаду — вниз за спину."""
+    def f(p, i):
+        v = p - C
+        bok = Vector((1 if v.x > 0 else -1, 0, 0)) if prodil else Vector((0, 0, 0))
+        if p.z > C.z + R * 0.3:
+            return (bok * 0.5 + NAZAD * 0.25 + VNYZ * 0.6).normalized()
+        return (VNYZ + NAZAD * 0.12).normalized()
+    return f
 
-# 3. Картки.
-me = bpy.data.meshes.new("Волосся")
+
+def pole_nazad():
+    """Зачесане назад через маківку, тоді вниз уздовж потилиці."""
+    def f(p, i):
+        v = p - C
+        if v.y * -PERED < R * 0.55 and p.z > C.z - R * 0.2:
+            return (NAZAD * 0.8 + VNYZ * 0.35 + Vector((0.15 if v.x > 0 else -0.15, 0, 0))).normalized()
+        return (VNYZ + NAZAD * 0.1).normalized()
+    return f
+
+
+def pole_do(T):
+    def f(p, i):
+        return (T - p).normalized()
+    return f
+
+
+def tochka_potylytsi(vys):
+    """Точка на потилиці на висоті `vys` (частка R над центром)."""
+    d = (NAZAD * math.sqrt(max(0.0, 1 - vys * vys)) + Vector((0, 0, vys))).normalized()
+    p, n = na_shkiri(d)
+    return (p if p is not None else C + d * R), (n if n is not None else d)
+
+
+def khvist(T, n_t, offset, kinets, hv_a, rad0=0.012, rad1=0.035):
+    """Пасмо хвоста від резинки T: вісь — униз уздовж спини, перетин
+    розширюється, позиція в перетині — `offset` (2D, одиничний круг)."""
+    pts = [T + n_t * 0.01]
+    p = pts[0].copy()
+    hv_t = random.uniform(*S["hv_t"])
+    hv_f = random.uniform(0, 6.28)
+    vis = p.copy()
+    i = 0
+    while vis.z > kinets and i < 140:
+        i += 1
+        vis = vis + (VNYZ * 0.92 + NAZAD * 0.25).normalized() * KROK
+        vis = vidshtovhnuty(vis, 0.03)
+        t = min(1.0, i / 25.0)
+        rad = rad0 + (rad1 - rad0) * t
+        q = vis + Vector((offset[0] * rad, offset[1] * rad * 0.6 * -PERED, 0))
+        q += Vector((1, 0, 0)) * math.sin(i * 2 * math.pi / hv_t + hv_f) * hv_a * t
+        q = vidshtovhnuty(q, 0.008)
+        pts.append(q)
+    return pts
+
+
+def kosa(B, kinets, n_pasom):
+    """Коса з трьох пасом від B донизу: пасмо k — вісімка зі зсувом фази
+    2π/3 (класичне плетіння), у кожному пасмі `n_pasom/3` карток."""
+    out = []
+    dovzh = B.z - kinets
+    krokiv = int(dovzh / KROK)
+    for k in range(3):
+        for j in range(n_pasom // 3):
+            jit = Vector((random.gauss(0, 0.0025), random.gauss(0, 0.0015), 0))
+            pts = []
+            vis = B.copy()
+            for i in range(krokiv):
+                vis = vis + (VNYZ * 0.95 + NAZAD * 0.2).normalized() * KROK
+                vis = vidshtovhnuty(vis, 0.02)
+                t = i * KROK / 0.035 * math.pi          # одна «ланка» — 3,5 см
+                faza = t + 2 * math.pi * k / 3
+                shyr = 0.016 * (1.0 - 0.45 * i / max(1, krokiv))
+                q = vis + Vector((math.sin(faza) * shyr,
+                                  -PERED * math.sin(2 * faza) * shyr * 0.35, 0)) + jit
+                pts.append(q)
+            out.append(pts)
+    return out
+
+
+# ── 1. Корені й пасма за стилем ─────────────────────────────────────────
+pasma = []
+kreslennia = []          # додаткові сітки: резинка
+kintsi = S["kintsi"]
+vsi = koreni(PASOM)
+if STYL in ("розпущене", "каре"):
+    for p, n, z, d in vsi:
+        pasma.append(rist(p, n * 0.3 + pole_vnyz()(p, 0), z, pole_vnyz(),
+                          kintsi + random.uniform(-0.06, 0.04)))
+elif STYL == "зачесане":
+    for p, n, z, d in vsi:
+        pasma.append(rist(p, n * 0.2 + NAZAD, z, pole_nazad(),
+                          kintsi + random.uniform(-0.04, 0.03)))
+elif STYL in ("напівхвіст", "коса"):
+    T, n_t = tochka_potylytsi(0.25 if STYL == "напівхвіст" else 0.0)
+    T = T + n_t * 0.006
+    for p, n, z, d in vsi:
+        verkhni = d.z > 0.15 or (d.y * PERED > -0.2 and d.z > -0.05)
+        if verkhni:
+            # до резинки: через маківку/боки, притиснуто до голови
+            shliakh = rist(p, (T - p).normalized(), z, pole_do(T), -10.0,
+                           maks=int((T - p).length / KROK) + 2, hv=0.0)
+            if STYL == "напівхвіст":
+                ang = random.uniform(0, 2 * math.pi)
+                r = math.sqrt(random.random())
+                shliakh += khvist(T, n_t, (r * math.cos(ang), r * math.sin(ang)),
+                                  kintsi + random.uniform(-0.05, 0.05),
+                                  random.uniform(*S["hv_a"]))
+            pasma.append(shliakh)
+        else:
+            pasma.append(rist(p, n * 0.3 + VNYZ, z, pole_vnyz(prodil=False),
+                              kintsi + random.uniform(-0.08, 0.04)))
+    if STYL == "коса":
+        pasma += kosa(T + n_t * 0.004, kintsi - 0.04, 180)
+    # резинка/затискач — тор біля T
+    kreslennia.append(("резинка", T, n_t))
+# «Шапка»: короткі пасма впритул до шкіри, у напрямку стилю — голова
+# вкрита суцільно, крізь картки не світить лисина.
+for p, n, z, d in koreni(PASOM // 2, shary=(0.0025,)):
+    if STYL in ("напівхвіст", "коса", "зачесане"):
+        T_ = tochka_potylytsi(0.25)[0] if STYL != "зачесане" else C + NAZAD * R
+        pole = pole_do(T_) if STYL != "зачесане" else pole_nazad()
+    else:
+        pole = pole_vnyz()
+    pasma.append(rist(p, pole(p, 0), 0.0025, pole, -10.0, maks=7, hv=0.0))
+
+# ── 2. Картки ───────────────────────────────────────────────────────────
+me = bpy.data.meshes.new("Волосся-" + STYL)
 bm = bmesh.new()
 uv_l = bm.loops.layers.uv.new("UVMap")
-for k_, pts in enumerate(pasma):
-    if len(pts) < 4:
+for pts in pasma:
+    if len(pts) < 3:
         continue
     shyr = random.uniform(0.012, 0.022)
-    u0 = random.choice((0.0, 0.25, 0.5, 0.75))        # 4 смуги текстури
+    u0 = random.choice((0.0, 0.25, 0.5, 0.75))
     ryad = []
     for i, p in enumerate(pts):
         t = i / (len(pts) - 1)
         tang = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
-        nazovni = (p - Vector((C.x, C.y, p.z))).normalized()
-        if nazovni.length < 0.5:
-            nazovni = Vector((0, -PERED, 0))
-        bok = tang.cross(nazovni).normalized()
+        nazovni = (p - Vector((C.x, C.y, p.z)))
+        if nazovni.length < 0.01:
+            nazovni = NAZAD.copy()
+        nazovni.normalize()
+        bok = tang.cross(nazovni)
+        if bok.length < 0.1:
+            bok = Vector((1, 0, 0))
+        bok.normalize()
         w = shyr * (1.0 - 0.7 * t * t)
         ryad.append((bm.verts.new(p - bok * w / 2), bm.verts.new(p + bok * w / 2), t))
     for (a0, b0, t0), (a1, b1, t1) in zip(ryad, ryad[1:]):
@@ -177,22 +326,42 @@ for k_, pts in enumerate(pasma):
         for lp, (u, v) in zip(f.loops, ((u0, 1 - t0), (u0 + 0.25, 1 - t0),
                                         (u0 + 0.25, 1 - t1), (u0, 1 - t1))):
             lp[uv_l].uv = (u, v)
+# резинка: тор із 12×6, другий матеріал
+for imia, T, n_t in kreslennia:
+    vis = n_t.normalized()
+    a = vis.orthogonal().normalized()
+    b = vis.cross(a).normalized()
+    kil = []
+    for i in range(12):
+        f_ = 2 * math.pi * i / 12
+        cen = T + (a * math.cos(f_) + b * math.sin(f_)) * 0.016
+        rad = (a * math.cos(f_) + b * math.sin(f_))
+        kil.append([bm.verts.new(cen + (rad * math.cos(2 * math.pi * j / 6)
+                                        + vis * math.sin(2 * math.pi * j / 6)) * 0.005)
+                    for j in range(6)])
+    for i in range(12):
+        for j in range(6):
+            f = bm.faces.new((kil[i][j], kil[(i + 1) % 12][j],
+                              kil[(i + 1) % 12][(j + 1) % 6], kil[i][(j + 1) % 6]))
+            f.material_index = 1
+            for lp in f.loops:
+                lp[uv_l].uv = (0.99, 0.99)
 bm.to_mesh(me)
 bm.free()
-vol = bpy.data.objects.new("Волосся", me)
+vol = bpy.data.objects.new("Волосся-" + STYL, me)
 bpy.context.scene.collection.objects.link(vol)
 print("[пасма] карток %d, граней %d" % (len(pasma), len(me.polygons)))
 
-# 4. Текстура волосинок: 4 смуги по ширині (u 0…0.25…), кожна — пучок.
+# ── 3. Текстура волосинок: 4 смуги-пучки, нейтрально-світла ─────────────
 W, H = 512, 1024
 img = np.zeros((H, W, 4), dtype=np.float32)
 rng = np.random.default_rng(11)
 for s in range(4):
     x0 = s * W // 4
-    for _ in range(46):
+    for _ in range(52):
         x = x0 + rng.uniform(3, W // 4 - 3)
-        dovzh = rng.uniform(0.9, 1.0)
-        jas = rng.uniform(0.7, 1.05)
+        dovzh = rng.uniform(0.88, 1.0)
+        jas = rng.uniform(0.62, 1.05)
         tovsh = rng.uniform(0.6, 1.6)
         for y in range(int(H * dovzh)):
             xx = x + math.sin(y * 0.01 + x) * 1.5
@@ -200,23 +369,23 @@ for s in range(4):
                 xi = int(xx) + dx
                 if x0 <= xi < x0 + W // 4:
                     a = max(0.0, 1.0 - abs(xi - xx) / tovsh)
-                    kin = 1.0 - max(0.0, (y / H - (dovzh - 0.06)) / 0.06)
-                    a *= kin
+                    a *= 1.0 - max(0.0, (y / H - (dovzh - 0.06)) / 0.06)
                     img[H - 1 - y, xi, :3] = np.maximum(img[H - 1 - y, xi, :3],
                                                         np.array(KOLIR) * jas * a)
                     img[H - 1 - y, xi, 3] = max(img[H - 1 - y, xi, 3], a)
-# між волосинками — ледь видима основа смуги (щільність без «дірок»)
 osn = np.zeros((H, W), dtype=np.float32)
 for s in range(4):
     x0 = s * W // 4
     xx = np.arange(W // 4)
-    profil = np.clip(1.0 - np.abs(xx - W / 8) / (W / 8), 0, 1) ** 0.7
-    osn[:, x0:x0 + W // 4] = profil[None, :] * 0.85
-# кінці прозорі лише в останніх 12% (рядок 0 — низ картинки = кінчик):
-# гра відкидає прозоріше за 0,45 — довгий спад «обрізав» 40% пасма
+    osn[:, x0:x0 + W // 4] = np.clip(1.0 - np.abs(xx - W / 8) / (W / 8), 0, 1)[None, :] ** 0.7 * 0.85
+# кінці прозорі лише в останніх 12%: гра відкидає прозоріше за 0,45
 osn *= np.clip(np.linspace(0, 1, H) / 0.12, 0, 1)[:, None]
 img[..., 3] = np.maximum(img[..., 3], osn)
+# корінь трохи темніший (глибина пучка) — природніше на будь-якому кольорі
+tin = np.clip(0.78 + 0.22 * np.linspace(0, 1, H) ** 0.5, 0, 1)[::-1]
 img[..., :3] = np.where(img[..., :3] > 0, img[..., :3], np.array(KOLIR) * 0.8)
+img[..., :3] *= tin[:, None, None]
+img[-8:, -8:] = (0.12, 0.11, 0.10, 1.0)      # кут для резинки (uv 0,99)
 im = bpy.data.images.new("волосинки", W, H, alpha=True)
 im.pixels.foreach_set(img.clip(0, 1).ravel())
 im.pack()
@@ -231,6 +400,10 @@ nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
 bsdf.inputs["Roughness"].default_value = 0.5
 mat.use_backface_culling = False
 me.materials.append(mat)
+mr = bpy.data.materials.new("Резинка")
+mr.use_nodes = True
+mr.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.05, 0.045, 0.04, 1)
+me.materials.append(mr)
 for o in list(bpy.data.objects):
     if o is not vol:
         bpy.data.objects.remove(o)

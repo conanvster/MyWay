@@ -186,41 +186,124 @@ def main():
         b_.from_mesh(skan.data)
         b_.normal_update()
         tree_ = _BVH.FromBMesh(b_)
+        # Друга ітерація (12.10.2026, слово замовника: «невеликі дефекти
+        # колін та долонь з пальцями … у попередньої моделі було краще»).
+        # Замір: сітка — ОДНЕ суцільне тонкостінне тіло (стінки ~6 мм,
+        # з'єднані по краях), внутрішня стінка майже повна (282 тис. граней
+        # мають за спиною протилежно повернуту грань ближче 7 мм).
+        # Перший критерій («промінь уздовж нормалі за 1,5 см у щось
+        # упирається») ловив не її, а бік пальця біля сусіднього пальця,
+        # коліно біля коліна. Тепер — парність: промінь від грані вздовж
+        # нормалі назовні перетинає поверхню 0, 4, 8… разів від зовнішньої
+        # стінки і 2, 6… — від внутрішньої (крізь порожнину й протилежну
+        # стінку). Три промені з легким відхиленням, більшість.
+        import random as _rnd
+        _rnd.seed(3)
+
+        def perety(c, d):
+            n_ = 0
+            p_ = c + d * 0.0003
+            for _ in range(24):
+                h_ = tree_.ray_cast(p_, d, 5.0)
+                if h_[0] is None:
+                    break
+                n_ += 1
+                p_ = h_[0] + d * 0.0003
+            return n_
         vnutr = []
         for f in b_.faces:
             c = f.calc_center_median()
-            hit = tree_.ray_cast(c + f.normal * 0.0004, f.normal, 0.015)
-            if hit[0] is not None:
+            golosy = 0
+            for k_ in range(3):
+                d = f.normal.copy()
+                if k_:
+                    d = (d + Vector((_rnd.uniform(-0.15, 0.15), _rnd.uniform(-0.15, 0.15),
+                                     _rnd.uniform(-0.15, 0.15)))).normalized()
+                golosy += (perety(c, d) // 2) % 2
+            if golosy >= 2:
                 vnutr.append(f)
         do = len(b_.faces)
         _bm.ops.delete(b_, geom=vnutr, context="FACES")
         _bm.ops.remove_doubles(b_, verts=b_.verts, dist=0.0002)
+        # Уламки (окремі шматки < 400 вершин) — «пластівці» біля голови й
+        # у очах, що мерехтіли поруч із поверхнею.
+        b_.verts.ensure_lookup_table()
+        bachyly = set()
+        dribni = []
+        for v0 in b_.verts:
+            if v0.index in bachyly:
+                continue
+            ostriv, stek = [], [v0]
+            bachyly.add(v0.index)
+            while stek:
+                v = stek.pop()
+                ostriv.append(v)
+                for e in v.link_edges:
+                    u = e.other_vert(v)
+                    if u.index not in bachyly:
+                        bachyly.add(u.index)
+                        stek.append(u)
+            if len(ostriv) < 400:
+                dribni.extend(ostriv)
+        _bm.ops.delete(b_, geom=dribni, context="VERTS")
+        print("[аватар] одна оболонка: уламків вершин %d" % len(dribni))
         b_.to_mesh(skan.data)
         b_.free()
         print("[аватар] одна оболонка: внутрішніх граней %d з %d" % (len(vnutr), do))
     if KOLINA:
         # `--коліна` (12.10.2026, «трохи вирівняй положення колін»):
         # Pixal3D ліпить наколінки кулями. Згладжувати ДО проєкції —
-        # після неї текстура розтягувалась смугами.
-        import bmesh as _bm
+        # після неї текстура розтягувалась смугами. Друга ітерація: смуга
+        # з різким краєм лишала на межі валик («дефекти колін») — тепер
+        # Taubin (без усадки) з вагою, що плавно згасає від центру коліна
+        # (радіус 9 см), N×10 проходів.
+        import numpy as np
         hh = t_hi.z - t_lo.z
-        b_ = _bm.new()
-        b_.from_mesh(skan.data)
-        b_.normal_update()
-        smuga = [v for v in b_.verts if hh * 0.24 < v.co.z < hh * 0.34
-                 and v.normal.y * pered_manekena > 0.2]
-        for _ in range(KOLINA):
-            _bm.ops.smooth_vert(b_, verts=smuga, factor=0.5, use_axis_x=True,
-                                use_axis_y=True, use_axis_z=True)
-        b_.to_mesh(skan.data)
-        b_.free()
-        print("[аватар] коліна: вершин %d, проходів %d" % (len(smuga), KOLINA))
+        me_ = skan.data
+        nv_ = len(me_.vertices)
+        co_ = np.empty(nv_ * 3)
+        me_.vertices.foreach_get("co", co_)
+        co_ = co_.reshape(nv_, 3)
+        ed = np.empty(len(me_.edges) * 2, dtype=np.int64)
+        me_.edges.foreach_get("vertices", ed)
+        ed = ed.reshape(-1, 2)
+        stup = np.bincount(ed.ravel(), minlength=nv_).astype(float)
+        vaga = np.zeros(nv_)
+        for znak in (-1, 1):
+            noga = (co_[:, 0] * znak > 0.02) & (np.abs(co_[:, 2] - hh * 0.285) < 0.02)
+            if not noga.any():
+                continue
+            i0 = np.where(noga)[0]
+            pered_i = i0[np.argmax(co_[i0, 1] * pered_manekena)]
+            c_ = co_[pered_i] - np.array([0, pered_manekena * 0.03, 0])
+            d_ = np.linalg.norm(co_ - c_, axis=1)
+            vaga = np.maximum(vaga, np.clip(1 - (d_ / 0.09) ** 2, 0, 1) ** 2)
+        def lapl(x):
+            s_ = np.zeros_like(x)
+            np.add.at(s_, ed[:, 0], x[ed[:, 1]])
+            np.add.at(s_, ed[:, 1], x[ed[:, 0]])
+            return s_ / np.maximum(stup, 1)[:, None] - x
+        for _ in range(KOLINA * 10):
+            co_ += (0.5 * vaga)[:, None] * lapl(co_)
+            co_ += (-0.53 * vaga)[:, None] * lapl(co_)
+        me_.vertices.foreach_set("co", co_.ravel())
+        me_.update()
+        print("[аватар] коліна: вершин з вагою %d, проходів %d"
+              % (int((vaga > 0.01).sum()), KOLINA * 10))
     if REF:
         proektsiia(skan, pered_manekena)
         if OBLYCHCHIA:
             G_ = vyrivniaty_oblychchia(skan, pered_manekena)
-            if G_ is not None and OCHI:
-                zgladyty_ochi(skan, pered_manekena, G_)
+            if G_ is not None:
+                rukhomi = None
+                if OCHI:
+                    G_, rukhomi = zgladyty_ochi(skan, pered_manekena, G_)
+                pryviazaty_uv(skan, pered_manekena, G_, rukhomi)
+                skalp(skan, pered_manekena, G_)
+                import numpy as np
+                os.makedirs(os.path.dirname(os.path.abspath(KUDY)), exist_ok=True)
+                np.save(os.path.join(os.path.dirname(os.path.abspath(KUDY)),
+                                     "oblychchia-G.npy"), G_)
 
     # 2. Руки: плече манекена → кінчик пальців. Числа рахуються тут, а
     # застосовуються в 2в — до СКЕЛЕТА й тіла манекена, не до скану
@@ -688,6 +771,20 @@ def vyrivniaty_oblychchia(skan, pered):
     sx = 1.0 if pered < 0 else -1.0
     G = np.stack([cx + sx * (Lg[:, 0] / RES - 0.5) * SCALE,
                   cz + (0.5 - Lg[:, 1] / RES) * SCALE], 1)
+    return G
+
+
+def pryviazaty_uv(skan, pered, G, rukhomi=None):
+    """Нев'язку розгортки «Проєкція» в точках обличчя G (x, z сітки) —
+    до тих самих точок F на кадрі, гаусовим RBF (σ 1,2 см). `rukhomi` —
+    вершини, які `zgladyty_ochi` пересунула: їхні кути спершу отримують
+    лінійну проєкцію з нового положення."""
+    import numpy as np
+    tut = os.path.dirname(os.path.abspath(REF_MASKA))
+    F = np.load(os.path.join(tut, os.path.basename(REF)[:-4] + "-tochky.npy"))
+    me = skan.data
+    mw = skan.matrix_world
+    co = np.array([(mw @ v.co)[:] for v in me.vertices])
     # 2. Розгортка «Проєкція»: лінійна від (x, z) — підбір по самих вершинах.
     uvl = me.uv_layers["Проєкція"].data
     vi_l = np.empty(len(me.loops), dtype=np.int64)
@@ -697,8 +794,13 @@ def vyrivniaty_oblychchia(skan, pered):
     uv = uv.reshape(-1, 2).astype(float)
     xz = co[vi_l][:, [0, 2]]
     A = np.c_[np.ones(len(xz)), xz]
-    cu = np.linalg.lstsq(A[::7], uv[::7, 0], rcond=None)[0]
-    cv = np.linalg.lstsq(A[::7], uv[::7, 1], rcond=None)[0]
+    stali = np.ones(len(xz), bool) if rukhomi is None else ~rukhomi[vi_l]
+    cu = np.linalg.lstsq(A[stali][::7], uv[stali][::7, 0], rcond=None)[0]
+    cv = np.linalg.lstsq(A[stali][::7], uv[stali][::7, 1], rcond=None)[0]
+    if rukhomi is not None:
+        r_ = ~stali
+        uv[r_, 0] = A[r_] @ cu
+        uv[r_, 1] = A[r_] @ cv
     w_, h_ = bpy.data.images.load(os.path.abspath(REF)).size
     Fu = F[:, 0] / w_
     Fv = 1.0 - F[:, 1] / h_
@@ -718,73 +820,373 @@ def vyrivniaty_oblychchia(skan, pered):
     uvl.foreach_set("uv", uv.astype(np.float32).ravel())
     print("[аватар] обличчя: точок %d, середній зсув текстури %.1f см, кутів %d"
           % (len(G), zsuv_cm, len(idx)))
-    return G
 
 
 def zgladyty_ochi(skan, pered, G):
-    """`--очі` (12.10.2026): Pixal3D ліпить навколо очей валики-«окуляри».
-    Контури очей — точки G (x, z сітки, з `vyrivniaty_oblychchia`); у зоні
-    (контур ×2,4) глибина стає гладкою квадратичною поверхнею, підібраною
-    по кільцю ×2,6…×3,2, з ледь заглибленою очною щілиною; ×2,4…×3,0 —
-    плавний перехід. Малюнок очей дає текстура (вже вирівняна)."""
+    """`--очі` — очниці наново, симетрично (12.10.2026, третя ітерація;
+    слово замовника: «очні впадини не симетрично знову мають артефакти»).
+
+    Замір: сітка Pixal3D навколо очей зібгана — у кільці 12…20 мм від
+    контуру половина граней повернута назад; правка глибини чи
+    розтягування наявних вершин складок не прибирали. Тепер:
+      1. контур ока — середнє лівого й дзеркального правого (вісь — ніс,
+         губи, підборіддя);
+      2. грані очниці (≤21 мм від контуру, без перенісся ±7 мм) — геть, лишається дірка;
+      3. дірка — нова рівна сітка: точки через 1,8 мм + край дірки,
+         обмежена тріангуляція Делоне (mathutils.geometry.delaunay_2d_cdt);
+      4. глибина — квадратична поверхня, спільна для обох очей
+         (дзеркально) + власний нахил кожного боку; очна щілина на
+         1,5 мм глибше, повіка +0,6 мм; нев'язка з краєм дірки згасає за
+         6 мм;
+      5. розгортка «UVMap» латки — у вільне місце атласу (запікання
+         малює туди очі з кадру).
+    Повертає (G з симетричними контурами, маска нових/крайових вершин)."""
     import numpy as np
+    import bmesh
+    from mathutils import geometry as mg
     OKO = ([33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
            [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466])
-    me = skan.data
-    co = np.array([v.co[:] for v in me.vertices])
-    # попереду голови — за положенням, не за нормаллю (нормаль-фільтр
-    # лишав вершини складок на місці — смуга розривів, 12.10.2026)
-    hd = co[co[:, 2] > G[:, 1].min() - 0.02]
-    cy = float(np.median(hd[:, 1]))
-    pered_m = (co[:, 1] - cy) * pered > 0.0
-    vsi_zony = set()
-    for idx in OKO:
-        p = G[idx]
-        c = p.mean(0)
-        ax = max((p[:, 0].max() - p[:, 0].min()) / 2, 1e-3)
-        az = max((p[:, 1].max() - p[:, 1].min()) / 2, 1e-3)
-        dx, dz = co[:, 0] - c[0], co[:, 2] - c[1]
+    # 21 мм: зібгана смуга сягає 20 мм (замір), 16 мм лишали сіре кільце
+    RZ, OPORA1, KROK_S, NIS = 0.021, 0.027, 0.0018, 0.007
+    G = G.copy()
+    x_mid = float(np.median(G[[1, 4, 5, 6, 168, 197, 195, 0, 17, 152, 13, 14], 0]))
+
+    def dzerk(p):
+        q = p.copy()
+        q[..., 0] = 2 * x_mid - q[..., 0]
+        return q
+    L, R_ = G[OKO[0]], G[OKO[1]]
+    Ls = (L + dzerk(R_)) / 2
+    print("[аватар] очі: асиметрія контурів до %.1f мм (середня %.1f)"
+          % (np.abs(L - dzerk(R_)).max() * 1000, np.abs(L - dzerk(R_)).mean() * 1000))
+    G[OKO[0]] = Ls
+    G[OKO[1]] = dzerk(Ls)
+    ir = (G[468] + dzerk(G[473][None])[0]) / 2
+    G[468:473] += ir - G[468]
+    G[473:478] += dzerk(ir[None])[0] - G[473]
+    konturs = (G[OKO[0]], G[OKO[1]])
+
+    def vidstan(xz, kontur):
+        c = kontur.mean(0)
+        ax = max((kontur[:, 0].max() - kontur[:, 0].min()) / 2, 1e-3)
+        az = max((kontur[:, 1].max() - kontur[:, 1].min()) / 2, 1e-3)
+        dx, dz = xz[:, 0] - c[0], xz[:, 1] - c[1]
         k = np.sqrt((dx / ax) ** 2 + (dz / az) ** 2)
         th = np.arctan2(dz, dx)
         r_dir = 1.0 / np.sqrt((np.cos(th) / ax) ** 2 + (np.sin(th) / az) ** 2)
-        d = (k - 1.0) * r_dir          # метри від контуру назовні (<0 — в оці)
-        opora = pered_m & (d >= 0.008) & (d <= 0.014)
-        zona = pered_m & (d < 0.010)
-        if opora.sum() < 12:
-            print("[аватар] ‼ очі: мало опорних вершин", int(opora.sum()))
-            continue
-        X_, Z_ = co[opora, 0], co[opora, 2]
-        A = np.stack([np.ones_like(X_), X_, Z_, X_ * X_, X_ * Z_, Z_ * Z_], 1)
-        coef = np.linalg.lstsq(A, co[opora, 1], rcond=None)[0]
-        for vi in np.where(zona)[0]:
-            x, z = co[vi, 0], co[vi, 2]
-            y_f = coef @ np.array([1, x, z, x * x, x * z, z * z])
-            if d[vi] < 0.002:          # очна щілина — ледь заглиблена
-                y_f -= pered * 0.002 * min(1.0, (0.002 - d[vi]) / 0.004)
-            t = 1.0 if d[vi] <= 0.006 else (0.010 - d[vi]) / 0.004
-            me.vertices[vi].co.y += (y_f - me.vertices[vi].co.y) * t
-        print("[аватар] очі: око x %.3f z %.3f — вершин %d, опорних %d"
-              % (c[0], c[1], int(zona.sum()), int(opora.sum())))
-        vsi_zony.update(np.where(zona)[0].tolist())
-    me.update()
-    # Сплющені на одну поверхню уламки другої оболонки мерехтіли
-    # («крихта» в оці): грані зони, повернуті назад, — геть; зона — м'яко.
-    import bmesh
+        return (k - 1.0) * r_dir
+
+    me = skan.data
     bm = bmesh.new()
     bm.from_mesh(me)
     bm.verts.ensure_lookup_table()
+    co = np.array([v.co[:] for v in bm.verts])
+    hd = co[co[:, 2] > G[:, 1].min() - 0.02]
+    cy = float(np.median(hd[:, 1]))
+    pered_m = (co[:, 1] - cy) * pered > 0.0
+    d_k = [vidstan(co[:, [0, 2]], k_) for k_ in konturs]
+    storona = [np.sign(co[:, 0] - x_mid) == np.sign(k_[:, 0].mean() - x_mid) for k_ in konturs]
+
+    # Поверхня глибини (друга проба: квадратика давала «куполи» з ямою
+    # довкола — у грі брови кидали на них темну смугу тіні): згладжена
+    # форма самого скану. Площина кожного боку — по кільцю RZ…OPORA1;
+    # відхил від площини — гаусове середнє (σ 4 мм) вершин скану обох очей
+    # (правого — дзеркально), повернутих уперед: складки (грані назад)
+    # не беруться, обидві очниці однакові.
+    def v_liva(x, k):
+        return x if k == 0 else 2 * x_mid - x
     bm.normal_update()
-    nazad = [f for f in bm.faces if all(v.index in vsi_zony for v in f.verts)
-             and f.normal.y * pered < 0.2]
-    bmesh.ops.delete(bm, geom=nazad, context="FACES")
+    nrm_y = np.array([v.normal.y for v in bm.verts])
+    plaskyny = []
+    tochky = []
+    for k in range(2):
+        i = np.where(pered_m & storona[k] & (d_k[k] >= RZ) & (d_k[k] <= OPORA1)
+                     & (np.abs(co[:, 0] - x_mid) > NIS))[0]
+        if len(i) < 12:
+            print("[аватар] ‼ очі: мало опорних вершин", len(i))
+            bm.free()
+            return G, None
+        A = np.c_[np.ones(len(i)), co[i, 0], co[i, 2]]
+        pl = np.linalg.lstsq(A, co[i, 1], rcond=None)[0]
+        plaskyny.append(pl)
+        j = np.where(pered_m & storona[k] & (d_k[k] < OPORA1) & (nrm_y * pered > 0.25))[0]
+        tochky.append(np.c_[v_liva(co[j, 0], k), co[j, 2],
+                            co[j, 1] - (pl[0] + pl[1] * co[j, 0] + pl[2] * co[j, 2])])
+    tochky = np.vstack(tochky)
+
+    def glyb(x, z, k):
+        pl = plaskyny[k]
+        xl = v_liva(x, k)
+        d2 = (xl[:, None] - tochky[None, :, 0]) ** 2 + (z[:, None] - tochky[None, :, 1]) ** 2
+        w = np.exp(-d2 / (2 * 0.004 ** 2))
+        vidkh = (w @ tochky[:, 2]) / np.maximum(w.sum(1), 1e-9)
+        y = pl[0] + pl[1] * x + pl[2] * z + vidkh
+        d = vidstan(np.stack([x, z], -1), konturs[k])
+        shchil = np.where(d < 0, -0.0012 * np.clip(-d / 0.002, 0, 1),
+                          0.0005 * np.clip(1 - np.abs(d - 0.0012) / 0.0012, 0, 1))
+        return y + pered * shchil
+
+    uv_l = bm.loops.layers.uv["UVMap"]
+    vyd_l = bm.loops.layers.float_color.get("Видимість")
+    # зайнятість атласу (256²) — для місця латки
+    zain = np.zeros((256, 256), bool)
+    for f in bm.faces:
+        us = [l[uv_l].uv for l in f.loops]
+        u0_, u1_ = min(u.x for u in us), max(u.x for u in us)
+        v0_, v1_ = min(u.y for u in us), max(u.y for u in us)
+        zain[int(np.clip(v0_, 0, 1) * 255):int(np.clip(v1_, 0, 1) * 255) + 1,
+             int(np.clip(u0_, 0, 1) * 255):int(np.clip(u1_, 0, 1) * 255) + 1] = True
+    nove_v = []
+    for k in range(2):
+        zona = pered_m & storona[k] & (d_k[k] < RZ) & (np.abs(co[:, 0] - x_mid) > NIS)
+        zv = set(np.where(zona)[0].tolist())
+        geth = [f for f in bm.faces if any(v.index in zv for v in f.verts)]
+        bmesh.ops.delete(bm, geom=geth, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        c_ok = konturs[k].mean(0)
+        # зубці по краю дірки (грань з ≥2 граничними ребрами) — геть, кілька
+        # проходів: інакше край розпадається на кілька петель і між латкою й
+        # обличчям лишається рвана щілина (проба 12.10)
+        for _ in range(6):
+            zubtsi = [f for f in bm.faces
+                      if sum(1 for e in f.edges if e.is_boundary) >= 2
+                      and np.hypot(f.calc_center_median().x - c_ok[0],
+                                   f.calc_center_median().z - c_ok[1]) < 0.05
+                      and (f.calc_center_median().y - cy) * pered > 0]
+            if not zubtsi:
+                break
+            bmesh.ops.delete(bm, geom=zubtsi, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.verts.ensure_lookup_table()
+        bm.verts.index_update()
+        # край дірки: граничні ребра поблизу ока, найдовша петля
+        kr = [e for e in bm.edges if e.is_boundary and all(
+            (v.co.y - cy) * pered > 0 and np.hypot(v.co.x - c_ok[0], v.co.z - c_ok[1]) < 0.05
+            for v in e.verts)]
+        sus = {}
+        for e in kr:
+            a_, b_ = e.verts
+            sus.setdefault(a_, []).append(b_)
+            sus.setdefault(b_, []).append(a_)
+        petli, bachyly = [], set()
+        for v0 in sus:
+            if v0 in bachyly:
+                continue
+            petlia, v, prev = [v0], v0, None
+            bachyly.add(v0)
+            while True:
+                nxt = [u for u in sus[v] if u is not prev and u not in bachyly]
+                if not nxt:
+                    break
+                prev, v = v, nxt[0]
+                bachyly.add(v)
+                petlia.append(v)
+            petli.append(petlia)
+        petlia = max(petli, key=len)
+        bxz = np.array([(v.co.x, v.co.z) for v in petlia])
+        # точки всередині (не ближче 1,2 мм до краю)
+        def vseredyni(pt, poly):
+            x, z = pt[:, 0], pt[:, 1]
+            ins = np.zeros(len(pt), bool)
+            j = len(poly) - 1
+            for i in range(len(poly)):
+                xi, zi = poly[i]
+                xj, zj = poly[j]
+                perekr = ((zi > z) != (zj > z)) & \
+                    (x < (xj - xi) * (z - zi) / (zj - zi + 1e-12) + xi)
+                ins ^= perekr
+                j = i
+            return ins
+        x0_, z0_ = bxz.min(0)
+        x1_, z1_ = bxz.max(0)
+        gx, gz = np.meshgrid(np.arange(x0_, x1_, KROK_S), np.arange(z0_, z1_, KROK_S))
+        gp = np.stack([gx.ravel(), gz.ravel()], 1)
+        gp[1::2, 0] += KROK_S / 2 * 0           # рівна сітка
+        gp = gp[vseredyni(gp, bxz)]
+        if len(gp):
+            dmin = np.min(np.linalg.norm(gp[:, None, :] - bxz[None, :, :], axis=2), 1)
+            gp = gp[dmin > 0.0012]
+        # CCW
+        plosha = 0.5 * np.sum(bxz[:, 0] * np.roll(bxz[:, 1], -1) - np.roll(bxz[:, 0], -1) * bxz[:, 1])
+        poryadok = list(range(len(petlia)))
+        if plosha < 0:
+            poryadok = poryadok[::-1]
+        nb = len(petlia)
+        vc = [Vector((float(x), float(z))) for x, z in np.vstack([bxz, gp])]
+        out = mg.delaunay_2d_cdt(vc, [], [poryadok], 1, 1e-7, True)
+        o_vc, _, o_f, o_orig = out[0], out[1], out[2], out[3]
+        print("[аватар] очі: CDT вершин %d→%d, крайових у виході %d з %d" % (
+            len(vc), len(o_vc), sum(1 for o_ in o_orig if any(x < nb for x in o_)), nb))
+        # нев'язка краю: глибина краю − поверхня, згасає за 6 мм
+        nev = np.array([v.co.y for v in petlia]) - glyb(bxz[:, 0], bxz[:, 1], k)
+        bverts = []
+        for oi, p2 in enumerate(o_vc):
+            orig = [x for x in o_orig[oi] if x < nb]
+            if orig:
+                bverts.append(petlia[orig[0]])
+                continue
+            x, z = float(p2.x), float(p2.y)
+            y = float(glyb(np.array([x]), np.array([z]), k)[0])
+            dd = np.hypot(bxz[:, 0] - x, bxz[:, 1] - z)
+            w = 1.0 / np.maximum(dd, 1e-4) ** 2
+            y += float((w * nev).sum() / w.sum()) * float(np.clip(1 - dd.min() / 0.006, 0, 1))
+            nv_ = bm.verts.new((x, y, z))
+            bverts.append(nv_)
+            nove_v.append(nv_)
+        bm.verts.index_update()
+        # місце в атласі: прямокутник за розміром латки (3000 px/м на 4096)
+        shyr_uv = (x1_ - x0_) * 3000 / 4096
+        vys_uv = (z1_ - z0_) * 3000 / 4096
+        nw, nh = int(shyr_uv * 256) + 3, int(vys_uv * 256) + 3
+        mistse = None
+        for r0 in range(0, 256 - nh, 2):
+            for c0 in range(0, 256 - nw, 2):
+                if not zain[r0:r0 + nh, c0:c0 + nw].any():
+                    mistse = (r0, c0)
+                    break
+            if mistse:
+                break
+        if mistse is None:
+            mistse = (0, 0)
+            print("[аватар] ‼ очі: в атласі немає вільного місця")
+        zain[mistse[0]:mistse[0] + nh, mistse[1]:mistse[1] + nw] = True
+        u_0, v_0 = (mistse[1] + 1) / 256, (mistse[0] + 1) / 256
+        latky = []
+        for tri in o_f:
+            vv = [bverts[i] for i in tri]
+            if len(set(vv)) < 3:
+                continue
+            try:
+                f = bm.faces.new(vv)
+            except ValueError:
+                continue
+            f.normal_update()
+            if f.normal.y * pered < 0:
+                f.normal_flip()
+            f.smooth = True
+            latky.append(f)
+            for lp in f.loops:
+                lp[uv_l].uv = (u_0 + (lp.vert.co.x - x0_) * 3000 / 4096,
+                               v_0 + (lp.vert.co.z - z0_) * 3000 / 4096)
+                if vyd_l is not None:
+                    lp[vyd_l] = (1, 1, 1, 1)
+        print("[аватар] очі: бік %d — край %d вершин, нових %d, трикутників %d, атлас (%.3f, %.3f)"
+              % (k, nb, len(gp), len(latky), u_0, v_0))
+        bm.verts.ensure_lookup_table()
+        co = np.array([v.co[:] for v in bm.verts])
+        pered_m = (co[:, 1] - cy) * pered > 0.0
+        d_k = [vidstan(co[:, [0, 2]], k_) for k_ in konturs]
+        storona = [np.sign(co[:, 0] - x_mid) == np.sign(k_[:, 0].mean() - x_mid) for k_ in konturs]
+    # дрібні дірки, що лишились між латкою й обличчям, — латками з
+    # розгорткою в точку (кут сусіда)
+    for k in range(2):
+        c_ok = konturs[k].mean(0)
+        kr = [e for e in bm.edges if e.is_boundary and all(
+            (v.co.y - cy) * pered > 0 and np.hypot(v.co.x - c_ok[0], v.co.z - c_ok[1]) < 0.045
+            for v in e.verts)]
+        print("[аватар] очі: бік %d — граничних ребер після латки %d" % (k, len(kr)))
+        if not kr:
+            continue
+        dod = bmesh.ops.holes_fill(bm, edges=kr, sides=60)["faces"]
+        for f in dod:
+            f.smooth = True
+            dz = None
+            for lp in f.loops:
+                inshi = [l2 for l2 in lp.vert.link_loops if l2.face not in dod]
+                if inshi:
+                    dz = inshi[0]
+                    break
+            for lp in f.loops:
+                if dz is not None:
+                    lp[uv_l].uv = dz[uv_l].uv
+                if vyd_l is not None:
+                    lp[vyd_l] = (1, 1, 1, 1)
+        print("[аватар] очі: бік %d — дрібних дірок закрито %d" % (k, len(dod)))
+    # м'який шов: глибина нових вершин і першого кільця сусідів —
+    # кілька проходів середнього (лише y)
+    shov = set(nove_v)
+    for v in nove_v:
+        for e in v.link_edges:
+            shov.add(e.other_vert(v))
+    shov = [v for v in shov if not v.is_boundary]
+    for _ in range(6):
+        nove_y = {v: sum(e.other_vert(v).co.y for e in v.link_edges) / len(v.link_edges)
+                  for v in shov if v.link_edges}
+        for v, y in nove_y.items():
+            v.co.y += (y - v.co.y) * 0.5
+    # смуга вздовж шва (RZ−4…RZ+9 мм): Taubin усіх координат — розгорнути
+    # рештки складок за межею латки; перед обличчя біля очей — колір з
+    # кадру (Видимість 1), не сіра текстура Pixal3D з виворіту складки
     bm.verts.ensure_lookup_table()
-    zv = [v for v in bm.verts if v.index in vsi_zony and v.link_faces]
-    for _ in range(3):
-        bmesh.ops.smooth_vert(bm, verts=zv, factor=0.4, use_axis_x=False,
-                              use_axis_y=True, use_axis_z=False)
+    bm.verts.index_update()
+    cur = np.array([v.co[:] for v in bm.verts])
+    dmin = np.minimum(vidstan(cur[:, [0, 2]], konturs[0]), vidstan(cur[:, [0, 2]], konturs[1]))
+    front_c = (cur[:, 1] - cy) * pered > 0.0
+    w5 = np.where(front_c, np.clip(1 - np.abs(dmin - (RZ + 0.0025)) / 0.0065, 0, 1), 0.0)
+    # перенісся між латками — теж (зібгане, лишало щілину)
+    nis_ = front_c & (np.abs(cur[:, 0] - x_mid) < NIS + 0.003) & (dmin < RZ + 0.004) \
+        & (cur[:, 2] > min(k_[:, 1].min() for k_ in konturs) - 0.01)
+    w5 = np.maximum(w5, nis_.astype(float))
+    ed5 = np.array([(e.verts[0].index, e.verts[1].index) for e in bm.edges])
+    st5 = np.bincount(ed5.ravel(), minlength=len(cur)).astype(float)
+
+    def lap5(x):
+        s_ = np.zeros_like(x)
+        np.add.at(s_, ed5[:, 0], x[ed5[:, 1]])
+        np.add.at(s_, ed5[:, 1], x[ed5[:, 0]])
+        return s_ / np.maximum(st5, 1)[:, None] - x
+    for _ in range(60):
+        cur += (0.5 * w5)[:, None] * lap5(cur)
+        cur += (-0.53 * w5)[:, None] * lap5(cur)
+    for vi in np.where(w5 > 0)[0]:
+        bm.verts[vi].co = cur[vi]
+    if vyd_l is not None:
+        blyz = front_c & (dmin < RZ + 0.012)
+        for f in bm.faces:
+            if all(blyz[v.index] for v in f.verts):
+                for lp in f.loops:
+                    lp[vyd_l] = (1, 1, 1, 1)
+    nove_v = set(nove_v) | {bm.verts[i] for i in np.where(w5 > 0)[0]}
+    bm.verts.index_update()
+    nove_i = {v.index for v in nove_v}
+    rukhomi = np.zeros(len(bm.verts), bool)
+    rukhomi[list(nove_i)] = True
     bm.to_mesh(me)
     bm.free()
-    print("[аватар] очі: прибрано граней назад %d" % len(nazad))
+    me.update()
+    if os.environ.get("OCHI_DBG"):
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ["OCHI_DBG"])
+    return G, rukhomi
+
+
+def skalp(skan, pered, G):
+    """Атрибут вершин «Скальп» (1 — волосяна частина голови) для маски
+    кольору зачіски там, де кадр спереду голови не бачить (потилиця,
+    маківка згори). Сфера черепа — підбір по вершинах вище лінії росту
+    волосся (точка 10); вуха стирчать за 1,1 радіуса й не входять."""
+    import numpy as np
+    me = skan.data
+    co = np.array([v.co[:] for v in me.vertices])
+    z_chola = G[10, 1]
+    verkh = co[co[:, 2] > z_chola]
+    A = np.c_[2 * verkh, np.ones(len(verkh))]
+    b = (verkh ** 2).sum(1)
+    c4 = np.linalg.lstsq(A, b, rcond=None)[0]
+    C = c4[:3]
+    R = float(np.sqrt(c4[3] + (C ** 2).sum()))
+    d = np.linalg.norm(co - C, axis=1)
+    z_potylytsi = G[13, 1]                    # лінія росту ззаду ≈ рівень губ
+    nazad = (co[:, 1] - C[1]) * pered < -0.25 * R
+    m = (d < R * 1.1) & ((co[:, 2] > z_chola + 0.004)
+                         | (nazad & (co[:, 2] > z_potylytsi)))
+    # м'який край: 1 см униз від межі
+    w = m.astype(float)
+    at = me.color_attributes.new("Скальп", "FLOAT_COLOR", "POINT")
+    kol = np.zeros((len(co), 4), np.float32)
+    kol[:, :3] = w[:, None]
+    kol[:, 3] = 1
+    at.data.foreach_set("color", kol.ravel())
+    print("[аватар] скальп: сфера R %.3f м, вершин %d" % (R, int(m.sum())))
 
 
 def proektsiia(skan, pered):
@@ -1018,6 +1420,28 @@ def zapekty(skan):
     """Запікання: спереду — референс, ззаду — Pixal3D під тон референсу."""
     import numpy as np
     me = skan.data
+    # Запобіжник: грань, чия площа в атласі в 50+ разів більша за медіанне
+    # співвідношення «атлас/сітка», — стягнути в точку (інакше запікання
+    # малює її поверх чужих острівців).
+    uvd = me.uv_layers["UVMap"].data
+    zlamani = 0
+    pl = np.array([p.area for p in me.polygons])
+    uvp = np.zeros(len(me.polygons))
+    for p in me.polygons:
+        u = [uvd[li].uv for li in p.loop_indices]
+        a_ = 0.0
+        for k in range(1, len(u) - 1):
+            a_ += abs((u[k] - u[0]).cross(u[k + 1] - u[0])) / 2
+        uvp[p.index] = a_
+    rel = uvp / np.maximum(pl, 1e-12)
+    med = np.median(rel[pl > 0])
+    for p in me.polygons:
+        if uvp[p.index] > 1e-4 and rel[p.index] > med * 50:
+            u0 = uvd[p.loop_indices[0]].uv.copy()
+            for li in p.loop_indices:
+                uvd[li].uv = u0
+            zlamani += 1
+    print("[аватар] розгортка: стягнуто велетенських граней %d" % zlamani)
     mat = me.materials[0]
     nt = mat.node_tree
     nodes, links = nt.nodes, nt.links
@@ -1111,6 +1535,8 @@ def zapekty(skan):
     me.uv_layers["UVMap"].active_render = True
     bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
     cil.pack()
+    zapekty_masky(me, nodes, links, tex_r, mix, mnozh, tex_c)
+    tex_c.image = cil
     # Матеріал: запечений колір, нормаль Pixal3D, без металу (метал
     # темнив і червонив шкіру в Godot).
     for n in (mix, mnozh, tex_r, uvr, attr):
@@ -1124,6 +1550,60 @@ def zapekty(skan):
     bsdf.inputs["Roughness"].default_value = 0.6
     me.uv_layers.remove(me.uv_layers["Проєкція"])
     print("[аватар] запечено: %s" % (cil.size[:],))
+
+
+def zapekty_masky(me, nodes, links, tex_r, mix, mnozh, tex_c):
+    """Маски рис обличчя (`tools/maski_oblychchia.py`) — тією ж проєкцією в
+    ту ж розгортку, що й колір: R райдужка, G підводка, B губи, A волосся
+    на голові (спереду — з кадру, ззаду — атрибут «Скальп»). Пише
+    `аватар-маски.png` поруч із виходом — у грі колір очей, губ, шкіри й
+    скальпу (`game/shaders/avatar_skin.gdshader`)."""
+    import subprocess
+    import numpy as np
+    pm, pv = REF[:-4] + "-maski.png", REF[:-4] + "-maska-volossia.png"
+    tochky = REF[:-4] + "-tochky.npy"
+    if not (os.path.exists(pm) and os.path.exists(pv)):
+        if not os.path.exists(tochky):
+            print("[аватар] ‼ маски: немає точок обличчя — без масок")
+            return
+        r = subprocess.run([os.path.expanduser("~/Програми/cv-venv/bin/python"),
+                            os.path.join(ROOT, "tools", "maski_oblychchia.py"),
+                            os.path.abspath(REF), os.path.abspath(REF_MASKA),
+                            tochky, pm, pv], capture_output=True, text=True)
+        print(r.stdout.strip() or r.stderr[-300:])
+    for l in list(mix.inputs[6].links):
+        links.remove(l)
+    rez = []
+    for shliakh, zzadu in ((pm, None), (pv, "Скальп")):
+        im = bpy.data.images.load(os.path.abspath(shliakh))
+        im.colorspace_settings.name = "Non-Color"
+        tex_r.image = im
+        for l in list(mix.inputs[6].links):
+            links.remove(l)
+        if zzadu and zzadu in me.color_attributes:
+            at = nodes.new("ShaderNodeVertexColor")
+            at.layer_name = zzadu
+            links.new(at.outputs["Color"], mix.inputs[6])
+        else:
+            mix.inputs[6].default_value = (0, 0, 0, 1)
+        tsil = bpy.data.images.new("маска", TEKSTURA, TEKSTURA)
+        tsil.colorspace_settings.name = "Non-Color"
+        tex_c.image = tsil
+        nodes.active = tex_c
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+        px = np.empty(TEKSTURA * TEKSTURA * 4, dtype=np.float32)
+        tsil.pixels.foreach_get(px)
+        rez.append(px.reshape(TEKSTURA, TEKSTURA, 4))
+    out = np.concatenate([rez[0][..., :3], rez[1][..., :1]], -1)
+    kin = bpy.data.images.new("аватар-маски", TEKSTURA, TEKSTURA, alpha=True)
+    kin.colorspace_settings.name = "Non-Color"
+    kin.pixels.foreach_set(out.clip(0, 1).ravel())
+    kin.filepath_raw = os.path.join(os.path.dirname(os.path.abspath(KUDY)),
+                                    "аватар-маски.png")
+    kin.file_format = "PNG"
+    os.makedirs(os.path.dirname(kin.filepath_raw), exist_ok=True)
+    kin.save()
+    print("[аватар] маски →", kin.filepath_raw)
 
 
 def zrobyty_peruku(shliakh, skan, kist):

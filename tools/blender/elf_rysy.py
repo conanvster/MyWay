@@ -23,6 +23,8 @@ from mathutils.bvhtree import BVHTree
 
 a = sys.argv[sys.argv.index("--") + 1:]
 OSNOVA, G_NPY, VYKHID = a[0], a[1], a[2]
+# `--лиса` (13.10.2026): голова без волосся скану — вуха шукати далі
+LYSA = "--лиса" in a
 PERED = -1.0                      # перед основи — −Y
 
 bpy.ops.wm.open_mainfile(filepath=OSNOVA)
@@ -132,22 +134,30 @@ kliuch("Очі-вузькі", z2)
 
 # ── Вуха: що стирчить за 1,06 радіуса черепа збоку ──
 ztop = co[:, 2].max()
-verkh = co[co[:, 2] > ztop - 0.07]
+# лише середина голови: кінчики довгих вух лисої ельфійки e1903 сягають
+# верхніх 7 см і роздували сферу (13.10.2026)
+verkh = co[(co[:, 2] > ztop - 0.07) & (np.abs(co[:, 0] - x_mid) < 0.07)]
 A = np.c_[2 * verkh, np.ones(len(verkh))]
 c4 = np.linalg.lstsq(A, (verkh ** 2).sum(1), rcond=None)[0]
 C = c4[:3]
 R = float(np.sqrt(c4[3] + (C ** 2).sum()))
 d = np.linalg.norm(co - C, axis=1)
 z_lo = G[[234, 454], 1].min() - 0.02
-vukho = (d > R * 1.06) & (np.abs(co[:, 0] - C[0]) > R * 0.55) & (co[:, 2] > z_lo) \
+# лиса голова: на рівні вух більше ніщо не стирчить — поріг нижчий
+# (людина l2002: ліве вухо скану притиснуте, за 1,06 не знаходилось)
+PORIH = 1.03 if LYSA else 1.06
+vukho = (d > R * PORIH) & (np.abs(co[:, 0] - C[0]) > R * 0.55) & (co[:, 2] > z_lo) \
     & (co[:, 2] < C[2] + R * 0.9) & (np.abs(co[:, 1] - C[1]) < R * 0.8)
 zd, zk, zp = (np.zeros_like(co) for _ in range(3))
+znaideni = []
 for znak in (-1, 1):
     # корінь вуха — точка 234/454 (край обличчя на рівні козелка), без
     # пластини волосся збоку: не далі 7,5 см від кореня
     i_k = 234 if np.sign(G[234, 0] - C[0]) == znak else 454
     k0 = np.array([G[i_k, 0], C[1], G[i_k, 1]])
-    blyzko = np.linalg.norm(co - k0, axis=1) < 0.075
+    # 11 см: у e1903 кінчик вуха на 10 см від кореня (лиса голова — пластини
+    # волосся немає; з волоссям скану межа була 7,5 см)
+    blyzko = np.linalg.norm(co - k0, axis=1) < (0.11 if LYSA else 0.075)
     # вухо — над козелком (мочка до 1,5 см нижче); нижче — пасма скану
     # вздовж щоки (перша проба «довгих» тягла їх униз)
     vyshche = co[:, 2] > G[i_k, 1] - 0.015
@@ -156,22 +166,44 @@ for znak in (-1, 1):
     blyzko = blyzko & vyshche & ne_pered
     m = vukho & blyzko & (np.sign(co[:, 0] - C[0]) == znak)
     if m.sum() < 20:
+        v_ = vukho & (np.sign(co[:, 0] - C[0]) == znak)
+        print("[риси] вухо %+d не знайдено: за порогом %d, поруч кореня %d, вище козелка %d, "
+              "не попереду %d (C %s R %.3f)" % (znak, v_.sum(), (v_ & (np.linalg.norm(co - k0, axis=1) < 0.11)).sum(),
+                                 (v_ & vyshche).sum(), (v_ & ne_pered).sum(), C.round(3), R))
         continue
     tsentr = co[m].mean(0)
     napr = (tsentr - C) / np.linalg.norm(tsentr - C)
     korin = C + (k0 - C) / np.linalg.norm(k0 - C) * R
     r = co - korin
     dist = np.linalg.norm(r, axis=1)
-    kinets = min(np.percentile(dist[m], 98), 0.07)
+    kinets = min(np.percentile(dist[m], 98), 0.11 if LYSA else 0.07)
     t = np.clip((dist - 0.008) / max(kinets - 0.008, 1e-3), 0, 1) ** 1.5
     # плавно до 1 у межах вуха й ще 6 мм навколо (без шва біля черепа)
-    obl = np.clip(1 - (R * 1.06 - d) / 0.006, 0, 1) * (np.sign(co[:, 0] - C[0]) == znak)
+    obl = np.clip(1 - (R * PORIH - d) / 0.006, 0, 1) * (np.sign(co[:, 0] - C[0]) == znak)
     obl *= (co[:, 2] > z_lo - 0.01) * blyzko
     w_ = (t * obl)[:, None]
     zd += w_ * r * 0.45
     zk += w_ * r * -0.35
     zp += w_ * (UP * 0.018 - VP * 0.004) * (dist / max(kinets, 1e-3))[:, None]
+    znaideni.append(znak)
     print("[риси] вухо %+d: вершин %d, довжина %.1f см" % (znak, int(m.sum()), kinets * 100))
+# Одне вухо не знайдено (людина l2002: ліве в скані притиснуте) —
+# дзеркально з другого: інакше ключі несиметричні (13.10.2026).
+if len(znaideni) == 1:
+    from mathutils.kdtree import KDTree
+    kd = KDTree(len(co))
+    for i_, p_ in enumerate(co):
+        kd.insert(p_, i_)
+    kd.balance()
+    for zz in (zd, zk, zp):
+        dzh = np.where(np.abs(zz).sum(1) > 1e-6)[0]
+        for i_ in dzh:
+            m_ = co[i_].copy()
+            m_[0] = 2 * x_mid - m_[0]
+            _, j_, dd = kd.find(m_)
+            if dd < 0.004:
+                zz[j_] = zz[i_] * np.array([-1.0, 1.0, 1.0])
+    print("[риси] вухо %+d — дзеркально з %+d" % (-znaideni[0], znaideni[0]))
 kliuch("Вуха-довгі", zd)
 kliuch("Вуха-короткі", zk)
 kliuch("Вуха-підняті", zp)

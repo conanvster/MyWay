@@ -67,6 +67,32 @@ for i in range(200):
                       if a_ < 0 < b or abs((a_ + b) / 2) < 0.02):
         pakh = z
         break
+# Промінням (13.10.2026): у людини l2002 стегна зімкнуті, і «перша висота
+# без щілини» ловила середину стегон (0,807 м, 44% зросту). Вертикальні
+# промені знизу по середній лінії на різній глибині: де стегна торкаються —
+# влучання низько, де ні — аж у промежину; промежина — найвище влучання.
+from mathutils import Vector
+from mathutils.bvhtree import BVHTree
+bvh = BVHTree.FromObject(tilo, bpy.context.evaluated_depsgraph_get())
+x_s = sum(v.co.x for v in tilo.data.vertices) / len(tilo.data.vertices)
+# глибина стегон на 45% зросту, середні 50%: спереду поза стегнами
+# промінь влучав знизу в лобок, ззаду — у сідничну щілину
+pas = [v.co for v in tilo.data.vertices if abs(v.co.z - (z0 + H * 0.45)) < 0.01]
+y0_, y1_ = min(p.y for p in pas), max(p.y for p in pas)
+y0_, y1_ = y0_ + (y1_ - y0_) * 0.25, y0_ + (y1_ - y0_) * 0.75
+vluch = []
+for i in range(21):
+    y_ = y0_ + (y1_ - y0_) * i / 20
+    for dx in (-0.004, 0.0, 0.004):
+        h = bvh.ray_cast(Vector((x_s + dx, y_, z0 + H * 0.3)), Vector((0, 0, 1)), H * 0.35)
+        if h[0] is not None:
+            vluch.append(h[0].z)
+pakh_p = max(vluch) if vluch else None
+# промінь — лише коли щілина бреше на 5+ см (зімкнуті стегна); зі щілиною
+# між стегнами (ельфійка e1903: 0,951 проти 0,977) точніша щілина
+if pakh_p is not None and (pakh is None or pakh_p > pakh + 0.05):
+    print("[заміри] пах щілиною %.3f, промінням %.3f — беру промінь" % (pakh or 0, pakh_p))
+    pakh = pakh_p
 ruka_z = sum(p.z for p in ruka) / len(ruka) if ruka else None
 zap = kinchyk + 0.17 if kinchyk else None
 print("[заміри] зріст %.3f, низ %.3f" % (H, z0))

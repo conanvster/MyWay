@@ -42,6 +42,8 @@ RUKHY = os.path.join(ROOT, "game/models/player/animations/UAL1_Standard.glb")
 PERED = -1
 ARGS = sys.argv[sys.argv.index("--") + 1:]
 REF = REF_MASKA = None
+# кроки дифузії локального тону (~0,5 ребра за крок, ребро ~5 мм)
+TON_KROKY = 200
 if "--референс" in ARGS:
     i_ = ARGS.index("--референс")
     REF, REF_MASKA = ARGS[i_ + 1], ARGS[i_ + 2]
@@ -693,6 +695,69 @@ def main():
             if n.type == "TEX_IMAGE" and n.image \
                     and n.image.size[0] > TEKSTURA:
                 n.image.scale(TEKSTURA, TEKSTURA)
+    # Нормалі — з форми (13.10.2026): імпорт glTF приносить нормалі
+    # Pixal3D у вершинах, а підгонка плечей, колін і одна стінка рухали
+    # вершини.
+    import bmesh
+    bm_ = bmesh.new()
+    bm_.from_mesh(skan.data)
+    # Складки (13.10.2026): дрібні загини сітки Pixal3D — трикутник
+    # повернутий тильним боком проти сусідів (на ключицях e1903 ~20, на
+    # руках і плечах ~300) — на світлі темні.
+    def skladky():
+        out = []
+        for f in bm_.faces:
+            s_ = f.normal * 0
+            for e in f.edges:
+                for g in e.link_faces:
+                    if g is not f:
+                        s_ += g.normal * g.calc_area()
+            if s_.length > 0 and f.normal.dot(s_.normalized()) < 0:
+                out.append(f)
+        return out
+    # Дрібні дірки (13.10.2026): одна стінка лишала ~470 отворів до 24 ребер
+    # (250 — трикутні), крізь них видно виворіт — бурі цятки на ключицях
+    # e1903. Латка — з розгорткою кута сусіда тієї ж вершини.
+    uv_b = bm_.loops.layers.uv.get("UVMap")
+    krai = [e for e in bm_.edges if e.is_boundary]
+    lat = bmesh.ops.holes_fill(bm_, edges=krai, sides=24)["faces"]
+    lat_s = set(lat)
+    for f in lat:
+        f.smooth = True
+        for lp in f.loops:
+            inshi = [l2 for l2 in lp.vert.link_loops if l2.face not in lat_s]
+            if inshi and uv_b is not None:
+                lp[uv_b].uv = inshi[0][uv_b].uv
+    bm_.normal_update()
+    print("[аватар] дірки: країв %d, латок %d, лишилось країв %d"
+          % (len(krai), len(lat), sum(1 for e in bm_.edges if e.is_boundary)))
+    # Розгладжування їх не розгортає (437 → 388) — загин ~0,1 мм, тож
+    # грань просто перевертається за сусідами: шейдинг більше не темний.
+    # (Перерахунок «назовні» для всієї сітки — ні: латки очей — окремі
+    # острівці, і він перевертав їх задом наперед — «скляні окуляри».)
+    pochatok = len(skladky())
+    for _ in range(10):
+        sk = skladky()
+        if not sk:
+            break
+        bmesh.ops.reverse_faces(bm_, faces=sk)
+        bm_.normal_update()
+    print("[аватар] складки: %d → %d" % (pochatok, len(skladky())))
+    bm_.to_mesh(skan.data)
+    bm_.free()
+    if skan.data.has_custom_normals:
+        with bpy.context.temp_override(object=skan, active_object=skan):
+            bpy.ops.mesh.customdata_custom_splitnormals_clear()
+    skan.data.polygons.foreach_set("use_smooth", [True] * len(skan.data.polygons))
+    print("[аватар] нормалі з форми, власних нормалей:", skan.data.has_custom_normals)
+    # Мапа нормалей Pixal3D — геть (13.10.2026): після одної стінки, колін,
+    # підгонки плечей і латок очей вона вже не збігається з сіткою; на
+    # латках очей (новий прямокутник атласу) — сміття, «скляні окуляри».
+    for m in skan.data.materials:
+        for n in (m.node_tree.nodes if m and m.use_nodes else []):
+            if n.type == "BSDF_PRINCIPLED":
+                for l in list(n.inputs["Normal"].links):
+                    m.node_tree.links.remove(l)
     os.makedirs(os.path.dirname(KUDY), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=KUDY, export_format="GLTF_SEPARATE",
                               export_animations=False, export_skins=True,
@@ -820,6 +885,34 @@ def pryviazaty_uv(skan, pered, G, rukhomi=None):
     uvl.foreach_set("uv", uv.astype(np.float32).ravel())
     print("[аватар] обличчя: точок %d, середній зсув текстури %.1f см, кутів %d"
           % (len(G), zsuv_cm, len(idx)))
+    # Видимість — наново для зсунутих кутів (13.10.2026): «Видимість»
+    # рахувалась до RBF, і кути боків голови після зсуву брали тло кадру
+    # за силуетом — сірі латки на скронях і шиї (e1903, l2002). Тепер кут,
+    # чий новий піксель поза звуженою маскою, бере Pixal3D.
+    if "Видимість" in me.color_attributes:
+        mi = bpy.data.images.load(os.path.abspath(REF_MASKA))
+        mw_, mh_ = mi.size
+        mp = np.empty(mw_ * mh_ * 4, dtype=np.float32)
+        mi.pixels.foreach_get(mp)
+        vuzka = mp.reshape(mh_, mw_, 4)[..., 0] > 0.5
+        for _ in range(max(5, int(round(5 * mw_ / 1024)))):
+            vuzka = vuzka & np.roll(vuzka, 1, 0) & np.roll(vuzka, -1, 0) \
+                & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
+        vyd = me.color_attributes["Видимість"]
+        kol = np.empty(len(me.loops) * 4, dtype=np.float32)
+        vyd.data.foreach_get("color", kol)
+        kol = kol.reshape(-1, 4)
+        ch = idx
+        yy = np.clip((uv[ch, 1] * mh_).astype(int), 0, mh_ - 1)
+        xx = np.clip((uv[ch, 0] * mw_).astype(int), 0, mw_ - 1)
+        poza = ~vuzka[yy, xx] & (kol[ch, 0] > 0)
+        # латки очей — не чіпати: у Pixal3D під ними нічого (новий атлас)
+        if rukhomi is not None:
+            poza &= ~rukhomi[vi_l[ch]]
+        kol[ch[poza], :3] = 0.0
+        vyd.data.foreach_set("color", kol.ravel())
+        print("[аватар] обличчя: кутів поза силуетом після зсуву %d → Pixal3D"
+              % int(poza.sum()))
 
 
 def zgladyty_ochi(skan, pered, G):
@@ -938,7 +1031,13 @@ def zgladyty_ochi(skan, pered, G):
              int(np.clip(u0_, 0, 1) * 255):int(np.clip(u1_, 0, 1) * 255) + 1] = True
     nove_v = []
     for k in range(2):
-        zona = pered_m & storona[k] & (d_k[k] < RZ) & (np.abs(co[:, 0] - x_mid) > NIS)
+        # не далі 1 см за зовнішнім кутиком ока (13.10.2026): на вузькій
+        # голові ельфійки e1903 зона 2,1 см від контуру в проєкції спереду
+        # заходила на скроню й бік голови — латка з видимістю 1 розмазувала
+        # там кадр сірими плямами
+        kraj_x = np.abs(konturs[k][:, 0] - x_mid).max() + 0.01
+        zona = pered_m & storona[k] & (d_k[k] < RZ) & (np.abs(co[:, 0] - x_mid) > NIS) \
+            & (np.abs(co[:, 0] - x_mid) < kraj_x)
         zv = set(np.where(zona)[0].tolist())
         geth = [f for f in bm.faces if any(v.index in zv for v in f.verts)]
         bmesh.ops.delete(bm, geom=geth, context="FACES")
@@ -1077,6 +1176,8 @@ def zgladyty_ochi(skan, pered, G):
         pered_m = (co[:, 1] - cy) * pered > 0.0
         d_k = [vidstan(co[:, [0, 2]], k_) for k_ in konturs]
         storona = [np.sign(co[:, 0] - x_mid) == np.sign(k_[:, 0].mean() - x_mid) for k_ in konturs]
+        bm.normal_update()
+        nrm_y = np.array([v.normal.y for v in bm.verts])
     # дрібні дірки, що лишились між латкою й обличчям, — латками з
     # розгорткою в точку (кут сусіда)
     for k in range(2):
@@ -1088,16 +1189,23 @@ def zgladyty_ochi(skan, pered, G):
         if not kr:
             continue
         dod = bmesh.ops.holes_fill(bm, edges=kr, sides=60)["faces"]
+        dod_s = set(dod)
         for f in dod:
             f.smooth = True
             dz = None
             for lp in f.loops:
-                inshi = [l2 for l2 in lp.vert.link_loops if l2.face not in dod]
+                inshi = [l2 for l2 in lp.vert.link_loops if l2.face not in dod_s]
                 if inshi:
                     dz = inshi[0]
                     break
             for lp in f.loops:
-                if dz is not None:
+                # кожен кут — розгортка своєї вершини (13.10.2026): з одним
+                # кутом сусіда на всю латку вона була одного кольору —
+                # біла риска від кутика ока e1903
+                inshi = [l2 for l2 in lp.vert.link_loops if l2.face not in dod_s]
+                if inshi:
+                    lp[uv_l].uv = inshi[0][uv_l].uv
+                elif dz is not None:
                     lp[uv_l].uv = dz[uv_l].uv
                 if vyd_l is not None:
                     lp[vyd_l] = (1, 1, 1, 1)
@@ -1142,7 +1250,14 @@ def zgladyty_ochi(skan, pered, G):
         bm.verts[vi].co = cur[vi]
     if vyd_l is not None:
         blyz = front_c & (dmin < RZ + 0.012)
+        # і лише грані, хоч трохи повернуті вперед (13.10.2026): «передня
+        # половина» на 3,3 см від очей — це й бік вузької голови e1903; але
+        # й скроню (нахил від 0,15) — кадр: у Pixal3D довкола очей темні
+        # «окуляри», і суміш давала сіру пляму біля кутика ока
+        bm.normal_update()
         for f in bm.faces:
+            if f.normal.y * pered < 0.15:
+                continue
             if all(blyz[v.index] for v in f.verts):
                 for lp in f.loops:
                     lp[vyd_l] = (1, 1, 1, 1)
@@ -1208,7 +1323,9 @@ def proektsiia(skan, pered):
     # Звужена маска: на краю фігури проєкція брала пікселі тла (сірі
     # смуги по силуету, ітерація 1).
     vuzka = maska.copy()
-    for _ in range(5):
+    # 5 px — на кадрі 1024; на 4K — пропорційно (13.10.2026: 5 px 4K лишали
+    # змішані з тлом пікселі краю — сіро-блакитні смуги на скронях e1903)
+    for _ in range(max(5, int(round(5 * w / 1024)))):
         vuzka = vuzka & np.roll(vuzka, 1, 0) & np.roll(vuzka, -1, 0) \
             & np.roll(vuzka, 1, 1) & np.roll(vuzka, -1, 1)
     ys, xs = np.where(maska)
@@ -1354,7 +1471,10 @@ def proektsiia(skan, pered):
     # Усе, що хоч трохи повернуте до камери, на кадрі видно саме так —
     # повна вага вже з 0,15 (суміш із розмитим Pixal3D на опуклостях
     # давала двоїння, ітерація 2–3).
-    ww = np.clip(nr[:, 1] * pered / 0.15, 0.0, 1.0)
+    # Плавно 0,2…0,45 (13.10.2026): з повною вагою вже з 0,15 скроні й бік
+    # голови брали кадр під гострим кутом — розмазаний і блідий; з локальним
+    # тоном (zapekty) суміш двох джерел уже однакова за тоном.
+    ww = np.clip((nr[:, 1] * pered - 0.2) / 0.25, 0.0, 1.0)
     vydno = vuzka[np.clip((vv * h).astype(int), 0, h - 1),
                   np.clip((uu * w).astype(int), 0, w - 1)]
     ww = np.where(vydno, ww, 0.0)
@@ -1471,6 +1591,52 @@ def zapekty(skan):
                                                     1e-3)
     gain = np.clip(gain, 0.3, 3.0)
     print("[аватар] тон Pixal3D → референс: ×%s" % np.round(gain, 3))
+    # Тон локально (13.10.2026): кадр освітлений спереду й блідіший за
+    # Pixal3D на скронях і щоках, і один множник на все тіло лишав на межі
+    # проєкції світлі латки (e1903). Відношення кадр/Pixal3D — по вершинах,
+    # де видно спереду, і дифузією по ребрах — на боки й спину.
+    nl_ = len(me.loops)
+    vi_ = np.empty(nl_, dtype=np.int64)
+    me.loops.foreach_get("vertex_index", vi_)
+    up_ = np.empty(nl_ * 2, dtype=np.float32)
+    uv_p.foreach_get("uv", up_)
+    up_ = up_.reshape(-1, 2)
+    ur_ = np.empty(nl_ * 2, dtype=np.float32)
+    uv_r.foreach_get("uv", ur_)
+    ur_ = ur_.reshape(-1, 2)
+    vk_ = np.empty(nl_ * 4, dtype=np.float32)
+    vyd.foreach_get("color", vk_)
+    vk_ = vk_.reshape(-1, 4)[:, 0]
+    tut_ = vk_ >= 0.9
+    def proba(px_, uv_):
+        h_, w_ = px_.shape[:2]
+        return px_[np.clip((uv_[:, 1] * h_).astype(int), 0, h_ - 1),
+                   np.clip((uv_[:, 0] * w_).astype(int), 0, w_ - 1), :3]
+    nv_ = len(me.vertices)
+    Sr = np.zeros((nv_, 3))
+    Sp = np.zeros((nv_, 3))
+    np.add.at(Sr, vi_[tut_], proba(pr, ur_[tut_]))
+    np.add.at(Sp, vi_[tut_], proba(pp, up_[tut_]))
+    ed_ = np.empty(len(me.edges) * 2, dtype=np.int64)
+    me.edges.foreach_get("vertices", ed_)
+    ed_ = ed_.reshape(-1, 2)
+    st_ = np.bincount(ed_.ravel(), minlength=nv_).astype(float)
+    def serednie(x):
+        s_ = np.zeros_like(x)
+        np.add.at(s_, ed_[:, 0], x[ed_[:, 1]])
+        np.add.at(s_, ed_[:, 1], x[ed_[:, 0]])
+        return 0.5 * x + 0.5 * s_ / np.maximum(st_, 1)[:, None]
+    for _ in range(TON_KROKY):
+        Sr, Sp = serednie(Sr), serednie(Sp)
+    ton = np.where(Sp.sum(1, keepdims=True) > 1e-4, Sr / np.maximum(Sp, 1e-4), gain[None, :])
+    ton = np.clip(ton, 0.3, 3.0)
+    at_t = me.color_attributes.new("Тон", "FLOAT_COLOR", "POINT")
+    kt = np.ones((nv_, 4), np.float32)
+    kt[:, :3] = ton
+    at_t.data.foreach_set("color", kt.ravel())
+    print("[аватар] тон локально: вершин спереду %d, множник %s…%s"
+          % (int((np.bincount(vi_[tut_], minlength=nv_) > 0).sum()),
+             np.round(np.percentile(ton, 5, 0), 2), np.round(np.percentile(ton, 95, 0), 2)))
     uvp = nodes.new("ShaderNodeUVMap")
     uvp.uv_map = "UVMap"
     links.new(uvp.outputs["UV"], tex_p.inputs["Vector"])
@@ -1479,6 +1645,9 @@ def zapekty(skan):
     mnozh.inputs["Factor"].default_value = 1.0
     links.new(tex_p.outputs["Color"], mnozh.inputs[6])
     mnozh.inputs[7].default_value = (*[float(x) for x in gain], 1.0)
+    at_n = nodes.new("ShaderNodeVertexColor")
+    at_n.layer_name = "Тон"
+    links.new(at_n.outputs["Color"], mnozh.inputs[7])
     uvr = nodes.new("ShaderNodeUVMap")
     uvr.uv_map = "Проєкція"
     tex_r = nodes.new("ShaderNodeTexImage")
@@ -1527,6 +1696,8 @@ def zapekty(skan):
         print("[аватар] ‼ GPU для запікання недоступна: %s" % e)
     sc.cycles.samples = 1
     sc.render.bake.margin = 8
+    if os.environ.get("AVATAR_DEBUG_BLEND"):      # налагодження: сцена перед запіканням
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ["AVATAR_DEBUG_BLEND"], copy=True)
     for o in bpy.context.selected_objects:
         o.select_set(False)
     skan.select_set(True)

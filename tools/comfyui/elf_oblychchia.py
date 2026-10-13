@@ -82,6 +82,19 @@ if "--коротке" in sys.argv:
     PROMT = PROMT.replace("long straight silver-white hair parted in the middle",
                           "very short cropped silver-white hair close to the scalp")
 
+# `--лиса` / `--людина` (13.10.2026, кадри з нуля el-lysa-s1903 і
+# lyud-lysa-s2002): голова лиса — опис волосся домальовував би пасма;
+# людина — без гострих вух.
+LYSA = "completely bald smooth shaved pale scalp with no hair at all"
+if "--лиса" in sys.argv:
+    sys.argv.remove("--лиса")
+    PROMT = PROMT.replace("long straight silver-white hair parted in the middle", LYSA)
+if "--людина" in sys.argv:
+    sys.argv.remove("--людина")
+    PROMT = PROMT.replace("long straight silver-white hair parted in the middle", LYSA) \
+        .replace("a beautiful young elf woman", "a beautiful young human woman") \
+        .replace("long pointed elf ears", "normal small rounded human ears")
+
 
 def holova_ramka(maska):
     """Квадрат голови: верх силуету, висота голови ≈ 1/8 зросту."""

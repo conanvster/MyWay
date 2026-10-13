@@ -11,7 +11,8 @@
 
     ~/Програми/cv-venv/bin/python -u tools/comfyui/bronia_e1903.py [ключ] [сід…]
 
-Вихід — `wiki/img/test/avatar/e1903-nabir-<ключ>-s<сід>.png`.
+Вихід — `wiki/img/test/avatar/e1903-ikonky-<ключ>-s<сід>.png` (набір за
+значками, `IKONKY`).
 """
 import os
 import shutil
@@ -28,9 +29,56 @@ import elf_nabory_cn as cn  # noqa: E402
 D = cn.D
 KADR = D / "el-lysa-e1903.png"
 KLIUCH = next((a for a in sys.argv[1:] if a in cn.NABORY), "E-легкий")
-SIDY = [int(a) for a in sys.argv[1:] if a.isdigit()] or [2001, 2002, 2003]
+SIDY = [int(a) for a in sys.argv[1:] if a.isdigit()] or [2011, 2012, 2013]
 # як у `elf_lysa_nova.py`: 0,85 до 65% опускало промежину
 cn.SYLA, cn.KINETS = 1.0, 0.9
+
+# Набори — за значками речей у грі (`game/assets/icons/items/`), річ за
+# річчю. Слово замовника 13.10.2026: «зображення не схоже на іконки в грі —
+# перероби щоб було схоже». Перша проба (s2001–2003) брала опис з
+# `elf_nabory.py`: довге волосся, легінси, яких у наборі немає. Тут голова
+# лиса, а що не закрито річчю набору — голе тіло й чорні плавки основи:
+# кожна річ окремо, і скан мінус тіло дасть саме її.
+IKONKY = {
+    "E-легкий": (
+        # каптур зі шкури
+        "a loose cowl hood of smooth tan-brown leather pulled up over her "
+        "bald head, the deep hood opening framing her face, the hood falls "
+        "into a short leather capelet over her shoulders with a thin leather "
+        "strap and a small iron ring across the upper chest; "
+        # куртка з кори дуба
+        "a short-sleeved fitted jerkin of ochre leather with a carved oak "
+        "bark texture and grey-green swirling wood grain, a small stand-up "
+        "collar, a seam down the front, layered rectangular shoulder "
+        "pauldrons of bark plates edged in grey, grey-green cloth half "
+        "sleeves ending at mid upper arm, a dark red-brown leather band "
+        "around the waist, and short split flaps below the waist ending at "
+        "the top of the thighs; "
+        # пояс з кори дуба
+        "a worn dark brown leather belt with a large square grey iron buckle "
+        "and a leather keeper loop, worn low on the hips over the flaps; "
+        # рукавички зі шкури
+        "smooth tan leather five-finger gloves with flared cuffs reaching to "
+        "the middle of the forearm; "
+        # черевики зі шкури
+        "tan leather pull-on boots reaching mid-calf with slightly slouched "
+        "shafts, rounded toe caps and low stacked heels"),
+}
+
+
+def promt_ikonky(nabir):
+    return ("Full body photo of a tall, slender young elf woman standing in a "
+            "strict T-pose, arms straight out to the sides at shoulder height, "
+            "palms down, fingers spread, front view, feet slightly apart. She "
+            "wears exactly these items and nothing else: " + nabir + ". "
+            "Bare skin on the upper arms between the sleeves and the gloves, "
+            "bare thighs and knees between the jerkin and the boots, plain "
+            "black briefs. No hair at all, completely bald under the hood, "
+            "long pointed elf ears, pale skin, delicate face, very long slim "
+            "legs with a high crotch, narrow hips, tiny waist. Plain light "
+            "grey studio background, soft even lighting, photorealistic, "
+            "realistic worn leather and bark materials, the whole body from "
+            "head to feet in frame.")
 
 
 def main():
@@ -59,8 +107,8 @@ def main():
                      (KADR.name, "e1903-cn-maska.png", "e1903-cn-poza.png"))
     m.free()
     for seed in SIDY:
-        kudy = D / ("e1903-nabir-%s-s%d.png" % (KLIUCH, seed))
-        done = m.run(cn.graf(osn, msk, poz, cn.promt(cn.NABORY[KLIUCH], "важкий" in KLIUCH),
+        kudy = D / ("e1903-ikonky-%s-s%d.png" % (KLIUCH, seed))
+        done = m.run(cn.graf(osn, msk, poz, promt_ikonky(IKONKY[KLIUCH]),
                              seed, "e1903_nabir_%d" % seed))
         out = done["outputs"]["13"]["images"][-1]
         shutil.copy(os.path.join(m.COMFY, "output", out["subfolder"], out["filename"]), kudy)

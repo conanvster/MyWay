@@ -37,3 +37,4 @@ art/mixamo/
 
 # Старі версії ельфійки для переглядача (дістаються з git: git show <коміт>:<шлях>)
 game/models/own/avatary/_arkhiv/
+art/references/

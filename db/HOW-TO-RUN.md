@@ -75,6 +75,40 @@ sudo -u postgres psql -d myway < db/migration-world.sql
 Без неї гра піде, але сервер відповість кодом 404 на вхід: функції з
 таким набором доводів у базі ще немає.
 
+### Квест переходу й позначка вбивці (10–11.10.2026)
+
+Два стовпці в `game.characters`: `quest` — завдання від майстра гільдії
+(П-227, лічильник «убито|10»), `outlaw` — позначка вбивці (П-87/П-261).
+Без них гра піде: `Store` повторить запис без поля й надрукує, якої
+міграції бракує, — але квест і позначка не переживуть перезапуску.
+
+```
+cd ~/гра-lineage
+sudo -u postgres psql -d myway < db/migration-quest.sql
+sudo -u postgres psql -d myway < db/migration-outlaw.sql
+```
+
+Кожна закінчується рядком `Done!`; без нього — зупинилась на помилці.
+Повторний запуск безпечний (`ADD COLUMN IF NOT EXISTS`). Після обох —
+перезапустити сервер гри.
+
+**Перевірка**, що стовпці на місці:
+
+```
+sudo -u postgres psql -d myway -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='game' AND table_name='characters' AND column_name IN ('quest','outlaw');"
+```
+
+Має бути два рядки: `quest | jsonb` і `outlaw | jsonb`. І через PostgREST
+(той самий шлях, що в гри; порт — `server-port` з `db/postgrest.conf`, зараз 3000):
+
+```
+curl -s 'http://127.0.0.1:3000/characters?select=name,quest,outlaw&limit=3'
+```
+
+Відповідь — JSON з полями `quest` і `outlaw` (`{}` у кого порожньо).
+Помилка «column … does not exist» — міграцію не поставлено або PostgREST
+не перечитав схему (перезапустити `./run-db.sh`).
+
 ## 2. PostgREST
 
 ```

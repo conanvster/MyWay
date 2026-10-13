@@ -377,6 +377,42 @@ for b in arm.pose.bones:
     b.rotation_euler = (0, 0, 0)
     b.scale = (1, 1, 1)
 bpy.context.view_layer.update()
+def shkira_blyzko(vol, tilo):
+    """Пасма біля тіла — ваги шкіри (П-269, 13.10.2026).
+
+    Слово замовника: «пасма волос всеще місцями зникають під шкірою»;
+    SpringBone знає лише кулі, капсули й площини. Вершина пасма ближче 2 см
+    до тіла бере ваги найближчої вершини тіла (рухається з тілом, не
+    пружиною), між 2 і 3 см — суміш, далі — ланцюжки як були.
+    """
+    from mathutils.kdtree import KDTree
+    tv = tilo.data.vertices
+    kd = KDTree(len(tv))
+    mt = tilo.matrix_world
+    for i, v in enumerate(tv):
+        kd.insert(mt @ v.co, i)
+    kd.balance()
+    imena_t = {g.index: g.name for g in tilo.vertex_groups}
+    grupy = {g.name: g for g in vol.vertex_groups}
+    mv = vol.matrix_world
+    n = 0
+    for v in vol.data.vertices:
+        _, j, d = kd.find(mv @ v.co)
+        if d >= 0.03:
+            continue
+        s_ = 1.0 if d <= 0.02 else (0.03 - d) / 0.01
+        for ge in v.groups:
+            ge.weight *= 1 - s_
+        for ge in tv[j].groups:
+            im = imena_t[ge.group]
+            if im not in grupy:
+                grupy[im] = vol.vertex_groups.new(name=im)
+            grupy[im].add([v.index], ge.weight * s_, "ADD")
+        n += 1
+    print("[волосся] %s: біля тіла (<3 см) вершин %d з %d — ваги шкіри"
+          % (vol.name, n, len(vol.data.vertices)))
+
+
 dzherelo = tilo_mx
 for o in nashi:
     # Форм-ключі (риси обличчя, `elf_rysy.py`) — на час переносу ваг геть:
@@ -449,6 +485,7 @@ if VOLOSSIA:
             nashi.append(vol)
             kistky_volossia(arm, vol, verkh=1.58, svii_material=True, niz=niz)
             print("[волосся] зачіска %s: вершин %d" % (vol.name, len(vol.data.vertices)))
+            shkira_blyzko(vol, tilo_n)
     elif vol is not None:
         nashi.append(vol)
         kistky_volossia(arm, vol)

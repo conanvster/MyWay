@@ -402,7 +402,9 @@ func _yard_mask(land: Landscape) -> PackedFloat32Array:
 		var at: Array = town.get("центр", [0, 0, 0])
 		var cx := float(at[0])
 		var cz := float(at[2])
-		var inner := float(town.get("радіус", 26.0)) * 0.8
+		# Місто з муром (П-271): утоптане все за муром, між домами.
+		var inner := float(town.get("мур радіус",
+				float(town.get("радіус", 26.0)) * 0.8))
 		var outer := inner + 14.0
 		var box := _box(cx, cz, outer)
 		for iz in range(box[1], box[3] + 1):

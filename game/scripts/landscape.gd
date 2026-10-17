@@ -1169,7 +1169,7 @@ func _meadow() -> void:
 	for town: Dictionary in towns():
 		var at: Array = town.get("центр", [0, 0, 0])
 		_yards.append(Vector3(float(at[0]), float(at[2]),
-				float(town.get("радіус", 26.0)) + 3.0))
+				float(town.get("мур радіус", town.get("радіус", 26.0))) + 3.0))
 	if _layers == null or _layers.cover.is_empty():
 		return
 	_meadow_node = Meadow.new()
@@ -1292,6 +1292,15 @@ func _one_city(city: Dictionary, first_dweller: int) -> int:
 	if city.is_empty():
 		return first_dweller
 	var center := _point(city.get("центр", [0, 0, 0]))
+	# Світ 2 — міста й села як на мапі (план §3г, П-271): мур, брами,
+	# вулиці, донжон, доми з фото-текстурами; села — хати вздовж стежки.
+	if city.has("мур") or city.has("стежка"):
+		TownLook.build(self, city)
+		var people: Array = city.get("мешканці", [])
+		for i in people.size():
+			if str(people[i].get("ремесло", "")) != Wardens.GUARD_CRAFT:
+				_dweller(people[i], first_dweller + i)
+		return first_dweller + people.size()
 
 	# Брук — тонкий круг, щоб місто було видно згори.
 	var road := CylinderMesh.new()

@@ -105,8 +105,8 @@ func _go() -> void:
 	_expect("речі не впали (%d з 200)" % int(b.items.get("кора дуба", 0)),
 			int(b.items.get("кора дуба", 0)) == 200)
 	_expect("1 не позначений", _outlaws.kills_of(a) == 0)
-	print("    повага 2: %d → %d (знімається, як за будь-яку смерть — "
-			% [respect_before, b.respect] + "до відповіді П-260)")
+	_expect("повага 2 не знялась (%d → %d, П-260)"
+			% [respect_before, b.respect], b.respect == respect_before)
 	_expect("бій скінчено — далі вже не погоджений", not _duels.agreed(1, 2))
 
 	print("\n— повернення за %.0f с —" % Duels.RETURN_AFTER)

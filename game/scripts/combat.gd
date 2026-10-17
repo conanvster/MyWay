@@ -513,12 +513,18 @@ func _agreed(me: int, victim_id: int) -> bool:
 func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 	victim.die()
 	# Гравець за смерть втрачає повагу: рівно 10% обсягу поточного рівня
-	# (П-27, числа замовника). Досвід не втрачається.
-	if victim_id > 0:
+	# (П-27, числа замовника). Досвід не втрачається. На арені (погоджений
+	# бій) — ні: бій за домовленістю без кари (П-260, слово замовника
+	# 17.10.2026 — рекомендацію прийнято).
+	if victim_id > 0 and _agreed(me, victim_id):
+		_link.report(victim_id, "[смерть] %d на арені — повага не знімається"
+				% victim_id)
+	elif victim_id > 0:
 		var lost: int = progress.death_loss(victim)
 		_link.notice(victim_id, "втрачено %d поваги" % lost)
 		_link.report(victim_id, "[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
+	if victim_id > 0:
 		# І частина речей (друга половина П-27). Лягають на землю біля
 		# трупа (П-160) — підняти може будь-хто. PvP двох видів (П-259,
 		# слово замовника 10.10.2026): у ПОГОДЖЕНОМУ — у спеціальній зоні —

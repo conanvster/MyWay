@@ -2655,8 +2655,11 @@ func _one_forest(wood: Dictionary) -> void:
 		var sorts: Array = wood.get("сорти", [])
 		if not sorts.is_empty():
 			var pick := absi(hash(model + str(i)))
-			model = "t3d:%s:%d" % [sorts[pick % sorts.size()],
-					pick / sorts.size() % Tree3DLook.SEEDS]
+			var sort: String = sorts[pick % sorts.size()]
+			model = "t3d:%s:%d" % [sort, pick / sorts.size() % Tree3DLook.SEEDS]
+			# Висота лісу — для дерева 8 м; сорт тягне її до своєї: тополя
+			# вища, чагарник утричі нижчий.
+			height *= float(Tree3DLook.KINDS[sort]["висота"]) / 8.0
 		_place_tree(at, height, bark, leaves, model, spin)
 
 

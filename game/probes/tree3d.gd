@@ -8,14 +8,12 @@ extends SceneTree
 ## Ганяти так:
 ##     ./run.sh --дерева3д            вікно, знімки в user://
 ##     ./run.sh --дерева3д --числа    лише числа, без вікна
+##     ./run.sh --дерева3д сосна тополя лише названі сорти
 ##
 ## Esc — вийти.
 
 const GAP := 9.0
 const ROW_GAP := 14.0
-## Висота, до якої тягнемо кожне дерево в показі: як у листяних
-## моделей світу 1 (7–9 м).
-const TALL := 8.0
 
 var _shots_left := 2
 var _clock := 0.0
@@ -35,7 +33,11 @@ func _go() -> void:
 	root.add_child(page)
 	_page = page
 	var row := 0
+	var asked: Array = Array(OS.get_cmdline_user_args()).filter(
+			func(word: String) -> bool: return Tree3DLook.KINDS.has(word))
 	for kind: String in Tree3DLook.KINDS:
+		if not asked.is_empty() and kind not in asked:
+			continue
 		var started := Time.get_ticks_usec()
 		for seed in Tree3DLook.SEEDS:
 			Tree3DLook.grown(kind, seed)
@@ -46,7 +48,8 @@ func _go() -> void:
 				% [kind, Tree3DLook.SEEDS, spent, _triangles(made[0]),
 				_triangles(made[1]), float(made[2])])
 		for seed in Tree3DLook.SEEDS:
-			var one := Tree3DLook.view(kind, seed, TALL)
+			var one := Tree3DLook.view(kind, seed,
+					float(Tree3DLook.KINDS[kind]["висота"]))
 			one.position = Vector3(seed * GAP, 0, -row * ROW_GAP)
 			page.add_child(one)
 		_label(page, kind, Vector3(-6, 0.3, -row * ROW_GAP))
@@ -86,7 +89,7 @@ func _stage(page: Node3D, rows: int) -> void:
 	page.add_child(sun)
 	var ground := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(120, 120)
+	plane.size = Vector2(200, 200)
 	ground.mesh = plane
 	var soil := StandardMaterial3D.new()
 	soil.albedo_color = Color("#4d5b33")
@@ -102,7 +105,7 @@ func _stage(page: Node3D, rows: int) -> void:
 	var eye := Camera3D.new()
 	page.add_child(eye)
 	var middle := Vector3(GAP * 2.5, 3.0, -ROW_GAP * (rows - 1) * 0.5)
-	eye.look_at_from_position(middle + Vector3(0, 12, 30), middle)
+	eye.look_at_from_position(middle + Vector3(0, 1.5 * rows, 4.5 * rows), middle)
 	root.size = Vector2i(1600, 1000)
 
 

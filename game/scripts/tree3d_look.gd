@@ -14,8 +14,8 @@ class_name Tree3DLook
 ## Сегментів стовбура 4 замість 6: стовбур удвічі легший, а на відстані
 ## гравця різниці в обриси не видно.
 ##
-## Текстури — `tools/tree3d_hilochky.py` (листя ambientCG, кора Poly
-## Haven, CC0). Демо-текстури пакета без походження, тож у гру не йдуть.
+## Текстури — `tools/tree3d_hilochky.py`: демо пакета (слово замовника
+## 17.10.2026) і наші для клена, дуба й береста (ambientCG, Poly Haven).
 
 const HERE := "res://models/nature/tree3d/"
 ## Скільки зерен на сорт. Шість — досить, щоб у гаю сусіди не були
@@ -23,8 +23,11 @@ const HERE := "res://models/nature/tree3d/"
 const SEEDS := 6
 
 ## Сорти: параметри вузла Tree3D, кора й гілочка. Параметри — з демо
-## пакета (`demo/tree_3d.tscn`, вузли 1, 2, 4, 5), підправлені лише там,
-## де демо-дерево не пасувало: берест у демо з волосинку завтовшки.
+## пакета (`demo/tree_3d.tscn`, усі сім вузлів), кількість гілок — як там
+## (слово замовника 17.10.2026: «поверни кількість гілок»). Клен, дуб і
+## берест — ті самі дерева демо з нашим листям і корою; решта сім — демо
+## як є, з його текстурами. «відтінок» — tint демо-матеріалу.
+## Підправлено лише берест: у демо він з волосинку завтовшки.
 const KINDS := {
 	"клен": {
 		"кора": "kora_brunatna", "листя": "lystia_klen", "висота": 9.0,
@@ -33,9 +36,7 @@ const KINDS := {
 	},
 	"дуб": {
 		"кора": "kora_dub", "листя": "lystia_dub", "висота": 9.0,
-		# У демо 7 гілок — 14 тис. трикутників; гілки множаться степенем,
-		# і 6 дає 7 тис. при тій самій ширині крони (заміряно 17.10.2026).
-		"trunk_branches_count": 6, "trunk_branch_length": 0.59,
+		"trunk_branches_count": 7, "trunk_branch_length": 0.59,
 		"trunk_branch_length_falloff": 0.95, "trunk_drop_amount": -0.3,
 		"trunk_grow_amount": 0.03, "trunk_max_radius": 0.18,
 		"trunk_radius_falloff_rate": 0.61, "trunk_climb_rate": 0.2,
@@ -49,6 +50,65 @@ const KINDS := {
 		"trunk_drop_amount": 0.4, "trunk_max_radius": 0.12,
 		"trunk_radius_falloff_rate": 0.7, "trunk_twist": 2.62,
 		"trunk_length": 1.79, "twig_scale": 0.45,
+	},
+	# Демо, вузол Tree3D.
+	"липа": {
+		"кора": "kora_demo", "листя": "lystia_demo", "висота": 9.0,
+		"trunk_height": 9, "trunk_branch_length": 0.79,
+		"trunk_max_radius": 0.22, "trunk_length": 3.21, "twig_scale": 0.55,
+	},
+	# Демо, вузол Tree3D2.
+	"ясен": {
+		"кора": "kora_demo", "листя": "lystia_demo1", "висота": 7.5,
+		"trunk_branches_count": 4, "trunk_height": 9,
+		"trunk_branch_length": 0.59, "trunk_branch_length_falloff": 0.57,
+		"trunk_drop_amount": 0.4, "trunk_max_radius": 0.05,
+		"trunk_radius_falloff_rate": 0.7, "trunk_twist": 2.62,
+		"trunk_length": 1.79, "twig_scale": 0.4,
+	},
+	# Демо, вузол Tree3D3: без стовбура, гілки від землі.
+	"чагарник": {
+		"кора": "kora_demo", "листя": "lystia_demo", "висота": 2.5,
+		"trunk_branches_count": 3, "trunk_height": 0,
+		"trunk_branch_length": 0.19, "trunk_drop_amount": 0.2,
+		"trunk_max_radius": 0.04, "trunk_radius_falloff_rate": 0.58,
+		"trunk_twist": 5.0, "trunk_length": 0.38, "twig_scale": 0.65,
+	},
+	# Демо, вузол Tree3D4.
+	"граб": {
+		"кора": "kora_demo", "листя": "lystia_demo1", "висота": 9.0,
+		"trunk_branches_count": 7, "trunk_branch_length": 0.59,
+		"trunk_branch_length_falloff": 0.95, "trunk_drop_amount": -0.3,
+		"trunk_grow_amount": 0.03, "trunk_max_radius": 0.18,
+		"trunk_radius_falloff_rate": 0.61, "trunk_climb_rate": 0.2,
+		"trunk_kink": -0.37, "trunk_twist": 1.41, "trunk_length": 7.05,
+		"twig_scale": 0.65,
+	},
+	# Демо, вузол Tree3D5: високе й струнке.
+	"тополя": {
+		"кора": "kora_demo", "листя": "lystia_demo2", "висота": 14.0,
+		"trunk_height": 30, "trunk_drop_amount": 0.0,
+		"trunk_max_radius": 0.2, "trunk_climb_rate": 0.3, "trunk_kink": 0.01,
+		"trunk_twist": -2.47, "trunk_length": 3.61, "twig_scale": 1.0,
+	},
+	# Демо, вузол Tree3D6: хвойне, гілочки — віти з голками.
+	"сосна": {
+		"кора": "kora_demo", "листя": "lystia_demo3", "висота": 12.0,
+		"trunk_branches_count": 4, "trunk_height": 12,
+		"trunk_branch_length": 2.19, "trunk_drop_amount": 0.0,
+		"trunk_grow_amount": -0.38, "trunk_max_radius": 0.6,
+		"trunk_radius_falloff_rate": 0.57, "trunk_climb_rate": 2.02,
+		"trunk_kink": 0.0, "trunk_length": 11.52, "twig_scale": 2.0,
+	},
+	# Демо, вузол Tree3D7: червоне листя.
+	"багрянець": {
+		"кора": "kora_demo", "листя": "lystia_demo1", "висота": 7.0,
+		"відтінок": Color(1, 0, 0), "сила відтінку": 0.843,
+		"trunk_branches_count": 7, "trunk_height": 4,
+		"trunk_branch_length": 0.89, "trunk_drop_amount": 0.151,
+		"trunk_grow_amount": 0.033, "trunk_max_radius": 0.21,
+		"trunk_climb_rate": 0.37, "trunk_twist": 2.21, "trunk_length": 4.83,
+		"twig_scale": 0.7,
 	},
 }
 
@@ -81,7 +141,9 @@ static func grown(kind: String, seed: int) -> Array:
 			tree.set(field, spec[field])
 	tree.set("seed", 100 + seed % SEEDS * 37)
 	tree.set("material_trunk", _bark(str(spec["кора"])))
-	tree.set("material_twig", _twig(str(spec["листя"])))
+	tree.set("material_twig", _twig(str(spec["листя"]),
+			Color.WHITE.lerp(spec.get("відтінок", Color.WHITE),
+			float(spec.get("сила відтінку", 0.0)))))
 	var meshes: Array = []
 	var box := AABB()
 	for child in tree.get_children(true):
@@ -140,11 +202,12 @@ static func _bark(name: String) -> StandardMaterial3D:
 	return _paints[key]
 
 
-static func _twig(name: String) -> StandardMaterial3D:
-	var key := "листя:" + name
+static func _twig(name: String, tint: Color) -> StandardMaterial3D:
+	var key := "листя:%s:%s" % [name, tint.to_html()]
 	if not _paints.has(key):
 		var paint := StandardMaterial3D.new()
 		paint.albedo_texture = load(HERE + name + ".png")
+		paint.albedo_color = tint
 		paint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 		paint.alpha_scissor_threshold = 0.5
 		paint.cull_mode = BaseMaterial3D.CULL_DISABLED

@@ -2547,6 +2547,14 @@ func _place_plant(at: Vector3, kind: String, size: float) -> void:
 				"скан:%s:%s:%.2f" % [one[0], one[1], float(one[3])],
 				randf() * TAU, kind, by)
 		return
+	# «листяне» / «підлісок» у правилах світу 2 — будь-який сорт Tree3D
+	# свого роду. Сорт — з місця (хеш), не з `randi()`: так розкид решти
+	# світу не зсувається, а сервер і клієнт однаково знають, що де росте.
+	if kind == "листяне" or kind == "підлісок":
+		var sorts: Array = Tree3DLook.LEAFY if kind == "листяне" \
+				else Tree3DLook.BUSHES
+		kind = sorts[absi(hash(Vector2i(roundi(at.x * 10.0),
+				roundi(at.z * 10.0)))) % sorts.size()]
 	# Листяні Tree3D (план §3в). Випадковість — та сама, що в гілки фото
 	# нижче: одне `randi()` на вигляд і одне `randf()` на поворот.
 	if Tree3DLook.KINDS.has(kind):

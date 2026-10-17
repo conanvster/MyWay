@@ -11,8 +11,8 @@ class_name Tree3DLook
 ## Дерева світу ділять ці сітки й матеріали — як ділять картки ялин.
 ##
 ## Заміряно 17.10.2026 (`./run.sh --дерева3д`): числа — у шапці проби.
-## Сегментів стовбура 4 замість 6: стовбур удвічі легший, а на відстані
-## гравця різниці в обриси не видно.
+## Сегментів (граней) стовбура — 6, як у пакета (слово замовника
+## 17.10.2026: «зроби 6 граней»; до того було 4).
 ##
 ## Текстури — `tools/tree3d_hilochky.py`: демо пакета (слово замовника
 ## 17.10.2026) і наші для клена, дуба й береста (ambientCG, Poly Haven).
@@ -100,6 +100,53 @@ const KINDS := {
 		"trunk_radius_falloff_rate": 0.57, "trunk_climb_rate": 2.02,
 		"trunk_kink": 0.0, "trunk_length": 11.52, "twig_scale": 2.0,
 	},
+	# Ще дерева (17.10.2026, «додай дерева»): ті самі вузли демо з іншим
+	# листям і корою, підправлені пропорції — інший обрис, не близнюк.
+	"в'яз": {
+		"кора": "kora_brunatna", "листя": "lystia_klen", "висота": 10.0,
+		"trunk_branches_count": 6, "trunk_branch_length": 0.7,
+		"trunk_branch_length_falloff": 0.85, "trunk_drop_amount": -0.15,
+		"trunk_max_radius": 0.2, "trunk_radius_falloff_rate": 0.6,
+		"trunk_climb_rate": 0.3, "trunk_twist": 1.8, "trunk_length": 5.5,
+		"twig_scale": 0.6,
+	},
+	"осика": {
+		"кора": "kora_demo", "листя": "lystia_berest", "висота": 12.0,
+		"trunk_height": 24, "trunk_drop_amount": 0.05,
+		"trunk_max_radius": 0.14, "trunk_climb_rate": 0.35,
+		"trunk_twist": 1.6, "trunk_length": 3.0, "twig_scale": 0.8,
+	},
+	"вільха": {
+		"кора": "kora_dub", "листя": "lystia_demo", "висота": 8.0,
+		"trunk_branches_count": 5, "trunk_height": 6,
+		"trunk_branch_length": 0.65, "trunk_branch_length_falloff": 0.7,
+		"trunk_drop_amount": 0.25, "trunk_max_radius": 0.15,
+		"trunk_radius_falloff_rate": 0.65, "trunk_twist": 2.2,
+		"trunk_length": 2.6, "twig_scale": 0.55,
+	},
+	# Кущі підліску (`"підлісок"` лісів світу 1) — від чагарника демо.
+	"ліщина": {
+		"кора": "kora_brunatna", "листя": "lystia_klen", "висота": 3.0,
+		"trunk_branches_count": 4, "trunk_height": 0,
+		"trunk_branch_length": 0.3, "trunk_drop_amount": 0.1,
+		"trunk_max_radius": 0.05, "trunk_radius_falloff_rate": 0.6,
+		"trunk_twist": 3.5, "trunk_length": 0.5, "twig_scale": 0.6,
+	},
+	"бузина": {
+		"кора": "kora_demo", "листя": "lystia_demo2", "висота": 2.2,
+		"trunk_branches_count": 3, "trunk_height": 0,
+		"trunk_branch_length": 0.25, "trunk_drop_amount": 0.3,
+		"trunk_max_radius": 0.04, "trunk_radius_falloff_rate": 0.58,
+		"trunk_twist": 4.2, "trunk_length": 0.42, "twig_scale": 0.75,
+	},
+	"шипшина": {
+		"кора": "kora_demo", "листя": "lystia_demo1", "висота": 1.6,
+		"відтінок": Color(0.75, 1.0, 0.6), "сила відтінку": 0.5,
+		"trunk_branches_count": 3, "trunk_height": 0,
+		"trunk_branch_length": 0.2, "trunk_drop_amount": 0.35,
+		"trunk_max_radius": 0.03, "trunk_radius_falloff_rate": 0.55,
+		"trunk_twist": 5.0, "trunk_length": 0.32, "twig_scale": 0.6,
+	},
 	# Демо, вузол Tree3D7: червоне листя.
 	"багрянець": {
 		"кора": "kora_demo", "листя": "lystia_demo1", "висота": 7.0,
@@ -111,6 +158,9 @@ const KINDS := {
 		"twig_scale": 0.7,
 	},
 }
+
+## Кущі: крізь них ходять, як крізь «кущ» краєвиду (`_walk_through`).
+const BUSHES := ["чагарник", "ліщина", "бузина", "шипшина"]
 
 ## "сорт:зерно" -> [сітка стовбура, сітка гілочок, висота в метрах]
 static var _grown: Dictionary = {}
@@ -135,7 +185,6 @@ static func grown(kind: String, seed: int) -> Array:
 		return []
 	var spec: Dictionary = KINDS[kind]
 	var tree: Node3D = ClassDB.instantiate("Tree3D")
-	tree.set("trunk_segments", 4)
 	for field: String in spec:
 		if field.begins_with("trunk_") or field.begins_with("twig_"):
 			tree.set(field, spec[field])

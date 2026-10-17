@@ -61,8 +61,8 @@ var _origin := Vector2.ZERO            ## світові координати т
 var _zone_names: Array[String] = []    ## код зони -> назва
 
 
-## Земля світу версії 2 з вагами фото-шарів (`ground_paint.gd`).
-## `null` у версії 1: там земля лишається секторами, як була.
+## Земля з вагами фото-шарів (`ground_paint.gd`) — в обох версіях
+## світу (версія 1 — з 17.10.2026).
 var _layers: GroundPaint
 ## Різнотрав'я довкола камери (`meadow.gd`) — лише в клієнта світу 2.
 var _meadow_node: Meadow
@@ -1068,10 +1068,9 @@ func _ground() -> void:
 	body.name = "Земля"
 	add_child(body)
 
-	if _grid > 0:
-		_painted_ground(body, heights, points, start, step)
-	else:
-		_sector_ground(body, heights, points, start, step, earth)
+	# Версія 1 — теж фото-шари (17.10.2026); сектори лишились запасом,
+	# якщо колись знадобиться стара земля.
+	_painted_ground(body, heights, points, start, step)
 
 	var shape := HeightMapShape3D.new()
 	shape.map_width = points
@@ -1108,7 +1107,10 @@ func _painted_ground(body: StaticBody3D, heights: PackedFloat32Array,
 		# ні до чого, а коштували б секунди побудови.
 		_layers.shape_only(heights, points, start, step)
 	else:
-		_layers.paint(self, heights, points, start, step)
+		if _grid > 0:
+			_layers.paint(self, heights, points, start, step)
+		else:
+			_layers.paint_sectors(self, heights, points, start, step)
 		look = GroundPaint.material(_path_texture,
 				_origin - Vector2.ONE * PATH_STEP * 0.5, _path_side * PATH_STEP,
 				PATH_RANGE, PATH_HALF)
@@ -2661,6 +2663,23 @@ func _one_forest(wood: Dictionary) -> void:
 			# вища, чагарник утричі нижчий.
 			height *= float(Tree3DLook.KINDS[sort]["висота"]) / 8.0
 		_place_tree(at, height, bark, leaves, model, spin)
+	# Підлісок (17.10.2026, «додай … чагарник»): кущі Tree3D між деревами,
+	# крізь них ходять. Випадковість — після дерев, тим самим потоком на
+	# сервері й у клієнта; сервер їх не будує зовсім (`_tree`).
+	var under: Dictionary = wood.get("підлісок", {})
+	var bushes: Array = under.get("сорти", [])
+	for _i in int(under.get("кущів", 0)) if not bushes.is_empty() else 0:
+		var angle := randf() * TAU
+		var far := radius * 1.1 * sqrt(randf())
+		var at := _on_ground(center + Vector3(cos(angle) * far, 0.0,
+				sin(angle) * far))
+		var pick := randi()
+		var sort: String = bushes[pick % bushes.size()]
+		var tall := float(Tree3DLook.KINDS[sort]["висота"]) \
+				* randf_range(0.7, 1.2)
+		_place_tree(at, tall, bark, leaves, "t3d:%s:%d" % [sort,
+				pick / bushes.size() % Tree3DLook.SEEDS], randf() * TAU,
+				"кущ")
 
 
 ## Одразу будує дерево, якщо секторами не підвантажуємо (сервер, або
@@ -2724,7 +2743,7 @@ const TREE_MODEL_HEIGHT := 8.0
 func _walk_through(spec: Dictionary) -> bool:
 	var kind := str(spec.get("вид", ""))
 	if kind in ["кущ", "трава", "квіти", "камінець", "підріст", "пень",
-			"колода"]:
+			"колода"] or kind in Tree3DLook.BUSHES:
 		return true
 	return kind == "камінь" and float(spec.get("height", 9.0)) < 1.6
 
@@ -2745,7 +2764,16 @@ func _tree(spec: Dictionary) -> Node:
 		only_view.position = where
 		add_child(only_view)
 		var path: String = spec["model"]
-		if ResourceLoader.exists(path):
+		if path.begins_with("t3d:"):
+			var parts := path.split(":")
+			var bush := Tree3DLook.view(parts[1], int(parts[2]), height)
+			if bush != null:
+				bush.rotation.y = spec["spin"]
+				only_view.add_child(bush)
+				_no_shadows(bush)
+				_near_only(bush)
+				_wind_up(bush, height, true)
+		elif ResourceLoader.exists(path):
 			var made: Node3D = (load(path) as PackedScene).instantiate()
 			var by: float = float(spec.get("розмір", 0.0))
 			if by <= 0.0:

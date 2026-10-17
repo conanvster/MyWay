@@ -211,6 +211,86 @@ func paint(land: Landscape, heights: PackedFloat32Array, grid: int,
 			_store(i, w, dry)
 
 
+## Ваги для світу версії 1 (600 м, чотири сектори П-143).
+##
+## Слово замовника 17.10.2026: «зроби краще вигляд ґрунтів». До того
+## світ 1 стояв на крапі одним кольором на сектор і фото піску, що під
+## нашим сонцем рудів, з різкими межами по осях. Тепер ті самі фото-шари,
+## що й у світу 2: сектор дає основу (поле — лука, ліс — лука з мохом,
+## каміння — щебінь і мох, пісок — суха земля з піском), межа секторів —
+## перехід на ~50 м, рваний шумом; під лісами «ліси» — підстилка.
+func paint_sectors(land: Landscape, heights: PackedFloat32Array, grid: int,
+		from: Vector2, spacing: float) -> void:
+	shape_only(heights, grid, from, spacing)
+	var sea: float = land.sea_level()
+	var patch := FastNoiseLite.new()
+	patch.seed = Landscape.SEED + 501
+	patch.frequency = 0.018
+	var fine := FastNoiseLite.new()
+	fine.seed = Landscape.SEED + 502
+	fine.frequency = 0.07
+	var tear := FastNoiseLite.new()
+	tear.seed = Landscape.SEED + 503
+	tear.frequency = 0.01
+	var woods: Array[Vector3] = []
+	for wood: Dictionary in land.data.get("ліси", []):
+		var at: Array = wood.get("центр", [0, 0, 0])
+		woods.append(Vector3(float(at[0]), float(at[2]),
+				float(wood.get("радіус", 20))))
+	var yard := _yard_mask(land)
+	var total := grid * grid
+	weights.resize(total * PER_VERTEX)
+	weights.fill(0)
+	cover.resize(total * 4)
+	cover.fill(0)
+	var w := PackedFloat32Array()
+	w.resize(COUNT)
+	for iz in grid:
+		for ix in grid:
+			var i := iz * grid + ix
+			var x := from.x + ix * spacing
+			var z := from.y + iz * spacing
+			var p := patch.get_noise_2d(x, z) * 0.5 + 0.5
+			var q := fine.get_noise_2d(x, z) * 0.5 + 0.5
+			var bend := tear.get_noise_2d(x, z) * 30.0
+			# Частка «східних» (x ≥ 0) і «південних» (z ≥ 0) секторів.
+			var east := smoothstep(-25.0, 25.0, x + bend)
+			var south := smoothstep(-25.0, 25.0, z - bend)
+			var field := east * south
+			var forest := east * (1.0 - south)
+			var stony := (1.0 - east) * south
+			var sandy := (1.0 - east) * (1.0 - south)
+			w.fill(0.0)
+			w[MEADOW] = field + forest * 0.8 + stony * 0.45 + sandy \
+					* smoothstep(0.55, 0.9, q) * 0.5
+			w[SOIL] = (field + forest) * (smoothstep(0.55, 0.85, p) * 0.9
+					+ smoothstep(0.6, 0.9, q) * 0.3) + sandy \
+					* smoothstep(0.4, 0.8, p) * 0.9
+			w[MOSS] = forest * 0.35 + stony * 0.4
+			w[SCREE] = stony * (0.5 + smoothstep(0.5, 0.8, p) * 0.6)
+			w[ROCK] = stony * smoothstep(0.7, 0.9, q) * 0.5
+			w[SAND] = sandy * 0.75
+			var grove := 0.0
+			for wood: Vector3 in woods:
+				var far := Vector2(x - wood.x, z - wood.y).length()
+				grove = maxf(grove, 1.0 - smoothstep(wood.z * 0.8,
+						wood.z + 8.0, far))
+			if grove > 0.0:
+				w[MEADOW] *= 1.0 - grove * 0.8
+				w[SAND] *= 1.0 - grove * 0.7
+				w[LITTER] += grove * 1.1
+				w[MOSS] += grove * 0.8
+			var dry := field * 0.1 + forest * 0.15 + stony * 0.3 \
+					+ sandy * 0.6
+			_slope_and_shore(w, 1.0 - _normals[i].y, heights[i] - sea, false)
+			var t: float = yard[i]
+			if t > 0.0:
+				for k in COUNT:
+					w[k] *= 1.0 - t
+				w[SOIL] += t * 1.2
+			_store(i, w, dry)
+
+
 ## Правила однієї зони: пише ваги шарів у `out` і вертає сухість трави.
 func _zone_rule(kind_of: PackedInt32Array, code: int, groves: Dictionary,
 		grove_edge: Dictionary, x: float, z: float, h: float, p: float,

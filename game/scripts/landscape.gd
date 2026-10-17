@@ -2545,6 +2545,14 @@ func _place_plant(at: Vector3, kind: String, size: float) -> void:
 				"скан:%s:%s:%.2f" % [one[0], one[1], float(one[3])],
 				randf() * TAU, kind, by)
 		return
+	# Листяні Tree3D (план §3в). Випадковість — та сама, що в гілки фото
+	# нижче: одне `randi()` на вигляд і одне `randf()` на поворот.
+	if Tree3DLook.KINDS.has(kind):
+		var sort: Dictionary = Tree3DLook.KINDS[kind]
+		_place_tree(at, float(sort["висота"]) * size, "", "",
+				"t3d:%s:%d" % [kind, randi() % Tree3DLook.SEEDS],
+				randf() * TAU, kind, size)
+		return
 	if PHOTO_TREES.has(kind):
 		var photo: Array = PHOTO_TREES[kind]
 		var one: Array = photo[randi() % photo.size()]
@@ -2642,6 +2650,13 @@ func _one_forest(wood: Dictionary) -> void:
 		# коментар не просто про акуратність).
 		var model: String = TREE_MODELS[randi() % TREE_MODELS.size()]
 		var spin := randf() * TAU
+		# «сорти» — дерева Tree3D замість моделей (план §3в). Те саме
+		# одне `randi()` вище вибирає й сорт, і зерно — розкид не зсувається.
+		var sorts: Array = wood.get("сорти", [])
+		if not sorts.is_empty():
+			var pick := absi(hash(model + str(i)))
+			model = "t3d:%s:%d" % [sorts[pick % sorts.size()],
+					pick / sorts.size() % Tree3DLook.SEEDS]
 		_place_tree(at, height, bark, leaves, model, spin)
 
 
@@ -2753,6 +2768,20 @@ func _tree(spec: Dictionary) -> Node:
 	wall.shape = shape
 	wall.position = Vector3(0, height * 0.5, 0)
 	body.add_child(wall)
+
+	# Дерево Tree3D: сітки вирощено раз на сорт і зерно (`tree3d_look.gd`),
+	# тут лише ставимо їх. Серверові вигляд не потрібен — лише стовбур.
+	if str(spec["model"]).begins_with("t3d:"):
+		if DisplayServer.get_name() != "headless":
+			var parts := str(spec["model"]).split(":")
+			var grown := Tree3DLook.view(parts[1], int(parts[2]), height)
+			if grown != null:
+				grown.rotation.y = spec["spin"]
+				body.add_child(grown)
+				_no_shadows(grown)
+				_near_only(grown)
+				_wind_up(grown, height, true)
+		return body
 
 	# Фотографічне дерево: хрест із двох площин замість моделі.
 	if str(spec["model"]).begins_with("фото:"):

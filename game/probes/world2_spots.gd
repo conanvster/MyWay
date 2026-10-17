@@ -8,6 +8,9 @@ extends Node
 ##
 ## Ганяти так:
 ##     ./run.sh --світ2-місця
+##     ./run.sh --світ2-місця --листяні   те саме, але в рівнині й на
+##                     терасі до хвої домішано листяні Tree3D (план §3в):
+##                     показ для рішення, дані світу не змінюються
 
 const MAIN := preload("res://scenes/main.tscn")
 const MAP2 := "res://data/map2.json"
@@ -60,7 +63,10 @@ func _go() -> void:
 	var land: Node = world.get_node("Landscape")
 	# З підвантаженням, як у справжнього клієнта: інакше проба тягне у
 	# памʼять усі рослини світу, а видно однаково лише ті, що поруч.
-	land.build(JSON.parse_string(text), true)
+	var map: Dictionary = JSON.parse_string(text)
+	if OS.get_cmdline_user_args().has("--листяні"):
+		_mix_broadleaf(map)
+	land.build(map, true)
 	await get_tree().process_frame
 
 	# Сонце — те, що в `main.tscn` («Light», з тінями), як і в грі. Своє
@@ -176,3 +182,22 @@ func _forest_path(land: Node, map: Dictionary) -> Array:
 	print("[місця] лісова стежка: хвойних у 25 м — %d, у %s"
 			% [best, str(found[0]) if not found.is_empty() else "—"])
 	return found
+
+
+## Листяні Tree3D у зони, де вже росте літня хвоя (рівнина, тераса):
+## до кожної «хвої» в переліку видів — один листяний сорт по колу.
+## Так листяних стає приблизно стільки ж, скільки хвойних дерев.
+static func _mix_broadleaf(map: Dictionary) -> void:
+	var sorts: Array = Tree3DLook.KINDS.keys()
+	var added := 0
+	for rule: Dictionary in map.get("рослинність", []):
+		if int(rule.get("зона", -1)) not in [3, 6]:
+			continue
+		var kinds: Array = rule.get("види", [])
+		for kind: String in kinds.duplicate():
+			if kind == "хвоя":
+				kinds.append(sorts[added % sorts.size()])
+				added += 1
+	print("[місце] домішано листяних видів: %d (%s)"
+			% [added, ", ".join(PackedStringArray(sorts))])
+

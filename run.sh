@@ -9,6 +9,7 @@
 #   ./run.sh --парад  парад істот: усі види в ряд, знімок у user://
 #   ./run.sh --рослини  показ рослин: усі дерева, кущі, трави й каміння
 #                     набору природи в ряд, з підписами й зміряними висотами
+#   ./run.sh --дерева3д показ дерев Tree3D: сорти, зерна, числа
 #   ./run.sh --рухи-людини  парад рухів моделі людини: по одній фігурі
 #                     на кожен рух із бібліотеки, кожна підписана назвою
 #                     (`--модель res://…` — інша модель на тому самому
@@ -102,7 +103,7 @@ case "${1:-}" in
     --світ2) exec godot --path "$proj" "${vsync[@]}" -- --світ2 "${@:2}" ;;
     --світ2-згори) exec godot --path "$proj" res://scenes/world2_view.tscn ;;
     --світ2-карта) exec godot --path "$proj" --script res://probes/world2_map.gd ;;
-    --світ2-місця) exec godot --path "$proj" res://scenes/world2_spots.tscn ;;
+    --світ2-місця) exec godot --path "$proj" res://scenes/world2_spots.tscn -- "${@:2}" ;;
     --демо-світ2) exec godot --path "$proj" "${vsync[@]}" -- --демо --світ2 ;;
     --демо) exec godot --path "$proj" "${vsync[@]}" -- --демо "${@:2}" ;;
     --демо-вікна) exec godot --path "$proj" "${vsync[@]}" -- --демо --вікна ;;
@@ -110,6 +111,7 @@ case "${1:-}" in
     --демо-персонаж) exec godot --path "$proj" -- --демо --персонаж Вовкодав ;;
     --парад) exec godot --path "$proj" --script res://probes/parade.gd ;;
     --рослини) exec godot --path "$proj" --script res://probes/plants.gd ;;
+    --дерева3д) exec godot --path "$proj" "${vsync[@]}" --script res://probes/tree3d.gd -- "${@:2}" ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd -- "${@:2}" ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --моделі) exec godot --path "$proj" "${vsync[@]}" res://scenes/model_viewer.tscn ;;

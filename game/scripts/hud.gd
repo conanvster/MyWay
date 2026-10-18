@@ -412,7 +412,9 @@ func set_stats(data: Dictionary) -> void:
 			str(data.get("стать", "?"))]
 	_put("рівень", "%d" % int(data.get("рівень", 1)))
 	_stats_points = int(data.get("очки", 0))
-	_put("вільних очок", "%d" % _stats_points,
+	# Від'ємне — борг за втрачений рівень (18.10.2026): гасить наступний.
+	_put("вільних очок", "%d" % _stats_points if _stats_points >= 0
+			else "%d (борг за втрачений рівень)" % _stats_points,
 			WindowBox.GOTHIC_GOLD if _stats_points > 0 else PARCHMENT)
 	# Чинне значення, а в дужках базове — коли спорядження чи баф їх
 	# зсунули. Так одразу видно, що твоє власне, а що від речей.
@@ -469,6 +471,8 @@ const SKILLS_WIDE := 250.0
 ## Рядок закладок «Скіли»/«Дії» (П-155) над підказкою.
 const SKILLS_TABS_H := 22.0
 const SKILLS_TAB_NAMES := ["Скіли", "Дії"]
+## Скільки лишати між низом вікна «Скіли» й краєм екрана.
+const SKILLS_BOTTOM_GAP := 16.0
 ## Голі уміння (П-155): тих самих 9, що в `actions.gd`, немає де взяти
 ## перекладу назви/примітки — це не дані з файлу, це самі правила гри,
 ## тож короткий перелік лежить тут, а не в JSON.
@@ -495,6 +499,7 @@ const BARE_ACTIONS := [
 
 var _skills_box: WindowBox
 var _skills_grid: GridContainer
+var _skills_scroll: ScrollContainer
 var _skills: Array = []
 var _skills_tab := 0
 var _skills_tabs_ui: Array = []
@@ -530,13 +535,24 @@ func _build_skills() -> void:
 	hint.position = Vector2(0, SKILLS_TABS_H)
 	hint.modulate = Color(0.72, 0.76, 0.68)
 
+	# Сітка в прокрутці (18.10.2026, слово замовника: «незміг в меню
+	# знайти телепортуватися в місто, можливо потрібна прокрутка»). Вікно
+	# росло під усі скіли без межі, і в кого їх багато, нижні рядки —
+	# серед них «повернення в місто» — опинялись за нижнім краєм екрана.
+	_skills_scroll = ScrollContainer.new()
+	_skills_scroll.name = "Прокрутка"
+	_skills_scroll.position = Vector2(0, SKILLS_TABS_H + SKILLS_TOP)
+	_skills_scroll.horizontal_scroll_mode = \
+			ScrollContainer.SCROLL_MODE_DISABLED
+	_style_scroll_bar(_skills_scroll)
+	page.add_child(_skills_scroll)
+
 	_skills_grid = GridContainer.new()
 	_skills_grid.name = "Сітка"
 	_skills_grid.columns = SKILLS_COLUMNS
-	_skills_grid.position = Vector2(0, SKILLS_TABS_H + SKILLS_TOP)
 	_skills_grid.add_theme_constant_override("h_separation", 6)
 	_skills_grid.add_theme_constant_override("v_separation", 6)
-	page.add_child(_skills_grid)
+	_skills_scroll.add_child(_skills_grid)
 
 
 func _toggle_skills() -> void:
@@ -620,8 +636,24 @@ func _render_skills_tab() -> void:
 	# екрана виглядав так, ніби воно не догрузилось. Перебудова оболонки
 	# дешевша за окреме «змінити розмір»: вікон три, а вміст міняється
 	# рідко — на руну, на рівень, чи перемиканням закладки.
-	_skills_box.resize(Vector2(SKILLS_WIDE,
-			SKILLS_TABS_H + SKILLS_TOP + count * (SkillCell.HIGH + 6.0)))
+	# Але не нижче за екран: що не влізло — прокруткою.
+	var list_h := count * (SkillCell.HIGH + 6.0)
+	var room := get_viewport().get_visible_rect().size.y \
+			- _skills_box.position.y - SKILLS_BOTTOM_GAP \
+			- WindowBox.TITLE_H - WindowBox.PAD * 2.0 \
+			- SKILLS_TABS_H - SKILLS_TOP
+	var shown := minf(list_h, maxf(room, 3.0 * (SkillCell.HIGH + 6.0)))
+	var wide := SKILLS_WIDE
+	if shown < list_h:
+		wide += SCROLL_GAP + SCROLL_BAR
+	_skills_scroll.vertical_scroll_mode = \
+			ScrollContainer.SCROLL_MODE_SHOW_ALWAYS if shown < list_h \
+			else ScrollContainer.SCROLL_MODE_DISABLED
+	_skills_scroll.size = Vector2(wide, shown)
+	# Ширшає зі смугою ліворуч: правий край лишається там, де був.
+	var right := _skills_box.position.x + _skills_box.size.x
+	_skills_box.resize(Vector2(wide, SKILLS_TABS_H + SKILLS_TOP + shown))
+	_skills_box.position.x = right - _skills_box.size.x
 
 
 ## Кинули щось на комірку панелі.
@@ -766,6 +798,18 @@ func _cell_scroll(page: Control, at: Vector2, columns: int,
 	scroll.custom_minimum_size = scroll.size
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
+	_style_scroll_bar(scroll)
+	page.add_child(scroll)
+	var sheet := Control.new()
+	sheet.custom_minimum_size = Vector2(wide + SCROLL_GAP, high)
+	sheet.mouse_filter = Control.MOUSE_FILTER_PASS
+	scroll.add_child(sheet)
+	return {"scroll": scroll, "sheet": sheet, "columns": columns,
+			"rows": rows, "cells": []}
+
+
+## Смуга прокрутки, яку видно оком: темна доріжка, золотий повзунок.
+func _style_scroll_bar(scroll: ScrollContainer) -> void:
 	var bar := scroll.get_v_scroll_bar()
 	bar.custom_minimum_size.x = SCROLL_BAR
 	var track := StyleBoxFlat.new()
@@ -778,13 +822,6 @@ func _cell_scroll(page: Control, at: Vector2, columns: int,
 				else Color(1.0, 0.86, 0.5)
 		thumb.set_corner_radius_all(4)
 		bar.add_theme_stylebox_override(state, thumb)
-	page.add_child(scroll)
-	var sheet := Control.new()
-	sheet.custom_minimum_size = Vector2(wide + SCROLL_GAP, high)
-	sheet.mouse_filter = Control.MOUSE_FILTER_PASS
-	scroll.add_child(sheet)
-	return {"scroll": scroll, "sheet": sheet, "columns": columns,
-			"rows": rows, "cells": []}
 
 
 ## Комірки під `count` речей: цілими рядами, не менше видимих. Зайві —
@@ -1157,7 +1194,7 @@ func _bag_drag(from: Control, name: String) -> Dictionary:
 ## коли ведеш мишею. Рядок ще й каже, що саме станеться від натиску —
 ## «купити за 120» проти «продати за 48».
 signal wants_shop(at: int)
-signal wants_buy(at: int, name: String)
+signal wants_buy(at: int, name: String, count: int)
 signal wants_sell(at: int, thing_at: int)
 signal wants_sell_stack(at: int, name: String, count: int)
 
@@ -1571,12 +1608,14 @@ func ask_confirm(question: String, does: Callable,
 ## Спитати, скільки зі стосу (П-164). `text` складає питання з числа
 ## («Продати «кора дуба» ×3 за 9?»), `does` дістає вибране число.
 ## Стос з однієї штуки питає так само, лише без − / +.
-func ask_count(text: Callable, most: int, does: Callable) -> void:
+## `start` — з якого числа почати; −1 — з найбільшого (продаж стосу).
+func ask_count(text: Callable, most: int, does: Callable,
+		start: int = -1) -> void:
 	if _confirm_box == null:
-		does.call(most)
+		does.call(most if start < 0 else start)
 		return
 	_count_most = maxi(1, most)
-	_count = _count_most
+	_count = _count_most if start < 0 else clampi(start, 1, _count_most)
 	_count_text = text
 	_count_hold = 0
 	_confirm_does = func() -> void: does.call(_count)
@@ -2097,9 +2136,22 @@ func _fill_stock(goods: Array) -> void:
 		_cell_look(press, true)
 		_hover(press, "%s — купити за %d" % [name, price])
 		# Купівля питає підтвердження, і воно підкріплене сумою (П-159).
+		# Складану — ще й скільки: − / + тим самим вікном, що й продаж
+		# стосу (П-164), від однієї штуки й не більше, ніж стає грошей.
+		if bool(row.get("складана", false)):
+			var most := clampi(_money() / maxi(1, price), 1, Shop.BUY_MOST)
+			press.pressed.connect(func() -> void:
+					ask_count(func(n: int) -> String:
+								return "Купити «%s» ×%d за %d?" \
+										% [name, n, price * n],
+							most,
+							func(n: int) -> void:
+								wants_buy.emit(_shop_with, name, n),
+							1))
+			continue
 		press.pressed.connect(func() -> void:
 				ask_confirm("Купити «%s» за %d?" % [name, price],
-						func() -> void: wants_buy.emit(_shop_with, name)))
+						func() -> void: wants_buy.emit(_shop_with, name, 1)))
 
 
 ## Ліворуч — те саме, що у вікні «Речі», тільки вдягнене не показуємо:
@@ -3269,6 +3321,8 @@ func _build_cast() -> void:
 	_cast_box.position = Vector2(-WIDE * 0.5, -CELL - 62)
 	_cast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cast_box.visible = false
+	# Поверх «Логу»: на 1280×720 він налазить на середину низу (В-8).
+	_cast_box.z_index = 1
 	_root.add_child(_cast_box)
 	_plate(Vector2(WIDE, 16), BACK, _cast_box)
 	_cast_fill = _plate(Vector2(0, 16), CAST_COLOR, _cast_box)
@@ -3343,8 +3397,13 @@ func set_bar(bar: Array, strips: int = 1) -> void:
 		_cells[i]["cell"].visible = i / 7 < _strips
 	# Над панеллю — черга й смуга читання; ростуть смуги — вони вгору.
 	_queue_text.position.y = -24 - lift
+	# Через відступи від якоря, не `position`: коли екран уже розкладено,
+	# `position` рахується від лівого верхнього кута, і -CELL-62 закидало
+	# смугу читання за верхній край — її не було видно ніколи (18.10.2026,
+	# слово замовника: «хочу бачити прогрес бар кастування скіла»).
 	if _cast_box != null:
-		_cast_box.position.y = -CELL - 62 - lift
+		_cast_box.offset_top = -CELL - 62 - lift
+		_cast_box.offset_bottom = _cast_box.offset_top
 	for i in _cells.size():
 		var action: String = _bar[i] if i < _bar.size() else ""
 		var title := _title(action)

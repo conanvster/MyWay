@@ -171,7 +171,7 @@ func _report_confirm(_window: Control, stock: Array) -> void:
 		print("  ‼ вікна підтвердження немає")
 		return
 	var bought: Array[String] = []
-	_hud.wants_buy.connect(func(_at: int, what: String) -> void:
+	_hud.wants_buy.connect(func(_at: int, what: String, _n: int) -> void:
 			bought.append(what))
 
 	# Перша комірка прилавка — та сама, чию ціну щойно надрукували.

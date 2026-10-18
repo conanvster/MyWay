@@ -520,8 +520,14 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		_link.report(victim_id, "[смерть] %d на арені — повага не знімається"
 				% victim_id)
 	elif victim_id > 0:
+		var was_level: int = victim.level
 		var lost: int = progress.death_loss(victim)
-		_link.notice(victim_id, "втрачено %d поваги" % lost)
+		if victim.level < was_level:
+			_link.notice(victim_id, "втрачено рівень: тепер %d" % victim.level)
+			_link.report(victim_id, "[смерть] %d втратив рівень %d -> %d"
+					% [victim_id, was_level, victim.level])
+		else:
+			_link.notice(victim_id, "втрачено %d поваги" % lost)
 		_link.report(victim_id, "[смерть] %d втратив %d поваги, лишилось %d"
 				% [victim_id, lost, victim.respect])
 	if victim_id > 0:
@@ -580,8 +586,8 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 	var tail := "" if is_equal_approx(mult, 1.0) 			else "  (×%.2f за різницю рівнів)" % mult
 	_link.notice(me, "повага +%d, досвід +%d%s" % [respect, experience, tail])
 	if levels > 0:
-		_link.notice(me, "рівень %d! очок статів: %d"
-				% [killer.level, killer.stat_points])
+		_link.notice(me, ("рівень %d! здоров'я й мана відновлені, "
+				+ "очок статів: %d") % [killer.level, killer.stat_points])
 		_link.report(me, "[рівень] %d узяв %d рівень" % [me, killer.level])
 
 	for row: Dictionary in victim.drop_table:

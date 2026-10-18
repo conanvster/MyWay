@@ -82,6 +82,57 @@ func _example(progress: Progress) -> void:
 	print("  далі по 250 поваги: рівень %d узято з %d-го вбивства, очок статів %d"
 			% [hero.level, kills, hero.stat_points])
 	hero.queue_free()
+	await _level_rules(progress)
+
+
+## Слово замовника 18.10.2026: новий рівень лікує до повна, а смерть на
+## нулі поваги забирає рівень.
+func _level_rules(progress: Progress) -> void:
+	print("
+— рівень лікує; смерть на нулі забирає рівень —")
+	var hero: Node3D = AVATAR.instantiate()
+	root.add_child(hero)
+	await process_frame
+	hero.hp = 5
+	hero.mp = 1
+	progress.add_respect(hero, progress.need_for(1))
+	print("  узяв рівень %d: здоров'я %d / %d, мана %d / %d — %s"
+			% [hero.level, hero.hp, hero.stats.max_hp(), hero.mp,
+			   hero.stats.max_mp(),
+			   "до повна" if hero.hp == hero.stats.max_hp()
+					and hero.mp == hero.stats.max_mp() else "‼ ні"])
+	hero.hp = 0
+	progress.add_respect(hero, progress.need_for(2))
+	print("  мертвий узяв рівень %d: здоров'я %d — %s"
+			% [hero.level, hero.hp,
+			   "не ожив" if hero.hp == 0 else "‼ ожив"])
+	hero.hp = 10
+
+	# Зараз 3-й рівень, поваги 0, 6 очок статів (2 рівні по 3).
+	print("  перед смертю: рівень %d, поваги %d, очок %d"
+			% [hero.level, hero.respect, hero.stat_points])
+	var lost: int = progress.death_loss(hero)
+	var need2: int = progress.need_for(2)
+	print("  смерть на нулі: рівень %d (чекаю 2), поваги %d (чекаю %d), "
+			% [hero.level, hero.respect, need2 - lost]
+			+ "очок %d (чекаю 3)" % hero.stat_points)
+	lost = progress.death_loss(hero)
+	print("  смерть не на нулі: рівень %d (чекаю 2), поваги %d, -%d"
+			% [hero.level, hero.respect, lost])
+	hero.respect = 0
+	hero.stat_points = 0
+	progress.death_loss(hero)
+	print("  смерть на нулі без вільних очок: рівень %d, очок %d (борг -3)"
+			% [hero.level, hero.stat_points])
+	progress.add_respect(hero, progress.need_for(1) - hero.respect)
+	print("  знову 2-й рівень: очок %d (борг погашено -> 0)"
+			% hero.stat_points)
+	hero.level = 1
+	hero.respect = 0
+	progress.death_loss(hero)
+	print("  1-й рівень, поваги 0, смерть: рівень %d (не нижче 1), поваги %d"
+			% [hero.level, hero.respect])
+	hero.queue_free()
 
 
 ## Справжнє вбивство: повага, досвід і дроп із таблиці.

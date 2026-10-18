@@ -1215,9 +1215,9 @@ func _demo_shop(delta: float) -> bool:
 			# Заздалегідь задорога річ: сервер МУСИТЬ відмовити. Це
 			# найважливіше з усього, що тут перевіряється, — саме на цій
 			# перевірці впаде зламаний сервер, який вірить клієнтові.
-			_link.to_server(&"ask_buy", [at, SHOP_DEMO_DEAR])
+			_link.to_server(&"ask_buy", [at, SHOP_DEMO_DEAR, 1])
 		5:
-			_link.to_server(&"ask_buy", [at, SHOP_DEMO_GOODS])
+			_link.to_server(&"ask_buy", [at, SHOP_DEMO_GOODS, 1])
 		6:
 			_link.to_server(&"ask_sell_stack", [at, SHOP_DEMO_GOODS, -1])
 		_:

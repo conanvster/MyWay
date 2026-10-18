@@ -54,6 +54,39 @@ const OWN_DIR := "res://models/own/"
 ## `pelvis` (переміщення тіла); решта — тільки повороти.
 const OWN_SKELETON_DIR := "res://models/own/avatary/"
 const KEEP_POSITION := ["root", "pelvis"]
+## Фонове завантаження моделей (18.10.2026, слово замовника: «під бафом
+## бігаю й бачу лаг підвантаження, необхідно зробити якесь
+## передбачення»). Заміряно: перша поява виду монстра читала .glb з
+## диска прямо в кадрі — 0,4…0,9 с стоп-кадру (35 моделей, у середньому
+## 447 мс); повторна — ~0 мс. Клієнт світу вмикає це й просить моделі
+## у фоні по одній, коли наближається до зони виду (`world._preload_step`);
+## поки модель не готова, істота стоїть фігуркою й міняється на модель,
+## щойно та довантажиться. Сервер і проби — на старому, синхронному шляху.
+static var background_loads := false
+
+
+## Попросити модель у фоні. Уже в пам'яті чи вже просили — нічого.
+static func warm(file: String) -> void:
+	if file == "" or ResourceLoader.has_cached(file) \
+			or not ResourceLoader.exists(file):
+		return
+	if ResourceLoader.load_threaded_get_status(file) \
+			!= ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+		return
+	ResourceLoader.load_threaded_request(file)
+
+
+## Чи можна будувати без очікування диска.
+static func is_loaded(file: String) -> bool:
+	if file == "" or ResourceLoader.has_cached(file):
+		return true
+	var state := ResourceLoader.load_threaded_get_status(file)
+	return state == ResourceLoader.THREAD_LOAD_LOADED \
+			or state == ResourceLoader.THREAD_LOAD_FAILED \
+			or state == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE \
+			and not ResourceLoader.exists(file)
+
+
 ## Очищені бібліотеки рухів, щоб не дублювати 43 рухи на кожен аватар:
 ## шлях рухів -> {ім'я бібліотеки -> AnimationLibrary}.
 static var _own_moves: Dictionary = {}
@@ -76,6 +109,9 @@ const PIECE_PREFIX := "Одяг-"
 ## кістка кисті. Лук — у лівій, як його тримають; решта зброї — у правій.
 const HELD := {"зброя": "hand_r", "щит": "hand_l"}
 const BOW_HAND := "hand_l"
+## Ті самі кисті на скелеті Mixamo (аватари зі сканів, 18.10.2026).
+const MIXAMO_HANDS := {"hand_r": "mixamorig_RightHand",
+		"hand_l": "mixamorig_LeftHand"}
 ## Як лягає річ у кисть: клинок `WeaponLook` іде вздовж +Y, а кість
 ## кисті в моделі людини дивиться інакше. Підібрано на знімку.
 const GRIP_TURN := Vector3(0, 0, -90)
@@ -256,10 +292,13 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		if mesh.visible:
 			mesh.material_override = _cloth(shown[piece])
 	_hold_gear(look, goods)
-	# Волосся (19.09.2026) — під шоломом його не видно.
+	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
+	# лише обрана зачіска: у моделі зі сканів їх кілька, і «показати
+	# все волосся» вдягало всі зачіски одна на одну.
 	for hair: Node in find_children("Волосся*", "MeshInstance3D", true,
 			false):
-		hair.visible = not shown.has("Шолом")
+		hair.visible = not shown.has("Шолом") \
+				and bool(hair.get_meta(HAIR_CHOSEN, true))
 
 
 ## Зброя й щит у руках — з `WeaponLook`. Щоразу наново: вдягання
@@ -279,13 +318,16 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 		var base: Dictionary = goods.base_of(look[slot])
 		var bone: String = BOW_HAND if str(base.get("тип", "")) == "лук" \
 				else HELD[slot]
-		if _skeleton.find_bone(bone) == -1:
+		var hand := bone
+		if _skeleton.find_bone(hand) == -1:
+			hand = MIXAMO_HANDS.get(bone, "")
+		if hand == "" or _skeleton.find_bone(hand) == -1:
 			continue
 		var grip := BoneAttachment3D.new()
 		grip.name = HELD_PREFIX + slot
-		grip.bone_name = bone
+		grip.bone_name = hand
 		_skeleton.add_child(grip)
-		var thing := WeaponLook.build(base)
+		var thing := WeaponLook.build(base, str(look[slot]))
 		if slot == "щит":
 			thing.rotation_degrees = SHIELD_TURN
 		elif bone == "hand_l":
@@ -519,6 +561,7 @@ func _prepare_look() -> void:
 	var first := true
 	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 		m.visible = first
+		m.set_meta(HAIR_CHOSEN, first)
 		first = false
 	var masks_path := path.get_basename() + "_маски.png"
 	if _body_mesh == null or not ResourceLoader.exists(masks_path):
@@ -578,6 +621,7 @@ func customize(look: Dictionary) -> void:
 	if style != "":
 		for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 			m.visible = str(m.name) == "Волосся-" + style
+			m.set_meta(HAIR_CHOSEN, m.visible)
 	var hc: Variant = _look.get("колір_волосся")
 	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 		var mat := m.get_surface_override_material(0)
@@ -757,6 +801,21 @@ func swing() -> void:
 ## (П-162). Немає в цьому списку — неループимо; клип, якого в наборі
 ## взагалі нема — `_play_if_has` мовчки нічого не робить (монстри й
 ## Bestiary-моделі просто не мають цих імен, і це не помилка).
+## Підставні рухи для аватарів зі сканів на скелеті Mixamo (18.10.2026,
+## слово замовника: «виправ, чому нема в грі досі орчихи нової»). У них
+## 10 рухів (Idle, Walk, Run, Jump, Sword_Slash, Block, Bow_Shot, Cast,
+## Hit, Death), а гра кличе рухи набору UAL1 — тут найближчий замінник.
+## Немає в переліку (Spell_Simple_Enter) — нічого не міняється. Лише
+## для `OWN_SKELETON_DIR`: монстрам підстановок не треба.
+const STAND_INS := {
+	"Jog_Fwd": "Run", "Swim_Fwd": "Walk", "Sword_Idle": "Idle",
+	"Spell_Simple_Idle": "Cast", "Spell_Simple_Exit": "Idle",
+	"Sword_Attack": "Sword_Slash", "Punch_Jab": "Sword_Slash",
+	"Punch_Cross": "Sword_Slash", "Jump_Start": "Jump", "Jump_Land": "Idle",
+	"Hit_Chest": "Hit", "Death01": "Death",
+}
+const HAIR_CHOSEN := "hair_chosen"
+
 const LOOPING_MOVES := {
 	"Idle": true, "Walk": true, "Jog_Fwd": true, "Swim_Fwd": true,
 	"Sword_Idle": true, "Spell_Simple_Idle": true,
@@ -767,7 +826,17 @@ const LOOPING_MOVES := {
 ## за зброєю тощо) — ЩО показати, вирішує той, хто кличе
 ## (`client_view._human_state`); тут лише програвання.
 func show_move(name: String, reverse := false) -> void:
-	_play_if_has([name], LOOPING_MOVES.get(name, false), reverse)
+	_play_if_has([_stand_in(name)], LOOPING_MOVES.get(name, false), reverse)
+
+
+## Свій рух, коли він є; інакше замінник зі `STAND_INS`.
+func _stand_in(name: String) -> String:
+	if _player == null or not path.begins_with(OWN_SKELETON_DIR) \
+			or not STAND_INS.has(name):
+		return name
+	if _find_animation(_player.get_animation_list(), name, true) != "":
+		return name
+	return STAND_INS[name]
 
 
 ## Темп усіх рухів моделі: 1 — як у файлі, 2 — удвічі швидше. Баф на
@@ -785,7 +854,8 @@ func set_tempo(k: float) -> void:
 func has_move(name: String) -> bool:
 	if _player == null:
 		return false
-	return _find_animation(_player.get_animation_list(), name, true) != ""
+	return _find_animation(_player.get_animation_list(), _stand_in(name),
+			true) != ""
 
 
 func _process(delta: float) -> void:

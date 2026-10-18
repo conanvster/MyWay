@@ -63,7 +63,7 @@ func _go() -> void:
 	await get_tree().process_frame
 	_expect("догорнули до кінця", scroll.scroll_vertical > 0, true)
 	var bought: Array = []
-	_hud.wants_buy.connect(func(_at: int, what: String) -> void:
+	_hud.wants_buy.connect(func(_at: int, what: String, _n: int) -> void:
 			bought.append(what))
 	last.pressed.emit()
 	_hud._confirm_done()

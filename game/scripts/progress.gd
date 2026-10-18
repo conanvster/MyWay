@@ -6,7 +6,8 @@ extends RefCounted
 ##
 ##   ПОВАГА  дає рівні. Накопичується й не списується ніколи, крім
 ##           смерті: за смерть іде рівно 10% ОБСЯГУ поточного рівня, а
-##           не частка накопиченого.
+##           не частка накопиченого. Смерть на нулі поваги забирає рівень
+##           (18.10.2026).
 ##   ДОСВІД  платиться за навчання скілів і за смерть не втрачається.
 ##
 ## Числа сітки — тимчасові (П-99, П-103): замовник лишив їх на пробу
@@ -55,22 +56,49 @@ func reward_multiplier(mob_level: int, player_level: int) -> float:
 
 
 ## Додати поваги. Повертає, скільки рівнів узято.
+##
+## Новий рівень — здоров'я й мана до повна (18.10.2026, слово замовника:
+## «після підняття рівня очікую бонус — відновлення HP MP до
+## максимуму»). Мертвого не чіпаємо: рівень, узятий прикликаним уже
+## після смерті господаря, не має його оживляти.
 func add_respect(who: Node, amount: int) -> int:
 	who.respect += amount
 	var gained := 0
 	while who.respect >= need_for(who.level, who.race, who.sex):
 		who.respect -= need_for(who.level, who.race, who.sex)
 		who.level += 1
-		who.stat_points += int(grid.get("очок статів за рівень", 3))
+		who.stat_points += _points_per_level()
 		gained += 1
+	if gained > 0 and who.hp > 0:
+		who.hp = who.stats.max_hp()
+		who.mp = who.stats.max_mp()
 	return gained
 
 
+func _points_per_level() -> int:
+	return int(grid.get("очок статів за рівень", 3))
+
+
 ## Втрата за смерть: рівно 10% обсягу поточного рівня, не нижче нуля.
-## Рівень при цьому не падає — замовник цього не казав, а самому
-## вигадувати пониження рівня не можна.
+##
+## Смерть, коли поваги вже нуль, забирає рівень (18.10.2026, слово
+## замовника: «якщо на мінімумі прогрес, то втрачається рівень»). Повага
+## тоді стає повним обсягом нижчого рівня мінус ті самі 10% його обсягу —
+## наче смерть сталась на ньому. Перший рівень не втрачається.
+##
+## Очки статів за втрачений рівень забираються з вільних, а коли їх
+## менше — у борг (від'ємне число): розподілене не скидаємо, а наступний
+## рівень спершу гасить борг. Інакше «загинути й набрати рівень знову»
+## щоразу дарувало б ще три очки.
 func death_loss(who: Node) -> int:
 	var share: float = float(grid.get("втрата за смерть", 0.10))
+	if who.respect <= 0 and who.level > 1:
+		who.level -= 1
+		who.stat_points -= _points_per_level()
+		var full: int = need_for(who.level, who.race, who.sex)
+		var dropped: int = roundi(full * share)
+		who.respect = full - dropped
+		return dropped
 	var loss: int = roundi(need_for(who.level, who.race, who.sex) * share)
 	loss = mini(loss, who.respect)
 	who.respect -= loss

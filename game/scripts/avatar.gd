@@ -58,6 +58,14 @@ const MODEL_ANIM := "res://models/player/animations/UAL1_Standard.glb"
 ## UAL1 пересаджуються на них так само. Немає файлу — лишається гола
 ## модель людини вище.
 const RACE_MODEL := "res://models/own/races/%s-%s.gltf"
+## Аватари зі сканів на скелеті Mixamo, що вже замінили модель раси
+## (18.10.2026, слово замовника: «виправ, чому нема в грі досі орчихи
+## нової»). Рухів у них 10, решту підставляє `SkinnedModel.STAND_INS`;
+## одягу частинами ще немає — вдягнене не видно, зброя в руці видно.
+const SCAN_DIR := "res://models/own/avatary/"
+const SCAN_MODEL := {
+	"орк-жінка": SCAN_DIR + "ork-s1303-mixamo/ork-s1303-mixamo.glb",
+}
 ## Зріст раси, метрів. Числа виконавця, замовник не називав.
 const RACE_HEIGHT := {"людина": 1.75, "ельф": 1.85, "орк": 1.9}
 
@@ -106,8 +114,12 @@ func _ready() -> void:
 ## самому скелеті, `tools/blender/avatar_build.py`); порожньо — модель
 ## раси.
 func apply_sex(sex: String, race: String = "людина", path: String = "") -> void:
+	var who := "жінка" if sex == "жінка" else "чоловік"
+	var kind := "%s-%s" % [race, who]
 	var made := path if path != "" else \
-			RACE_MODEL % [race, "жінка" if sex == "жінка" else "чоловік"]
+			str(SCAN_MODEL.get(kind, RACE_MODEL % [race, who]))
+	if not ResourceLoader.exists(made):
+		made = RACE_MODEL % [race, who]
 	if not ResourceLoader.exists(made):
 		made = MODEL_FEMALE if sex == "жінка" else MODEL_MALE
 	if not ResourceLoader.exists(made):

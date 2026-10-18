@@ -23,12 +23,25 @@ const GRIP_COLOR := Color("#4a3322")
 static var _mats: Dictionary = {}
 
 
+## Моделі зі значків (18.10.2026, `tools/comfyui/zbroia_3d.py` →
+## `tools/blender/zbroia_zbirka.py`): `<назва речі>.glb`, у тих самих
+## умовностях, що й фігури нижче — метри, руків'я в нулі, уздовж +Y.
+## Немає файла — процедурна фігура, як і було.
+const MODELS := "res://models/own/zbroia/%s.glb"
+
+
 ## Річ для бази `base`. Порожній вузол — коли тип незнайомий.
-static func build(base: Dictionary) -> Node3D:
+## `name` — назва речі: є її модель — береться модель.
+static func build(base: Dictionary, name: String = "") -> Node3D:
 	var kind := str(base.get("тип", ""))
 	var grade := str(base.get("грейд", "E"))
 	var root := Node3D.new()
 	root.name = "Річ-" + kind
+	var file := MODELS % name
+	if name != "" and ResourceLoader.exists(file):
+		var made: Node3D = (load(file) as PackedScene).instantiate()
+		root.add_child(made)
+		return root
 	var metal := _mat(grade)
 	var grip := _mat("руків'я")
 	match kind:

@@ -178,6 +178,8 @@ func _ready() -> void:
 	if land != null:
 		land.build(data.map, not Net.is_server)
 		_stock_merchants(land)
+	if not Net.is_server:
+		_start_preload()
 
 	if Net.is_server:
 		store = Store.new()
@@ -249,6 +251,72 @@ func _mark_ready() -> void:
 			"порт": Net.PORT,
 			"світ": GameData.map_path().get_file(),
 			"коли": int(Time.get_unix_time_from_system())}))
+
+
+## Клієнт: моделі монстрів у фоні наперед, ПО ОДНІЙ — для найближчої
+## зони появи, до якої вже ближче за `PRELOAD_NEAR`, але монстрів ще не
+## видно (слово замовника 18.10.2026: «завантажувати усіх монстрів —
+## зайва робота, досить поступово по 1 моделі, коли наближаєшся, але ще
+## не видно»). Зона бачення — десятки метрів, тож 120 м від краю зони
+## дають кілька секунд запасу навіть під бафом на біг, а одна модель
+## читається за ~0,5 с. Не встигла — `mob._look_later`: фігурка, доки
+## модель не довантажиться.
+const PRELOAD_NEAR := 120.0
+const PRELOAD_HZ := 4.0
+var _preload_now := ""
+var _preload_clock := 0.0
+## Звідки брати, що наперед: [де, радіус, вигляд] — зони появи й вартові
+## сіл. Складається раз, з мапи.
+var _preload_spots: Array = []
+
+
+func _start_preload() -> void:
+	SkinnedModel.background_loads = true
+	for zone: Dictionary in data.map.get("зони появи", []):
+		var look: Dictionary = data.for_kind(int(zone.get("вид", 0))) \
+				.get("вигляд", {})
+		_preload_spots.append([_flat(zone.get("де", [0, 0, 0])),
+				float(zone.get("радіус", 0.0)), look])
+	var guard: Dictionary = data.for_kind(Wardens.GUARD_KIND) \
+			.get("вигляд", {})
+	for village: Dictionary in data.map.get("села", []):
+		for post: Dictionary in village.get("вартові", []):
+			_preload_spots.append([_flat(post.get("де", [0, 0, 0])), 0.0,
+					guard])
+
+
+func _flat(at: Array) -> Vector2:
+	return Vector2(float(at[0]), float(at[2]))
+
+
+## Наступна модель у чергу — лише коли попередня вже прочитана.
+func _preload_step(delta: float) -> void:
+	_preload_clock -= delta
+	if _preload_clock > 0.0 or _preload_spots.is_empty():
+		return
+	_preload_clock = 1.0 / PRELOAD_HZ
+	if _preload_now != "" and not SkinnedModel.is_loaded(_preload_now):
+		return
+	_preload_now = ""
+	var me: Node3D = creatures.get(multiplayer.get_unique_id())
+	if me == null:
+		return
+	var here := Vector2(me.global_position.x, me.global_position.z)
+	var best := PRELOAD_NEAR
+	var pick := ""
+	for spot: Array in _preload_spots:
+		var look: Dictionary = spot[2]
+		var file := str(look.get("модель", ""))
+		var moves := str(look.get("анімації", ""))
+		if SkinnedModel.is_loaded(file) and SkinnedModel.is_loaded(moves):
+			continue
+		var gap: float = here.distance_to(spot[0]) - float(spot[1])
+		if gap < best:
+			best = gap
+			pick = file if not SkinnedModel.is_loaded(file) else moves
+	if pick != "":
+		SkinnedModel.warm(pick)
+		_preload_now = pick
 
 
 ## Полігон: закрита ділянка для перевірок (`-- --полігон`).
@@ -408,6 +476,7 @@ func _process(delta: float) -> void:
 		view.smooth(delta)
 		view.approach(delta)
 		view.demo(delta)
+		_preload_step(delta)
 		_since_stream += delta
 		if _since_stream >= 1.0 / STREAM_HZ:
 			_since_stream = 0.0
@@ -793,8 +862,12 @@ func _link_death(id: int, who: Node) -> void:
 	who.die()
 	link.to_watchers(id, &"client_died", [id])
 	if id > 0:
+		var was_level: int = who.level
 		var lost: int = combat.progress.death_loss(who)
-		link.notice(id, "втрачено %d поваги" % lost)
+		if who.level < was_level:
+			link.notice(id, "втрачено рівень: тепер %d" % who.level)
+		else:
+			link.notice(id, "втрачено %d поваги" % lost)
 
 
 ## Святині (П-153): «зачищено» — це нуль живих у кільці охорони. Стан
@@ -2327,7 +2400,7 @@ func ask_shop(at: int) -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func ask_buy(at: int, name: String) -> void:
+func ask_buy(at: int, name: String, count: int) -> void:
 	if not Net.is_server:
 		return
 	var id := multiplayer.get_remote_sender_id()
@@ -2335,11 +2408,15 @@ func ask_buy(at: int, name: String) -> void:
 	if who == null or not who.trades():
 		return
 	var a: Node = creatures.get(id)
-	var why: String = shop.buy(a, {"товар": who.goods}, name)
+	var why: String = shop.buy(a, {"товар": who.goods}, name, count)
 	if why != "":
 		link.notice(id, why)
 		return
-	link.notice(id, "куплено: %s за %d" % [name, shop.sell_price(name)])
+	if count > 1:
+		link.notice(id, "куплено: %s ×%d за %d"
+				% [name, count, shop.sell_price(name) * count])
+	else:
+		link.notice(id, "куплено: %s за %d" % [name, shop.sell_price(name)])
 	_after_bag(id, a)
 
 
@@ -3179,8 +3256,9 @@ func client_spawn(id: int, pos: Vector3, look: float, kind: int = 0,
 		# це прохання до сервера, не дія: гроші й асортимент рахує він.
 		hud.wants_shop.connect(func(at: int) -> void:
 				rpc_id(1, "ask_shop", at))
-		hud.wants_buy.connect(func(at: int, name: String) -> void:
-				rpc_id(1, "ask_buy", at, name))
+		hud.wants_buy.connect(
+				func(at: int, name: String, count: int) -> void:
+				rpc_id(1, "ask_buy", at, name, count))
 		hud.wants_sell.connect(func(at: int, thing_at: int) -> void:
 				rpc_id(1, "ask_sell", at, thing_at))
 		hud.wants_sell_stack.connect(

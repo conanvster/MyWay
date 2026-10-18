@@ -138,6 +138,16 @@ func _apply_look() -> void:
 	# Якщо для виду названо готову модель — ставимо її замість фігурки з
 	# примітивів. Немає файла — лишається фігурка, і гра йде далі.
 	var made := str(look.get("модель", ""))
+	var moves := str(look.get("анімації", ""))
+	# Модель ще читається у фоні — не чекати її в кадрі: поки фігурка,
+	# модель — коли довантажиться (`SkinnedModel.background_loads`).
+	if SkinnedModel.background_loads and made != "" \
+			and not (SkinnedModel.is_loaded(made)
+					and SkinnedModel.is_loaded(moves)):
+		SkinnedModel.warm(made)
+		SkinnedModel.warm(moves)
+		_look_later(made, moves)
+		made = ""
 	if made != "" and ResourceLoader.exists(made):
 		var old_body := get_node_or_null("Mesh")
 		if old_body != null and not (old_body is SkinnedModel):
@@ -151,7 +161,7 @@ func _apply_look() -> void:
 			skin.held = look.get("в_руці", {})
 			# Окремий набір рухів — для моделі людини (вартовий, П-262):
 			# у неї рухи лежать не в самому файлі, як у сканів звірів.
-			skin.anim_path = str(look.get("анімації", ""))
+			skin.anim_path = moves
 			add_child(skin)
 			skin.build()
 	var body := model()
@@ -164,6 +174,22 @@ func _apply_look() -> void:
 		var size := float(look.get("зріст", 1.0))
 		shape.scale = Vector3(size, size, size)
 	seat_model()
+
+
+## Дочекатись фонової моделі й поставити її (див. `_apply_look`).
+var _look_waiting := false
+
+
+func _look_later(made: String, moves: String) -> void:
+	if _look_waiting:
+		return
+	_look_waiting = true
+	while is_inside_tree() and not (SkinnedModel.is_loaded(made)
+			and SkinnedModel.is_loaded(moves)):
+		await get_tree().process_frame
+	_look_waiting = false
+	if is_inside_tree() and str(look.get("модель", "")) == made:
+		_apply_look()
 
 
 ## Шар «монстри» (5). Монстр стоїть на ньому й натикається на нього та

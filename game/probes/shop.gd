@@ -75,6 +75,25 @@ func _buying(data: GameData) -> void:
 	why = shop.buy(hero, seller, "кристал душі")
 	print("  купуємо кристал: %s" % ["вийшло" if why == "" else why])
 	print("  у стосах: %s" % [hero.items])
+
+	# Десять за раз — стос росте на 10, гроші меншають на 10 цін.
+	var each := shop.sell_price("кристал душі")
+	var was := Shop.money_of(hero)
+	why = shop.buy(hero, seller, "кристал душі", 10)
+	print("  купуємо 10 кристалів: %s, кристалів %d, витрачено %d (чекаю %d)"
+			% ["вийшло" if why == "" else why,
+			   int(hero.items.get("кристал душі", 0)),
+			   was - Shop.money_of(hero), each * 10])
+	# Нескладану — не більше однієї; на більше, ніж є грошей, — нічого.
+	print("  2 мечі за раз: %s" % shop.buy(hero, seller, "меч з кори дуба", 2))
+	was = Shop.money_of(hero)
+	print("  кристалів на %d при грошах %d: %s, грошей лишилось %d"
+			% [was / each + 1, was,
+			   shop.buy(hero, seller, "кристал душі", was / each + 1),
+			   Shop.money_of(hero)])
+	print("  0 і −5 штук: «%s», «%s»"
+			% [shop.buy(hero, seller, "кристал душі", 0),
+			   shop.buy(hero, seller, "кристал душі", -5)])
 	hero.queue_free()
 
 
@@ -135,8 +154,13 @@ func _refusals(data: GameData) -> void:
 	hero.queue_free()
 
 
+## Крамар, у якого є меч і кристал. Перший-ліпший крамар міста ними
+## більше не торгує (асортимент у мапі змінився), і купівля відмовляла
+## «цього тут не продають», нічого не перевіряючи. Нема такого — прилавок
+## з цих двох речей: проба про правила купівлі, не про асортимент.
 func _seller(data: GameData) -> Dictionary:
 	for who: Dictionary in data.map.get("місто", {}).get("мешканці", []):
-		if not Array(who.get("товар", [])).is_empty():
+		var goods := Array(who.get("товар", []))
+		if goods.has("меч з кори дуба") and goods.has("кристал душі"):
 			return who
-	return {}
+	return {"товар": ["меч з кори дуба", "кристал душі"]}

@@ -19,6 +19,10 @@ const TALK_RANGE := 4.0
 ## робить гроші безмежними: продав і купив назад без утрат.
 const DEFAULT_BUYBACK := 0.4
 
+## Скільки складаних штук можна взяти одним натиском. Число виконавця:
+## межа лише від описки в клієнті на мільйон.
+const BUY_MOST := 1000
+
 var _data: GameData
 
 
@@ -85,7 +89,13 @@ func within(who: Node3D, resident: Node3D) -> bool:
 
 
 ## Купівля. Повертає порожній рядок, коли вийшло, або причину відмови.
-func buy(who: Node, resident: Dictionary, name: String) -> String:
+##
+## `count` — скільки штук (18.10.2026, слово замовника: «не можу
+## придбати 10 зілля лікування — тільки по одній»). Більше однієї —
+## лише складаної речі; гроші перевіряються на всю суму наперед, тож
+## частково купленого не буває, хоч би що прислав клієнт.
+func buy(who: Node, resident: Dictionary, name: String,
+		count: int = 1) -> String:
 	var stock := goods_of(resident)
 	var found := false
 	for row: Dictionary in stock:
@@ -94,14 +104,18 @@ func buy(who: Node, resident: Dictionary, name: String) -> String:
 			break
 	if not found:
 		return "цього тут не продають"
-	var price := sell_price(name)
+	if count < 1 or count > BUY_MOST:
+		return "стільки за раз не продають"
+	if count > 1 and not _data.items.is_stackable(name):
+		return "це продають лише по одній"
+	var price := sell_price(name) * count
 	if price <= 0:
 		return "ціни на це немає"
 	if money_of(who) < price:
 		return "не вистачає грошей: треба %d" % price
 	take_money(who, price)
 	if _data.items.is_stackable(name):
-		who.give_item(name, 1)
+		who.give_item(name, count)
 	else:
 		var made: Item = _data.items.make(name)
 		if made == null:

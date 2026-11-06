@@ -222,13 +222,66 @@ static func _ramp(land: Landscape, holder: Node3D, end: float, half: float,
 	hit.position.y = -0.1
 	body.add_child(hit)
 	if shown:
+		_ramp_look(holder, end, half, run, top - holder.position.y,
+				ground - holder.position.y)
+
+
+## Вигляд насипу: зверху ґрунт дороги, боки — пологі трав'яні укоси до
+## землі (раніше — коробка з гострими краями, читалась рожевим клином).
+static func _ramp_look(holder: Node3D, end: float, half: float, run: float,
+		top: float, ground: float) -> void:
+	var w := DECK_WIDE * 0.5 + 0.3
+	var base := ground - 0.5
+	var x0 := end * (half - 0.2)
+	var x1 := end * (half + run + 0.3)
+	var s0 := (top - base) * 1.6
+	var s1 := (ground - base) * 1.6
+	var a0 := Vector3(x0, top, -w)
+	var b0 := Vector3(x0, top, w)
+	var a1 := Vector3(x1, ground, -w)
+	var b1 := Vector3(x1, ground, w)
+	var c0 := Vector3(x0, base, -w - s0)
+	var d0 := Vector3(x0, base, w + s0)
+	var c1 := Vector3(x1, base, -w - s1)
+	var d1 := Vector3(x1, base, w + s1)
+	var top_mesh := _quads([[a0, a1, b1, b0]])
+	var sides := _quads([[c0, c1, a1, a0], [b0, b1, d1, d0],
+			[c0, a0, b0, d0]])
+	for part: Array in [[top_mesh, TownLook._dirt()], [sides, _grass()]]:
 		var view := MeshInstance3D.new()
-		var mesh := BoxMesh.new()
-		mesh.size = Vector3(length, 0.3 + rise, DECK_WIDE + 1.2)
-		view.mesh = mesh
-		view.material_override = TownLook._dirt()
-		view.position.y = -0.15 - rise * 0.5
-		body.add_child(view)
+		view.mesh = part[0]
+		view.material_override = part[1]
+		holder.add_child(view)
+
+
+## Чотирикутники обома боками (щоб не залежати від обходу вершин).
+static func _quads(list: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for q: Array in list:
+		for tri: Array in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]:
+			for order: Array in [[0, 1, 2], [0, 2, 1]]:
+				for k: int in order:
+					st.add_vertex(tri[k])
+	st.generate_normals()
+	return st.commit()
+
+
+static var _grass_paint: StandardMaterial3D = null
+
+
+static func _grass() -> StandardMaterial3D:
+	if _grass_paint == null:
+		_grass_paint = StandardMaterial3D.new()
+		_grass_paint.albedo_texture = load("res://models/ground/Grass004_Color.jpg")
+		_grass_paint.normal_enabled = true
+		_grass_paint.normal_texture = load(
+				"res://models/ground/Grass004_Normal.jpg")
+		_grass_paint.roughness = 1.0
+		_grass_paint.uv1_triplanar = true
+		_grass_paint.uv1_world_triplanar = true
+		_grass_paint.uv1_scale = Vector3.ONE / 2.5
+	return _grass_paint
 
 
 # ─── дизайни ─────────────────────────────────────────────────────────

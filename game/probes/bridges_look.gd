@@ -67,7 +67,11 @@ func _go() -> void:
 		print("[міст] %d · ширина річки %.1f м · проліт %.1f м · береги %.1f / "
 				% [i, span["ширина"], span["довжина"], span["висота_а"]]
 				+ "%.1f м · вода %.1f м" % [span["висота_б"], span["вода"]])
-		for design: String in designs:
+		var these: Array = designs
+		# `--вибір` — кожен перехід лише своїм вибраним мостом.
+		if args.has("--вибір"):
+			these = [str(BridgeLook.choices().get(str(i), BridgeLook.DEFAULT))]
+		for design: String in these:
 			BridgeLook.build_one(land, i, design)
 			var from := mid + Vector3(side.x, 0, side.y) * 15.0 \
 					- Vector3(along.x, 0, along.y) * 6.0 + Vector3.UP * 4.0

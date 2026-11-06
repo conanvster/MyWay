@@ -88,9 +88,17 @@ func _go() -> void:
 				trail[1], -3.0])
 		spots.push_front(["гравець на лісовій стежці", trail[0], trail[1],
 				-50.0])
+	# `--лише <слово>` — лише місця, в назві яких є це слово (напр.
+	# «столиця», «село»): повний обхід триває хвилини, а міста — секунди.
+	var args := OS.get_cmdline_user_args()
+	var only := ""
+	if args.find("--лише") >= 0 and args.find("--лише") + 1 < args.size():
+		only = args[args.find("--лише") + 1]
 	for spot: Array in spots:
 		var at: Vector3 = spot[1]
 		var name_of: String = spot[0]
+		if only != "" and not only in name_of:
+			continue
 		var ground: float = land.height_at(at.x, at.z)
 		var player := name_of.begins_with("гравець")
 		var in_wood := name_of.begins_with("у лісі")

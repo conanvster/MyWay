@@ -26,6 +26,10 @@ const ROOF_AT := WALL_HEIGHT + 0.5
 const WALL_HIGH := 6.0
 const WALL_THICK := 1.6
 const GATE_WIDE := 6.0
+## Ширина бруківки: фасади вздовж вулиць стоять за 3,7 м від її осі
+## (`svit2.py --поселення`), тож 5 м лишали смугу трави 1,2 м під стіною
+## (заміряно 06.11.2026 по Стільній і Крайній Брамі).
+const STREET_WIDE := 7.6
 const TOWER_R := 2.8
 const TOWER_HIGH := 10.0
 const KEEP_HIGH := 18.0
@@ -307,7 +311,7 @@ static func _streets(land: Landscape, holder: Node3D, place: Dictionary) -> void
 	var stones := paint("cobblestone_floor_08", 2.0)
 	for line: Array in place.get("вулиці", []):
 		_strip(land, holder, Vector2(line[0][0], line[0][1]),
-				Vector2(line[1][0], line[1][1]), 5.0, stones)
+				Vector2(line[1][0], line[1][1]), STREET_WIDE, stones)
 	var c: Array = place["центр"]
 	var square := CylinderMesh.new()
 	square.top_radius = float(place.get("площа", 16.0))
@@ -344,9 +348,6 @@ static func _strip(land: Landscape, holder: Node3D, a: Vector2, b: Vector2,
 ## `модулі` — [уздовж фасаду (x), углиб (z)]; перед — локальне +z.
 static func _house(land: Landscape, holder: Node3D, house: Dictionary,
 		shown: bool) -> void:
-	var size: Array = house.get("модулі", [2, 2])
-	var wide := int(size[0])
-	var deep := int(size[1])
 	var at: Array = house["де"]
 	var where := Vector3(float(at[0]), 0, float(at[2]))
 	where.y = land.surface_y(where.x, where.z)
@@ -355,6 +356,15 @@ static func _house(land: Landscape, holder: Node3D, house: Dictionary,
 	body.position = where
 	body.rotation.y = deg_to_rad(float(house.get("поворот", 0.0)))
 	holder.add_child(body)
+	house_body(body, house, shown)
+
+
+## Сам дім у власних координатах (перед — +z): без землі й світу, щоб
+## проба `town_house` могла зняти його окремо.
+static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
+	var size: Array = house.get("модулі", [2, 2])
+	var wide := int(size[0])
+	var deep := int(size[1])
 	var across := mini(wide, deep)
 	var lengthwise := maxi(wide, deep)
 	var roof_path := KIT % ("Roof_RoundTiles_%dx%d" % [across * 2,
@@ -376,28 +386,53 @@ static func _house(land: Landscape, holder: Node3D, house: Dictionary,
 	if style == "фахверк":
 		straight = KIT % "Wall_Plaster_WoodGrid"
 	var window := KIT % ("Wall_%s_Window_Wide_Round" % kind)
-	var door := KIT % "Wall_Plaster_Door_Round"
+	var door := KIT % ("Wall_%s_Door_Round" % kind)
 	var frame := KIT % "Window_Wide_Round1"
 	var half_x := (wide - 1) * MODULE * 0.5
 	var half_z := (deep - 1) * MODULE * 0.5
 	var edge_x := wide * MODULE * 0.5
 	var edge_z := deep * MODULE * 0.5
+	# Лице модуля набору — його +z (цоколь, балки, рами); зворот — гладка
+	# штукатурка. Перед стояв на 180°, зад на 0° — обидва лицем усередину,
+	# і з вулиці було видно голу внутрішню стіну (знайдено 06.11.2026).
 	var pieces: Array = []
 	for i in wide:
 		var x := -half_x + i * MODULE
 		var front := door if i == wide / 2 else window
-		pieces.append([front, Vector3(x, 0, edge_z), 180.0])
+		pieces.append([front, Vector3(x, 0, edge_z), 0.0])
 		pieces.append([window if i % 2 == 1 else straight,
-				Vector3(x, 0, -edge_z), 0.0])
+				Vector3(x, 0, -edge_z), 180.0])
 	for i in deep:
 		var z := -half_z + i * MODULE
 		pieces.append([window if i % 2 == 0 else straight,
 				Vector3(-edge_x, 0, z), 270.0])
 		pieces.append([straight, Vector3(edge_x, 0, z), 90.0])
+	# Віконниці й двері — від місця дому, щоб сусіди різнились, а той
+	# самий дім виглядав однаково в кожного гравця.
+	var luck := hash(house.get("де", [0, 0, 0]))
+	var door_leaf: String = KIT % ["Door_1_Round", "Door_2_Round",
+			"Door_4_Round"][absi(luck) % 3]
+	var shutters: String = ["", "WindowShutters_Wide_Round_Open",
+			"WindowShutters_Wide_Round_Closed"][absi(luck >> 3) % 3]
+	var k := 0
 	for one: Array in pieces:
 		_piece(body, one[0], one[1], one[2])
 		if one[0] == window:
 			_piece(body, frame, one[1], one[2])
+			k += 1
+			if shutters != "" and (k + absi(luck)) % 2 == 0:
+				_piece(body, KIT % shutters, one[1], one[2])
+		elif one[0] == door:
+			# Стулка на завісі зліва від отвору, у товщі стіни.
+			_piece(body, door_leaf, one[1] + Vector3(-0.535, 0, -0.08),
+					one[2])
+			_piece(body, KIT % "DoorFrame_Round_WoodDark", one[1], one[2])
+			_doorstep(body, one[1])
+	# Кути: між торцями модулів лишалась щілина на товщину лиця.
+	for cx: float in [-edge_x, edge_x]:
+		for cz: float in [-edge_z, edge_z]:
+			_piece(body, KIT % "Corner_Exterior_Wood",
+					Vector3(cx, 0, cz), 0.0)
 	# Дах: гребінь уздовж довшого боку (у наборі — уздовж z).
 	var roof_turn := 90.0 if wide > deep else 0.0
 	_piece(body, roof_path, Vector3(0, ROOF_AT, 0), roof_turn)
@@ -493,6 +528,7 @@ static func _swap(body: Node3D, style: String, roof: String) -> void:
 		"MI_RockTrim": paint("medieval_blocks_03", 2.0),
 		"MI_WoodTrim": paint("dark_wooden_planks", 1.5),
 		"MI_WoodTrim_Wear": paint("weathered_planks", 1.5),
+		"MI_MetalOrnaments": _iron(),
 		"MI_RoundTiles": paint(ROOFS.get(roof, "clay_roof_tiles_02"),
 				3.0 if roof in ["черепиця", "сланець"] else 4.0),
 	}
@@ -504,6 +540,31 @@ static func _swap(body: Node3D, style: String, roof: String) -> void:
 			var was: Material = view.mesh.surface_get_material(s)
 			if was != null and table.has(was.resource_name):
 				view.set_surface_override_material(s, table[was.resource_name])
+
+
+## Кована оковка дверей: у наборі вона синьо-фіолетова, мультяшна.
+static func _iron() -> StandardMaterial3D:
+	if not _paints.has("залізо"):
+		var made := StandardMaterial3D.new()
+		made.albedo_color = Color(0.16, 0.15, 0.14)
+		made.metallic = 0.8
+		made.roughness = 0.55
+		_paints["залізо"] = made
+	return _paints["залізо"]
+
+
+## Утоптаний ґрунт перед дверима: дім углибині кварталу інакше стоїть
+## дверима просто в траву.
+static func _doorstep(body: Node3D, at: Vector3) -> void:
+	var pad := BoxMesh.new()
+	pad.size = Vector3(2.4, 0.06, 1.8)
+	var view := MeshInstance3D.new()
+	view.name = "Поріг"
+	view.mesh = pad
+	view.material_override = _dirt()
+	view.position = at + Vector3(0, 0.01, 1.0)
+	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(view)
 
 
 ## Тин за хатою: кілки й дві жердини, одна сітка.

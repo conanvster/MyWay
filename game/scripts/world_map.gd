@@ -18,6 +18,8 @@ extends Control
 const SEA := Color(0.145, 0.314, 0.42)
 const EDGE := Color(0.86, 0.84, 0.74, 0.5)
 const TOWN := Color(0.93, 0.86, 0.62)
+## Брама на мурі — темний проїзд.
+const GATE := Color(0.22, 0.16, 0.1)
 const MOUNTAIN := Color(0.42, 0.44, 0.46)
 const WOOD := Color(0.18, 0.37, 0.20)
 ## Гравець — червоний, як і замовлено 05.09.2026; з 11.09.2026 не крапка,
@@ -188,6 +190,29 @@ func _draw() -> void:
 		_draw_me(_spot(me.x, me.z))
 
 
+## Мур міста світу 2 тим самим обрисом, що його будує `TownLook`
+## (`мур` — кути в метрах світу, `брами` — де дорога заходить): лінія
+## муру, башти в кутах, брами — розривом. Лише коли місто на екрані
+## більше за ~10 точок: дрібніше мур злився б у ту саму крапку.
+func _draw_wall(place: Dictionary, k: float) -> bool:
+	var corners: Array = place.get("мур", [])
+	if corners.size() < 3 or float(place.get("мур радіус", 0.0)) * k < 10.0:
+		return false
+	var dots := PackedVector2Array()
+	for c: Array in corners:
+		dots.append(_spot(float(c[0]), float(c[1])))
+	var thick := clampf(k * 1.6, 1.5, 4.0)
+	for i in dots.size():
+		draw_line(dots[i], dots[(i + 1) % dots.size()], TOWN, thick)
+	for dot: Vector2 in dots:
+		draw_circle(dot, thick * 1.4, TOWN)
+	var hole := clampf(k * 3.0, 3.0, 9.0)
+	for gate: Dictionary in place.get("брами", []):
+		var at: Array = gate.get("де", [0, 0])
+		draw_circle(_spot(float(at[0]), float(at[1])), hole * 0.5, GATE)
+	return true
+
+
 ## Гравець на карті: червона стрілка в білому обідку, вістрям туди, куди
 ## дивиться персонаж. Вістря з вирізом ззаду, а не трикутник: трикутник
 ## на дрібній карті читається як іще одна крапка, а стрілку видно одразу.
@@ -322,8 +347,12 @@ func _draw_sheet() -> void:
 				var spot := _spot(float(centre[0]), float(centre[2]))
 				if not Rect2(Vector2.ZERO, size).has_point(spot):
 					continue
-				draw_circle(spot, 3.0, TOWN)
-				draw_string(_font, spot + Vector2(6, 4),
+				var reach := 3.0
+				if _draw_wall(place, k):
+					reach = float(place.get("мур радіус", 0.0)) * k
+				else:
+					draw_circle(spot, 3.0, TOWN)
+				draw_string(_font, spot + Vector2(reach + 4.0, 4.0),
 						str(place.get("назва", "")),
 						HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TOWN)
 

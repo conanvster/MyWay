@@ -25,6 +25,11 @@ var _screen: SubViewport
 
 
 func _ready() -> void:
+	# Помилка в скрипті, що його кличе проба, лишає `await` без кінця —
+	# і вікно висить. Аварійний вихід.
+	get_tree().create_timer(90.0).timeout.connect(func() -> void:
+		print("‼ проба не скінчилась за 90 с")
+		get_tree().quit(1))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--тека")

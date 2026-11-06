@@ -167,9 +167,9 @@ func _house(at: Vector3, wide: int, deep: int, swap: Dictionary,
 	for i in wide:
 		var x := -half_x + i * MODULE
 		_piece(holder, door if i == wide / 2 else window,
-				Vector3(x, 0, deep * MODULE * 0.5), 180.0)
+				Vector3(x, 0, deep * MODULE * 0.5), 0.0)
 		_piece(holder, timber if grid else straight,
-				Vector3(x, 0, -deep * MODULE * 0.5), 0.0)
+				Vector3(x, 0, -deep * MODULE * 0.5), 180.0)
 	for i in deep:
 		var z := -half_z + i * MODULE
 		_piece(holder, timber if grid and i % 2 == 0 else window,

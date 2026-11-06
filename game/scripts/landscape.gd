@@ -1511,9 +1511,11 @@ func _kit_house(where: Vector3, house: Dictionary) -> void:
 	for i in wide:
 		var x := -half_x + i * MODULE
 		_piece(body, door if i == door_at else (window if i % 2 == 0
-				else straight), Vector3(x, 0, edge_z), 180.0)
+				else straight), Vector3(x, 0, edge_z), 0.0)
+		# Лице модуля набору — його +z (цоколь, балки); перед і зад
+		# стояли 180/0 — лицем усередину (знайдено 06.11.2026).
 		_piece(body, window if i % 2 == 1 else straight,
-				Vector3(x, 0, -edge_z), 0.0)
+				Vector3(x, 0, -edge_z), 180.0)
 	for i in deep:
 		var z := -half_z + i * MODULE
 		_piece(body, window if i % 2 == 0 else straight,

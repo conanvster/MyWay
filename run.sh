@@ -11,6 +11,7 @@
 #                     набору природи в ряд, з підписами й зміряними висотами
 #   ./run.sh --дерева3д показ дерев Tree3D: сорти, зерна, числа
 #   ./run.sh --місто     текстури міст і сіл на зразках: хата, дім, мур, брама
+#   ./run.sh --мости [тека]  6 переходів × 5 дизайнів мостів — кандидати на вибір (П-174)
 #   ./run.sh --рухи-людини  парад рухів моделі людини: по одній фігурі
 #                     на кожен рух із бібліотеки, кожна підписана назвою
 #                     (`--модель res://…` — інша модель на тому самому
@@ -114,6 +115,7 @@ case "${1:-}" in
     --рослини) exec godot --path "$proj" --script res://probes/plants.gd ;;
     --дерева3д) exec godot --path "$proj" "${vsync[@]}" --script res://probes/tree3d.gd -- "${@:2}" ;;
     --місто) exec godot --path "$proj" "${vsync[@]}" --script res://probes/misto.gd -- "${@:2}" ;;
+    --мости) exec godot --path "$proj" res://scenes/bridges_look.tscn -- "${@:2}" ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd -- "${@:2}" ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --моделі) exec godot --path "$proj" "${vsync[@]}" res://scenes/model_viewer.tscn ;;

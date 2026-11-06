@@ -24,6 +24,12 @@ say() { echo "== $(date +%H:%M:%S) $*" | tee -a "$log"; }
 if ps -eo args | grep -q "[r]un-v4.sh"; then
   say "‼ іде стенд кодингу (run-v4.sh) — GPU зайнятий. Стоп."; exit 2
 fi
+# Qwen-Image-Edit і 3D-набір лежать на зовнішньому HDD посиланнями
+# (CONTEXT.md, 06.11.2026): не змонтовано — зупинитись, нічого не качати.
+hdd="/run/media/alex/69D626734525CBD6"
+if ! mountpoint -q "$hdd"; then
+  say "‼ зовнішній HDD $hdd не змонтовано — попроси замовника підмонтувати. Стоп."; exit 5
+fi
 if [ "${1:-}" = "--perevir" ]; then say "лише перевірки — гаразд"; exit 0; fi
 
 # 2. Відеокарта

@@ -313,14 +313,51 @@ static func _streets(land: Landscape, holder: Node3D, place: Dictionary) -> void
 		_strip(land, holder, Vector2(line[0][0], line[0][1]),
 				Vector2(line[1][0], line[1][1]), STREET_WIDE, stones)
 	var c: Array = place["центр"]
-	var square := CylinderMesh.new()
-	square.top_radius = float(place.get("площа", 16.0))
-	square.bottom_radius = square.top_radius
-	square.height = 0.12
-	square.radial_segments = 48
+	# Зламів вулиць (кільце, провулки) — кругла латка бруку, щоб не було
+	# щілини між двома смугами.
+	var ends := {}
+	for line: Array in place.get("вулиці", []):
+		for p: Array in line:
+			var key := "%.1f:%.1f" % [float(p[0]), float(p[1])]
+			ends[key] = int(ends.get(key, 0)) + 1
+	for key: String in ends:
+		if int(ends[key]) < 2:
+			continue
+		var xy := key.split(":")
+		var joint := CylinderMesh.new()
+		joint.top_radius = STREET_WIDE * 0.5
+		joint.bottom_radius = joint.top_radius
+		joint.height = 0.1
+		joint.radial_segments = 16
+		var cap := MeshInstance3D.new()
+		cap.mesh = joint
+		cap.material_override = stones
+		var jx := float(xy[0])
+		var jz := float(xy[1])
+		cap.position = Vector3(jx, land.surface_y(jx, jz) + 0.005, jz)
+		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(cap)
+	var reach := float(place.get("площа", 16.0))
+	var square: PrimitiveMesh
+	if str(place.get("площа форма", "")) == "квадратна":
+		var box := BoxMesh.new()
+		box.size = Vector3(reach * 1.8, 0.12, reach * 1.8)
+		square = box
+	else:
+		var disc := CylinderMesh.new()
+		disc.top_radius = reach
+		disc.bottom_radius = reach
+		disc.height = 0.12
+		disc.radial_segments = 48
+		square = disc
 	var view := MeshInstance3D.new()
 	view.name = "Площа"
 	view.mesh = square
+	var gates: Array = place.get("брами", [])
+	if not gates.is_empty():
+		var g: Array = gates[0]["де"]
+		view.rotation.y = -atan2(float(g[1]) - float(c[2]),
+				float(g[0]) - float(c[0]))
 	view.material_override = paint("stone_pathway_02", 3.0)
 	view.position = Vector3(float(c[0]), land.surface_y(float(c[0]),
 			float(c[2])) + 0.02, float(c[2]))
@@ -356,7 +393,10 @@ static func _house(land: Landscape, holder: Node3D, house: Dictionary,
 	body.position = where
 	body.rotation.y = deg_to_rad(float(house.get("поворот", 0.0)))
 	holder.add_child(body)
-	house_body(body, house, shown)
+	if house.has("вид"):
+		civic_body(body, house, shown)
+	else:
+		house_body(body, house, shown)
 
 
 ## Сам дім у власних координатах (перед — +z): без землі й світу, щоб
@@ -370,7 +410,11 @@ static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
 	var roof_path := KIT % ("Roof_RoundTiles_%dx%d" % [across * 2,
 			lengthwise * 2])
 	var roof_box := _roof_box(roof_path)
-	var peak := ROOF_AT + roof_box.end.y
+	# Поверхи (ратуша, гільдія, дзвіниця): ті самі модулі ще раз згори.
+	var floors := maxi(1, int(house.get("поверхи", 1)))
+	var lift := (floors - 1) * WALL_HEIGHT
+	var open_front := bool(house.get("відкрито", false))
+	var peak := ROOF_AT + lift + roof_box.end.y
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(wide * MODULE + 1.2, peak, deep * MODULE + 1.2)
 	var wall := CollisionShape3D.new()
@@ -396,17 +440,24 @@ static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
 	# штукатурка. Перед стояв на 180°, зад на 0° — обидва лицем усередину,
 	# і з вулиці було видно голу внутрішню стіну (знайдено 06.11.2026).
 	var pieces: Array = []
-	for i in wide:
-		var x := -half_x + i * MODULE
-		var front := door if i == wide / 2 else window
-		pieces.append([front, Vector3(x, 0, edge_z), 0.0])
-		pieces.append([window if i % 2 == 1 else straight,
-				Vector3(x, 0, -edge_z), 180.0])
-	for i in deep:
-		var z := -half_z + i * MODULE
-		pieces.append([window if i % 2 == 0 else straight,
-				Vector3(-edge_x, 0, z), 270.0])
-		pieces.append([straight, Vector3(edge_x, 0, z), 90.0])
+	var no_door := bool(house.get("без дверей", false))
+	for f in floors:
+		var y := f * WALL_HEIGHT
+		for i in wide:
+			var x := -half_x + i * MODULE
+			var front := door if i == wide / 2 and f == 0 and not no_door \
+					else window
+			if not open_front:
+				pieces.append([front, Vector3(x, y, edge_z), 0.0])
+			pieces.append([window if i % 2 == 1 else straight,
+					Vector3(x, y, -edge_z), 180.0])
+		if open_front:
+			continue
+		for i in deep:
+			var z := -half_z + i * MODULE
+			pieces.append([window if i % 2 == 0 else straight,
+					Vector3(-edge_x, y, z), 270.0])
+			pieces.append([straight, Vector3(edge_x, y, z), 90.0])
 	# Віконниці й двері — від місця дому, щоб сусіди різнились, а той
 	# самий дім виглядав однаково в кожного гравця.
 	var luck := hash(house.get("де", [0, 0, 0]))
@@ -429,18 +480,25 @@ static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
 			_piece(body, KIT % "DoorFrame_Round_WoodDark", one[1], one[2])
 			_doorstep(body, one[1])
 	# Кути: між торцями модулів лишалась щілина на товщину лиця.
-	for cx: float in [-edge_x, edge_x]:
-		for cz: float in [-edge_z, edge_z]:
-			_piece(body, KIT % "Corner_Exterior_Wood",
-					Vector3(cx, 0, cz), 0.0)
+	for f in floors:
+		for cx: float in [-edge_x, edge_x]:
+			for cz: float in [-edge_z, edge_z]:
+				_piece(body, KIT % "Corner_Exterior_Wood",
+						Vector3(cx, f * WALL_HEIGHT, cz), 0.0)
+	if open_front:
+		# Навіс: передні стовпи до самого даху.
+		for cx: float in [-edge_x, edge_x]:
+			_post(body, Vector3(cx, 0, edge_z), WALL_HEIGHT + 0.6)
 	# Дах: гребінь уздовж довшого боку (у наборі — уздовж z).
 	var roof_turn := 90.0 if wide > deep else 0.0
-	_piece(body, roof_path, Vector3(0, ROOF_AT, 0), roof_turn)
+	_piece(body, roof_path, Vector3(0, ROOF_AT + lift, 0), roof_turn)
 	var wall_paint := paint(WALLS.get(style, "plastered_wall_02"), 2.0)
-	_gables(body, roof_box, across, lengthwise, roof_turn, wall_paint)
+	if not open_front:
+		_gables(body, roof_box, across, lengthwise, roof_turn, wall_paint,
+				lift)
 	if bool(house.get("комин", false)):
 		var x := across * MODULE * 0.25
-		var roof_y := ROOF_AT + roof_box.end.y \
+		var roof_y := ROOF_AT + lift + roof_box.end.y \
 				- roof_box.size.y * (x / (roof_box.size.x * 0.5))
 		var spot := Vector3(x, roof_y - 2.2, lengthwise * MODULE * 0.2)
 		if roof_turn != 0.0:
@@ -488,14 +546,15 @@ static func _roof_box(path: String) -> AABB:
 ## Фронтони: п'ятикутник під дахом на обох торцях — у наборі торець
 ## даху відкритий, і крізь нього видно небо.
 static func _gables(body: Node3D, roof: AABB, across: int, lengthwise: int,
-		turn: float, look: Material) -> void:
+		turn: float, look: Material, lift: float = 0.0) -> void:
 	var a := across * MODULE * 0.5
 	var half := roof.size.x * 0.5
-	var eave := ROOF_AT + roof.position.y
-	var peak := ROOF_AT + roof.end.y - 0.4
-	var side_y := maxf(WALL_HEIGHT, peak - (peak + 0.4 - eave) * (a / half))
-	var outline: Array[Vector2] = [Vector2(-a, WALL_HEIGHT - 0.05),
-			Vector2(a, WALL_HEIGHT - 0.05), Vector2(a, side_y),
+	var top := WALL_HEIGHT + lift
+	var eave := ROOF_AT + lift + roof.position.y
+	var peak := ROOF_AT + lift + roof.end.y - 0.4
+	var side_y := maxf(top, peak - (peak + 0.4 - eave) * (a / half))
+	var outline: Array[Vector2] = [Vector2(-a, top - 0.05),
+			Vector2(a, top - 0.05), Vector2(a, side_y),
 			Vector2(0, peak), Vector2(-a, side_y)]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -540,6 +599,322 @@ static func _swap(body: Node3D, style: String, roof: String) -> void:
 			var was: Material = view.mesh.surface_get_material(s)
 			if was != null and table.has(was.resource_name):
 				view.set_surface_override_material(s, table[was.resource_name])
+
+
+# ──────────────────── будівлі площі (06.11.2026) ─────────────────────
+# Слово замовника 06.11.2026: «міста повинні мати ратушу та церкву, а також
+# невеличку площу, кузню, магазин з прилавком та гільдію, біля яких будуть
+# відповідні npc». Місця й мешканців ставить `tools/svit2.py --поселення`;
+# тут — лише вигляд. Перед будівлі — локальне +z, до площі.
+
+const RECHI := "res://models/town/rechi/%s/%s_1k.gltf"
+## Кольори корогв: міські (ратуша) і цехові (гільдія).
+const BANNER_TOWN := Color(0.55, 0.12, 0.1)
+const BANNER_GUILD := Color(0.12, 0.22, 0.45)
+
+
+static func civic_body(body: Node3D, house: Dictionary, shown: bool) -> void:
+	var kind := str(house.get("вид", ""))
+	var size: Array = house.get("модулі", [3, 3])
+	var edge_x := int(size[0]) * MODULE * 0.5
+	var edge_z := int(size[1]) * MODULE * 0.5
+	match kind:
+		"ратуша":
+			var hall := house.duplicate()
+			hall["поверхи"] = 2
+			hall["стіни"] = "цегла"
+			house_body(body, hall, shown)
+			if shown:
+				for side: float in [-1.0, 1.0]:
+					_banner(body, Vector3(side * (edge_x - 1.2), 5.4,
+							edge_z + 0.25), BANNER_TOWN)
+				_lamp(body, Vector3(0, 2.9, edge_z + 0.35))
+		"гільдія":
+			var hall := house.duplicate()
+			hall["поверхи"] = 2
+			house_body(body, hall, shown)
+			if shown:
+				_banner(body, Vector3(0, 5.4, edge_z + 0.25), BANNER_GUILD)
+		"церква":
+			# Нава [ш, г-1] позаду, дзвіниця 2×2 на три поверхи — спереду,
+			# наполовину поза навою.
+			var nave_part := StaticBody3D.new()
+			nave_part.position = Vector3(0, 0, -MODULE * 0.5)
+			body.add_child(nave_part)
+			house_body(nave_part, {"модулі": [int(size[0]), int(size[1]) - 1],
+					"стіни": "цегла", "дах": "сланець", "без дверей": true,
+					"де": house.get("де")}, shown)
+			var tower := StaticBody3D.new()
+			tower.position = Vector3(0, 0, edge_z - MODULE)
+			body.add_child(tower)
+			_bell_tower(tower, house, shown)
+		"кузня":
+			var shed := house.duplicate()
+			shed["відкрито"] = true
+			shed["стіни"] = "цегла"
+			house_body(body, shed, shown)
+			if shown:
+				_forge(body, Vector3(-edge_x + 1.3, 0, -edge_z + 1.3))
+				_anvil(body, Vector3(0.6, 0, edge_z - 1.2))
+				_prop(body, "wooden_bucket_01", Vector3(1.7, 0, edge_z - 0.6))
+				_prop(body, "wine_barrel_01", Vector3(edge_x - 0.8, 0,
+						-edge_z + 0.9))
+		"крамниця":
+			house_body(body, house, shown)
+			if shown:
+				_counter(body, Vector3(0, 0, edge_z + 1.9), edge_x * 1.4)
+				_prop(body, "wooden_crate_01", Vector3(-edge_x + 0.6, 0,
+						edge_z + 1.1))
+				_prop(body, "wine_barrel_01", Vector3(edge_x - 0.5, 0,
+						edge_z + 1.0))
+		_:
+			house_body(body, house, shown)
+			if shown and kind == "комора":
+				_prop(body, "wooden_crate_02", Vector3(-edge_x + 0.6, 0,
+						edge_z + 0.8))
+				_prop(body, "wooden_crate_01", Vector3(-edge_x + 1.5, 0,
+						edge_z + 0.7))
+
+
+## Дзвіниця: три поверхи модулів 2×2, шатро зі сланцю і хрест.
+static func _bell_tower(tower: Node3D, house: Dictionary, shown: bool) -> void:
+	var floors := 3
+	var top := floors * WALL_HEIGHT
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(2 * MODULE + 0.6, top, 2 * MODULE + 0.6)
+	var hit := CollisionShape3D.new()
+	hit.shape = shape
+	hit.position.y = top * 0.5
+	tower.add_child(hit)
+	if not shown:
+		return
+	var straight := KIT % "Wall_UnevenBrick_Straight"
+	var window := KIT % "Wall_UnevenBrick_Window_Wide_Round"
+	var door := KIT % "Wall_UnevenBrick_Door_Round"
+	for f in floors:
+		var y := f * WALL_HEIGHT
+		for i in 2:
+			var t := -MODULE * 0.5 + i * MODULE
+			var front := door if f == 0 and i == 0 else (
+					window if f > 0 else straight)
+			_piece(tower, front, Vector3(t, y, MODULE), 0.0)
+			_piece(tower, window if f == 2 else straight,
+					Vector3(t, y, -MODULE), 180.0)
+			_piece(tower, window if f == 2 else straight,
+					Vector3(-MODULE, y, t), 270.0)
+			_piece(tower, window if f == 2 else straight,
+					Vector3(MODULE, y, t), 90.0)
+		for cx: float in [-MODULE, MODULE]:
+			for cz: float in [-MODULE, MODULE]:
+				_piece(tower, KIT % "Corner_Exterior_Wood",
+						Vector3(cx, y, cz), 0.0)
+	_piece(tower, KIT % "Door_4_Round", Vector3(-MODULE * 0.5 - 0.535, 0,
+			MODULE - 0.08), 0.0)
+	_piece(tower, KIT % "DoorFrame_Round_WoodDark",
+			Vector3(-MODULE * 0.5, 0, MODULE), 0.0)
+	_doorstep(tower, Vector3(-MODULE * 0.5, 0, MODULE))
+	var roof := CylinderMesh.new()
+	roof.top_radius = 0.0
+	roof.bottom_radius = MODULE * 1.55
+	roof.height = 5.5
+	roof.radial_segments = 4
+	var cap := MeshInstance3D.new()
+	cap.name = "Шатро"
+	cap.mesh = roof
+	cap.material_override = paint("roof_slates_03", 2.0)
+	cap.position.y = top + 2.75
+	cap.rotation.y = PI / 4.0
+	tower.add_child(cap)
+	var iron := _iron()
+	for bar: Vector3 in [Vector3(0.12, 1.6, 0.12), Vector3(0.9, 0.12, 0.12)]:
+		var piece := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = bar
+		piece.mesh = box
+		piece.material_override = iron
+		piece.position.y = top + 5.5 + (0.75 if bar.y > 1.0 else 1.05)
+		tower.add_child(piece)
+	_swap(tower, "цегла", "сланець")
+
+
+## Стовп навісу — тесаний брус.
+static func _post(body: Node3D, at: Vector3, high: float) -> void:
+	var view := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.28, high, 0.28)
+	view.mesh = box
+	view.material_override = paint("dark_wooden_planks", 1.5)
+	view.position = at + Vector3(0, high * 0.5, 0)
+	body.add_child(view)
+
+
+## Корогва: полотнище на жердині, звисає перед фасадом.
+static func _banner(body: Node3D, at: Vector3, tone: Color) -> void:
+	var cloth := MeshInstance3D.new()
+	cloth.name = "Корогва"
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 2.2)
+	cloth.mesh = quad
+	var paint_cloth := StandardMaterial3D.new()
+	paint_cloth.albedo_color = tone
+	paint_cloth.roughness = 0.9
+	paint_cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cloth.material_override = paint_cloth
+	cloth.position = at
+	body.add_child(cloth)
+	var bar := MeshInstance3D.new()
+	var rod := BoxMesh.new()
+	rod.size = Vector3(1.3, 0.08, 0.08)
+	bar.mesh = rod
+	bar.material_override = _iron()
+	bar.position = at + Vector3(0, 1.12, 0)
+	body.add_child(bar)
+
+
+## Ліхтар над дверима — тепле світло без тіні.
+static func _lamp(body: Node3D, at: Vector3) -> void:
+	_prop(body, "wooden_lantern_01", at - Vector3(0, 0.3, 0))
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.72, 0.4)
+	light.light_energy = 0.8
+	light.omni_range = 5.0
+	light.position = at
+	body.add_child(light)
+
+
+## Горн: цегляна скриня з жаром, світлом і димом.
+static func _forge(body: Node3D, at: Vector3) -> void:
+	var brick := paint("medieval_red_brick", 1.5)
+	var base := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(1.8, 1.0, 1.6)
+	base.mesh = box
+	base.material_override = brick
+	base.position = at + Vector3(0, 0.5, 0)
+	body.add_child(base)
+	var hood := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.35
+	cone.bottom_radius = 1.0
+	cone.height = 1.4
+	cone.radial_segments = 4
+	hood.mesh = cone
+	hood.material_override = brick
+	hood.position = at + Vector3(0, 2.6, 0)
+	hood.rotation.y = PI / 4.0
+	body.add_child(hood)
+	var coals := MeshInstance3D.new()
+	var bed := BoxMesh.new()
+	bed.size = Vector3(1.2, 0.08, 1.0)
+	coals.mesh = bed
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.25, 0.05, 0.0)
+	glow.emission_enabled = true
+	glow.emission = Color(1.0, 0.35, 0.05)
+	glow.emission_energy_multiplier = 2.5
+	coals.material_override = glow
+	coals.position = at + Vector3(0, 1.04, 0)
+	body.add_child(coals)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.45, 0.15)
+	light.light_energy = 1.6
+	light.omni_range = 6.0
+	light.position = at + Vector3(0, 1.5, 0)
+	body.add_child(light)
+	var smoke := GPUParticles3D.new()
+	smoke.name = "Дим"
+	smoke.amount = 24
+	smoke.lifetime = 4.0
+	var motion := ParticleProcessMaterial.new()
+	motion.direction = Vector3.UP
+	motion.spread = 12.0
+	motion.initial_velocity_min = 0.4
+	motion.initial_velocity_max = 0.8
+	motion.gravity = Vector3(0.15, 0.25, 0)
+	motion.scale_min = 0.8
+	motion.scale_max = 1.6
+	smoke.process_material = motion
+	var puff := QuadMesh.new()
+	puff.size = Vector2(0.9, 0.9)
+	var grey := StandardMaterial3D.new()
+	grey.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	grey.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	grey.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	grey.albedo_color = Color(0.35, 0.33, 0.31, 0.25)
+	grey.albedo_texture = Fx._soft_dot()
+	puff.material = grey
+	smoke.draw_pass_1 = puff
+	smoke.position = at + Vector3(0, 3.4, 0)
+	smoke.visibility_aabb = AABB(Vector3(-3, -1, -3), Vector3(6, 12, 6))
+	body.add_child(smoke)
+
+
+## Ковадло: підставка-колода й залізне тіло з рогом.
+static func _anvil(body: Node3D, at: Vector3) -> void:
+	var stump_view := MeshInstance3D.new()
+	var stump := CylinderMesh.new()
+	stump.top_radius = 0.32
+	stump.bottom_radius = 0.36
+	stump.height = 0.55
+	stump_view.mesh = stump
+	stump_view.material_override = paint("dark_wooden_planks", 1.0)
+	stump_view.position = at + Vector3(0, 0.275, 0)
+	body.add_child(stump_view)
+	var iron := _iron()
+	for part: Array in [[Vector3(0.75, 0.22, 0.3), Vector3(0, 0.7, 0)],
+			[Vector3(0.35, 0.16, 0.22), Vector3(0, 0.6, 0)]]:
+		var piece := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = part[0]
+		piece.mesh = box
+		piece.material_override = iron
+		piece.position = at + part[1]
+		body.add_child(piece)
+	var horn := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 0.11
+	cone.height = 0.4
+	horn.mesh = cone
+	horn.material_override = iron
+	horn.position = at + Vector3(0.55, 0.7, 0)
+	horn.rotation.z = -PI / 2.0
+	body.add_child(horn)
+
+
+## Прилавок крамниці: дошка на двох тумбах і піддашок на стовпах.
+static func _counter(body: Node3D, at: Vector3, long: float) -> void:
+	var wood := paint("brown_planks_05", 1.2)
+	var top := MeshInstance3D.new()
+	var board := BoxMesh.new()
+	board.size = Vector3(long, 0.1, 0.8)
+	top.mesh = board
+	top.material_override = wood
+	top.position = at + Vector3(0, 1.0, 0)
+	body.add_child(top)
+	for side: float in [-1.0, 1.0]:
+		var leg := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.6, 0.95, 0.7)
+		leg.mesh = box
+		leg.material_override = wood
+		leg.position = at + Vector3(side * (long * 0.5 - 0.35), 0.475, 0)
+		body.add_child(leg)
+		_post(body, at + Vector3(side * (long * 0.5 + 0.1), 0, 0.5), 2.5)
+	var awning := MeshInstance3D.new()
+	var slab := BoxMesh.new()
+	slab.size = Vector3(long + 0.6, 0.08, 2.6)
+	awning.mesh = slab
+	awning.material_override = paint("weathered_planks", 1.5)
+	awning.position = at + Vector3(0, 2.75, -0.6)
+	awning.rotation.x = deg_to_rad(-14.0)
+	body.add_child(awning)
+	_prop(body, "wooden_crate_02", at + Vector3(-long * 0.25, 1.05, -0.05))
+
+
+## Річ Poly Haven (`models/town/rechi`) у точці.
+static func _prop(body: Node3D, name: String, at: Vector3) -> void:
+	_piece(body, RECHI % [name, name], at, 0.0)
 
 
 ## Кована оковка дверей: у наборі вона синьо-фіолетова, мультяшна.

@@ -89,6 +89,8 @@ func build(from_data: Dictionary, stream: bool = false) -> void:
 	_forest()
 	_greenery()
 	_rivers()
+	# Мости (П-174) — після річок: настил тверде тіло і на сервері.
+	BridgeLook.build_all(self)
 	_mountains()
 	_landmarks()
 	_shrines()
@@ -167,7 +169,13 @@ func _paths() -> void:
 	_path_gap = PackedByteArray()
 	_path_side = 0
 	_path_texture = null
-	var roads: Array = data.get("дороги", [])
+	var roads: Array = data.get("дороги", []).duplicate()
+	# Під'їзди поселень (06.11.2026): дорога з мапи — до брами, з кожної
+	# брами й кінця стежки села — хоча б коротка дорога назовні.
+	for group: String in ["міста", "села"]:
+		for place: Dictionary in data.get(group, []):
+			for line: Array in place.get("під'їзди", []):
+				roads.append({"точки": line, "під'їзд": true})
 	if _grid == 0 or roads.is_empty():
 		return
 	var started := Time.get_ticks_msec()
@@ -1646,6 +1654,9 @@ func _dweller(who: Dictionary, at: int) -> void:
 	body.goods = who.get("товар", [])
 	body.tint = Color(str(who.get("колір", "#75706a")))
 	body.position = _on_ground(_point(who["де"])) + Vector3(0, 1.0, 0)
+	# Біля своєї будівлі мешканець стоїть обличчям до площі (06.11.2026).
+	if who.has("поворот"):
+		body.rotation.y = deg_to_rad(float(who["поворот"]))
 	# Шар «мешканці» (третій, тобто 4): промінь миші шукає і його теж,
 	# інакше клік по мешканцеві пролітає крізь нього — на цьому й
 	# спіймався замовник під час першої ж проби.
@@ -2611,23 +2622,18 @@ func _rivers() -> void:
 			continue
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
-		for i in points.size():
-			var here: Array = points[i]
+		for here: Array in _river_line(points):
 			var at := Vector3(float(here[0]), float(here[2]), float(here[1]))
-			var ahead: Array = points[mini(i + 1, points.size() - 1)]
-			var back: Array = points[maxi(i - 1, 0)]
-			var along := Vector3(float(ahead[0]) - float(back[0]), 0.0,
-					float(ahead[1]) - float(back[1]))
-			if along.length() < 0.01:
-				along = Vector3.FORWARD
-			var side := along.normalized().cross(Vector3.UP) \
-					* float(here[3]) * 0.5
+			var along := Vector3(float(here[4]), 0.0, float(here[5]))
+			var side := along.cross(Vector3.UP) * float(here[3]) * 0.5
 			# Нормаль ставимо самі: `generate_normals()` уміє лише
 			# окремі трикутники, а стрічка — це смуга.
-			st.set_normal(Vector3.UP)
-			st.add_vertex(at - side)
-			st.set_normal(Vector3.UP)
-			st.add_vertex(at + side)
+			# Кожен край — не вище за свою землю: на косогорі стрічка
+			# інакше висіла над нижчим берегом (до 15 м у горах).
+			for edge: Vector3 in [at - side, at + side]:
+				edge.y = minf(at.y, surface_y(edge.x, edge.z) + RIVER_ABOVE)
+				st.set_normal(Vector3.UP)
+				st.add_vertex(edge)
 		var mesh := st.commit()
 		if mesh == null or mesh.get_surface_count() == 0:
 			continue
@@ -2638,6 +2644,43 @@ func _rivers() -> void:
 		add_child(view)
 		made += 1
 	print("[краєвид] річок постелено: %d" % made)
+
+
+## Річка кроком ≤4 м, вода — на землі + `RIVER_ABOVE`, але не вище за
+## рівень із даних. Заміряно 06.11.2026: вузли русла стоять через ~32 м, а
+## врізаного русла під стрічкою немає (берег над «дном» — медіана 7 см), тож
+## пряма стрічка між вузлами висіла над схилом: у 94% точок вода була вища
+## за нижчий берег, у горах — до 43 м. Точка: [x, z, y, ширина, dx, dz].
+const RIVER_ABOVE := 0.25
+const RIVER_STEP := 4.0
+
+
+func _river_line(points: Array) -> Array:
+	var out: Array = []
+	for k in range(points.size() - 1):
+		var a: Array = points[k]
+		var b: Array = points[k + 1]
+		var flat := Vector2(float(b[0]) - float(a[0]),
+				float(b[1]) - float(a[1]))
+		var long := flat.length()
+		if long < 0.01:
+			continue
+		var dir := flat / long
+		var steps := maxi(1, int(ceil(long / RIVER_STEP)))
+		var last := 1 if k == points.size() - 2 else 0
+		for i in steps + last:
+			var t := float(i) / steps
+			var x := lerpf(float(a[0]), float(b[0]), t)
+			var z := lerpf(float(a[1]), float(b[1]), t)
+			out.append([x, z, river_y(x, z, lerpf(float(a[2]), float(b[2]), t)),
+					lerpf(float(a[3]), float(b[3]), t), dir.x, dir.y])
+	return out
+
+
+## Висота води в точці: земля + `RIVER_ABOVE`, не вище за рівень даних.
+## Те саме бере міст (`BridgeLook`), щоб настил лягав над водою.
+func river_y(x: float, z: float, level: float) -> float:
+	return minf(level, surface_y(x, z) + RIVER_ABOVE)
 
 
 func _forest() -> void:

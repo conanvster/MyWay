@@ -86,8 +86,20 @@ func _go() -> void:
 	# центр і розмір муру — з тих самих даних, з яких їх будує `TownLook`.
 	if OS.get_cmdline_user_args().has("--поселення-згори"):
 		spots = _settlements_from_above(JSON.parse_string(text))
+	# `--площі` — площа кожного міста з висоти 7 м, у два боки: будівлі
+	# площі й мешканці перед ними (06.11.2026).
+	if OS.get_cmdline_user_args().has("--площі"):
+		spots = []
+		for place: Dictionary in JSON.parse_string(text).get("міста", []):
+			var c: Array = place["центр"]
+			for yaw: float in [0.0, 120.0, 240.0]:
+				var back := Vector3(sin(deg_to_rad(yaw)), 0,
+						cos(deg_to_rad(yaw))) * 6.0
+				spots.append(["площа %s %d°" % [place["назва"], yaw],
+						Vector3(float(c[0]), 0, float(c[2])) + back, yaw,
+						-14.0, 7.0])
 	var trail := _forest_path(land, JSON.parse_string(text))
-	if not trail.is_empty():
+	if not trail.is_empty() and spots.size() == SPOTS.size():
 		spots.push_front(["у лісі на стежці, з висоти людини", trail[0],
 				trail[1], -3.0])
 		spots.push_front(["гравець на лісовій стежці", trail[0], trail[1],

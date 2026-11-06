@@ -14,6 +14,23 @@ const HOUSES := [
 	{"модулі": [2, 3], "стіни": "цегла", "дах": "сланець"},
 	{"модулі": [3, 2], "стіни": "фахверк", "дах": "стріха", "тин": true},
 ]
+## `--громадські` — будівлі площі (06.11.2026) замість звичайних домів.
+const CIVIC := [
+	{"вид": "ратуша", "модулі": [4, 3], "стіни": "цегла", "дах": "сланець"},
+	{"вид": "церква", "модулі": [3, 6], "стіни": "цегла", "дах": "сланець"},
+	{"вид": "гільдія", "модулі": [3, 3], "стіни": "фахверк",
+		"дах": "черепиця"},
+	{"вид": "кузня", "модулі": [3, 2], "стіни": "цегла", "дах": "черепиця"},
+	{"вид": "крамниця", "модулі": [3, 2], "стіни": "штукатурка",
+		"дах": "черепиця"},
+	{"вид": "комора", "модулі": [2, 2], "стіни": "цегла", "дах": "сланець"},
+]
+const CIVIC_VIEWS := [
+	["1-ратуша-церква", Vector3(-17, 4, 18), Vector3(-17, 3.5, 0)],
+	["2-гільдія-кузня", Vector3(4, 3.5, 15), Vector3(4, 2.5, 0)],
+	["3-крамниця-комора", Vector3(24, 3, 13), Vector3(24, 1.8, 0)],
+	["4-згори", Vector3(4, 30, 26), Vector3(4, 0, 0)],
+]
 const VIEWS := [
 	["1-перед", Vector3(4, 2.2, 13), Vector3(0, 2, 0)],
 	["2-кут-ззаду", Vector3(-12, 2.2, -10), Vector3(-4, 2, 0)],
@@ -72,16 +89,22 @@ func _go() -> void:
 	green.albedo_color = Color("#5d6b45")
 	ground.material_override = green
 	world.add_child(ground)
-	for i in HOUSES.size():
+	var civic := OS.get_cmdline_user_args().has("--громадські")
+	var list: Array = CIVIC if civic else HOUSES
+	for i in list.size():
 		var body := StaticBody3D.new()
-		body.position = Vector3(-10.0 + i * 10.0, 0, 0)
+		body.position = Vector3(-22.0 + i * 11.0, 0, 0) if civic \
+				else Vector3(-10.0 + i * 10.0, 0, 0)
 		world.add_child(body)
-		TownLook.house_body(body, HOUSES[i], true)
+		if civic:
+			TownLook.civic_body(body, list[i], true)
+		else:
+			TownLook.house_body(body, list[i], true)
 	var eye := Camera3D.new()
 	eye.fov = 60
 	world.add_child(eye)
 	eye.current = true
-	for view: Array in VIEWS:
+	for view: Array in (CIVIC_VIEWS if civic else VIEWS):
 		eye.position = view[1]
 		eye.look_at(view[2])
 		for f in 12:

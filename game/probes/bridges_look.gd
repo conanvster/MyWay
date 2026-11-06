@@ -44,7 +44,17 @@ func _go() -> void:
 	get_tree().root.add_child(eye)
 	eye.make_current()
 	var count: int = map.get("мости", []).size()
+	# `--лише 0,1` — лише ці переходи; `--старі` — лише старіші дизайни.
+	var args := OS.get_cmdline_user_args()
+	var only: Array = []
+	if args.find("--лише") >= 0 and args.find("--лише") + 1 < args.size():
+		for n: String in args[args.find("--лише") + 1].split(","):
+			only.append(int(n))
+	var designs: Array = BridgeLook.OLD_DESIGNS if args.has("--старі") \
+			else BridgeLook.DESIGNS
 	for i in count:
+		if not only.is_empty() and not i in only:
+			continue
 		var span := BridgeLook.span_of(land, i, "арка")
 		if span.is_empty():
 			print("[міст] %d — перетину немає" % i)
@@ -57,7 +67,7 @@ func _go() -> void:
 		print("[міст] %d · ширина річки %.1f м · проліт %.1f м · береги %.1f / "
 				% [i, span["ширина"], span["довжина"], span["висота_а"]]
 				+ "%.1f м · вода %.1f м" % [span["висота_б"], span["вода"]])
-		for design: String in BridgeLook.DESIGNS:
+		for design: String in designs:
 			BridgeLook.build_one(land, i, design)
 			var from := mid + Vector3(side.x, 0, side.y) * 15.0 \
 					- Vector3(along.x, 0, along.y) * 6.0 + Vector3.UP * 4.0

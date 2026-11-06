@@ -13,13 +13,22 @@ extends RefCounted
 ## генератор його не чіпає). Немає запису — «колоди».
 
 const CHOICE_PATH := "res://data/svit2/мости-вибір.json"
-const DESIGNS := ["колоди", "критий", "арка", "опори", "мотузковий"]
+const DESIGNS := ["колоди", "критий", "арка", "опори", "мотузковий",
+		"кладка", "зруби", "плити", "бутова арка"]
+## Старіші на вигляд (слово замовника 06.11.2026 про переходи 0 і 1: «має
+## вигляд дуже сучасних переходів — спробуй щось старіше»): кора замість
+## тесаних дощок, бут і плити замість цегли, жердини замість поруч.
+const OLD_DESIGNS := ["кладка", "зруби", "плити", "бутова арка"]
 const DESIGN_NAMES := {
 	"колоди": "дерев'яний на палях",
 	"критий": "критий дерев'яний",
 	"арка": "кам'яна арка",
 	"опори": "кам'яні опори, дерев'яний настил",
 	"мотузковий": "мотузковий",
+	"кладка": "кладка з колод",
+	"зруби": "колоди на зрубах",
+	"плити": "кам'яні плити на бутових стовпах",
+	"бутова арка": "бутова арка",
 }
 const DEFAULT := "колоди"
 const DECK_WIDE := 3.6
@@ -101,7 +110,8 @@ static func span_of(land: Landscape, i: int,
 	# насипом (`_ramp`), а не настил іде під воду. Майже рівні береги —
 	# настил рівний.
 	# Під кам'яну арку треба місця — склепіння не має йти під воду.
-	var low := float(best["вода"]) + (CLEAR_ARCH if design == "арка" else CLEAR)
+	var low := float(best["вода"]) + (CLEAR_ARCH if design.ends_with("арка")
+			else CLEAR)
 	var ha := maxf(ya, low)
 	var hb := maxf(yb, low)
 	if absf(ha - hb) < 0.6:
@@ -142,7 +152,7 @@ static func build_one(land: Landscape, i: int, design: String) -> Node3D:
 	deck.name = "Настил"
 	deck.rotation.z = tilt
 	holder.add_child(deck)
-	var thick := 0.8 if design == "арка" else 0.3
+	var thick := 0.8 if design.ends_with("арка") else 0.3
 	var box := BoxShape3D.new()
 	box.size = Vector3(long / cos(tilt), thick, DECK_WIDE)
 	var hit := CollisionShape3D.new()
@@ -176,6 +186,14 @@ static func build_one(land: Landscape, i: int, design: String) -> Node3D:
 			_piers(deck, built)
 		"мотузковий":
 			_rope(deck, built)
+		"кладка":
+			_footlogs(deck, built)
+		"зруби":
+			_cribs(deck, built)
+		"плити":
+			_slabs(deck, built)
+		"бутова арка":
+			_arch(deck, built, true)
 		_:
 			_logs(deck, built, true)
 	for mesh in holder.find_children("*", "GeometryInstance3D", true, false):
@@ -273,10 +291,11 @@ static func _covered(deck: Node3D, b: Dictionary) -> void:
 
 ## Кам'яна арка: склепіння з тесаного каменю від берега до берега, товстий
 ## настил і парапети з цегли.
-static func _arch(deck: Node3D, b: Dictionary) -> void:
+static func _arch(deck: Node3D, b: Dictionary, rubble: bool = false) -> void:
 	var long: float = b["довжина"]
-	var stone := TownLook.paint("medieval_blocks_03", 2.5)
-	var brick := TownLook.paint("castle_brick_07", 2.0)
+	var stone := TownLook.paint("castle_wall_varriation" if rubble
+			else "medieval_blocks_03", 2.5)
+	var brick := stone if rubble else TownLook.paint("castle_brick_07", 2.0)
 	_box(deck, Vector3(long, 0.8, DECK_WIDE + 0.4), Vector3(0, -0.35, 0), stone)
 	# Склепіння — від води до настилу, не нижче за воду.
 	var rise := clampf(-float(b["вода"]) - 1.2, 0.4, minf(long * 0.28, 3.2))
@@ -375,6 +394,135 @@ static func _rope(deck: Node3D, b: Dictionary) -> void:
 				var s1 := -0.55 * (1.0 - pow(2.0 * x1 / long, 2.0))
 				_rod(deck, Vector3(x0, h + s0, z), Vector3(x1, h + s1, z),
 						0.035, rope)
+
+
+# ─── старіші дизайни ─────────────────────────────────────────────────
+
+static var _bark_paint: StandardMaterial3D = null
+
+
+## Кора (ambientCG Bark014) — колоди, а не тесані дошки.
+static func _bark() -> StandardMaterial3D:
+	if _bark_paint == null:
+		_bark_paint = StandardMaterial3D.new()
+		_bark_paint.albedo_texture = load(
+				"res://models/nature/bark/Bark014_Color.jpg")
+		_bark_paint.normal_enabled = true
+		_bark_paint.normal_texture = load(
+				"res://models/nature/bark/Bark014_Normal.jpg")
+		_bark_paint.roughness = 0.95
+		_bark_paint.uv1_triplanar = true
+		_bark_paint.uv1_world_triplanar = true
+		_bark_paint.uv1_scale = Vector3.ONE / 1.2
+	return _bark_paint
+
+
+## Кладка: три колоди поруч, жердина-поруччя на рогатках з одного боку.
+static func _footlogs(deck: Node3D, b: Dictionary) -> void:
+	var long: float = b["довжина"]
+	var bark := _bark()
+	var wobble := [0.0, 0.07, -0.05]
+	for k in 3:
+		var z := (k - 1) * 0.5
+		_rod(deck, Vector3(-long * 0.5 - 0.4, -0.2 + wobble[k], z),
+				Vector3(long * 0.5 + 0.4, -0.2 - wobble[k], z + 0.06),
+				0.24 - k * 0.02, bark)
+	var z := DECK_WIDE * 0.25 + 0.3
+	var count := maxi(2, int(long / 4.0))
+	for k in count + 1:
+		var x := -long * 0.5 + k * long / count
+		_rod(deck, Vector3(x, -0.3, z), Vector3(x + 0.1, 1.0, z + 0.05),
+				0.06, bark)
+		_rod(deck, Vector3(x + 0.1, 0.85, z), Vector3(x + 0.35, 1.15, z),
+				0.04, bark)
+	_rod(deck, Vector3(-long * 0.5, 1.0, z), Vector3(long * 0.5, 0.95, z),
+			0.055, bark)
+	for k in range(1, count):
+		var x := -long * 0.5 + k * long / count
+		_rod(deck, Vector3(x, -0.25, 0), Vector3(x, b["вода"] - 1.0, 0.1),
+				0.17, bark)
+
+
+## Колоди на зрубах: настил із поперечних кругляків, опори — клітки з
+## колод навхрест (у воді), поруччя — жердини на стовпцях.
+static func _cribs(deck: Node3D, b: Dictionary) -> void:
+	var long: float = b["довжина"]
+	var bark := _bark()
+	var count := int(long / 0.34)
+	var many := MultiMesh.new()
+	many.transform_format = MultiMesh.TRANSFORM_3D
+	var log_mesh := CylinderMesh.new()
+	log_mesh.top_radius = 0.16
+	log_mesh.bottom_radius = 0.17
+	log_mesh.height = DECK_WIDE
+	log_mesh.radial_segments = 8
+	many.mesh = log_mesh
+	many.instance_count = count
+	for k in count:
+		var x := -long * 0.5 + (k + 0.5) * long / count
+		var turn := Basis(Vector3.RIGHT, PI / 2.0).rotated(Vector3.UP,
+				sin(k * 1.7) * 0.03)
+		many.set_instance_transform(k, Transform3D(turn,
+				Vector3(x, -0.12 + sin(k * 2.3) * 0.02, 0)))
+	var deck_logs := MultiMeshInstance3D.new()
+	deck_logs.multimesh = many
+	deck_logs.material_override = bark
+	deck.add_child(deck_logs)
+	for side: float in [-1.0, 1.0]:
+		_rod(deck, Vector3(-long * 0.5, -0.38, side * 1.2),
+				Vector3(long * 0.5, -0.38, side * 1.2), 0.2, bark)
+	var piers := 1 if long < 16.0 else 2
+	for p in piers:
+		var x := -long * 0.5 + (p + 1) * long / (piers + 1)
+		var floor_y: float = b["вода"] - 1.2
+		var y := -0.6
+		var layer := 0
+		while y > floor_y:
+			if layer % 2 == 0:
+				for dz: float in [-1.3, 1.3]:
+					_rod(deck, Vector3(x - 1.2, y, dz), Vector3(x + 1.2, y, dz),
+							0.17, bark)
+			else:
+				for dx: float in [-1.0, 1.0]:
+					_rod(deck, Vector3(x + dx, y, -1.6),
+							Vector3(x + dx, y, 1.6), 0.17, bark)
+			y -= 0.3
+			layer += 1
+	var posts := maxi(2, int(long / 3.0))
+	for side: float in [-1.0, 1.0]:
+		var z := side * (DECK_WIDE * 0.5 - 0.15)
+		for k in posts + 1:
+			var x := -long * 0.5 + k * long / posts
+			_rod(deck, Vector3(x, -0.1, z), Vector3(x, 1.0, z), 0.08, bark)
+		_rod(deck, Vector3(-long * 0.5, 0.95, z), Vector3(long * 0.5, 0.9, z),
+				0.06, bark)
+
+
+## Кам'яні плити на бутових стовпах — найдавніший міст, без поруч.
+static func _slabs(deck: Node3D, b: Dictionary) -> void:
+	var long: float = b["довжина"]
+	var slab := TownLook.paint("castle_wall_slates", 2.0)
+	var rubble := TownLook.paint("castle_wall_varriation", 2.0)
+	var spans := maxi(2, int(ceil(long / 4.5)))
+	var step := long / spans
+	for k in spans:
+		var x := -long * 0.5 + (k + 0.5) * step
+		var lift := sin(k * 2.1) * 0.04
+		var piece := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(step + 0.25, 0.32, DECK_WIDE * 0.8 + sin(k) * 0.15)
+		piece.mesh = box
+		piece.material_override = slab
+		piece.position = Vector3(x, -0.16 + lift, sin(k * 1.3) * 0.08)
+		piece.rotation.y = sin(k * 3.1) * 0.03
+		deck.add_child(piece)
+	for k in range(1, spans):
+		var x := -long * 0.5 + k * step
+		var high := -float(b["вода"]) + 1.0
+		_box(deck, Vector3(1.3, high, DECK_WIDE * 0.75),
+				Vector3(x, -0.32 - high * 0.5, 0), rubble)
+		_box(deck, Vector3(1.6, 0.35, DECK_WIDE * 0.9),
+				Vector3(x, b["вода"] + 0.05, 0), rubble)
 
 
 # ─── цеглинки ────────────────────────────────────────────────────────

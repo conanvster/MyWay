@@ -43,3 +43,4 @@ art/references/
 # Забраковані аватари (k1811, s808) — лише диск з 06.11.2026 (П6): у переглядачі є, у грі ні.
 game/models/own/avatary/elf-k1811-mixamo/
 game/models/own/avatary/elf-s808-mixamo/
+*.до-русел

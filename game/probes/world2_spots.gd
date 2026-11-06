@@ -82,6 +82,10 @@ func _go() -> void:
 	# стежкою»): точка дороги поблизу столиці, де найбільше лісу, і
 	# погляд уздовж неї — камерою гравця й з висоти людини.
 	var spots: Array = SPOTS.duplicate()
+	# `--поселення-згори` — лише міста й села, кожне згори під 60°:
+	# центр і розмір муру — з тих самих даних, з яких їх будує `TownLook`.
+	if OS.get_cmdline_user_args().has("--поселення-згори"):
+		spots = _settlements_from_above(JSON.parse_string(text))
 	var trail := _forest_path(land, JSON.parse_string(text))
 	if not trail.is_empty():
 		spots.push_front(["у лісі на стежці, з висоти людини", trail[0],
@@ -154,6 +158,25 @@ func _go() -> void:
 			await get_tree().process_frame
 	print("[місця] знімки зроблено")
 	get_tree().quit()
+
+
+## Місця «згори» на кожне місто й село: камера на південь від центру,
+## дивиться на північ під 60° униз; відстань — за радіусом муру, щоб
+## усе поселення влізло в кадр.
+func _settlements_from_above(map: Dictionary) -> Array:
+	var out: Array = []
+	for group: String in ["міста", "села"]:
+		for place: Dictionary in map.get(group, []):
+			var c: Array = place["центр"]
+			var reach := float(place.get("мур радіус",
+					float(place.get("радіус", 30.0)) * 1.2))
+			var up := reach * 1.55
+			var back := up / tan(deg_to_rad(60.0))
+			var label := "%s %s згори" % ["місто" if group == "міста"
+					else "село", place.get("назва", "")]
+			out.append([label, Vector3(float(c[0]), 0, float(c[2]) + back),
+					0.0, -60.0, up])
+	return out
 
 
 ## Точка дороги в межах 1,5 км від столиці, біля якої найбільше живих

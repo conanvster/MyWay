@@ -154,7 +154,10 @@ func _faily(dir: String, vglyb: bool) -> Array:
 	if d == null:
 		return out
 	for f in d.get_files():
-		if f.ends_with(".glb") or f.ends_with(".gltf"):
+		# Зачіска окремим файлом (`_волосся-<стиль>.glb`, П6) — частина
+		# моделі, не модель.
+		if (f.ends_with(".glb") or f.ends_with(".gltf")) \
+				and not f.contains("_волосся-"):
 			out.append(dir + f)
 	if vglyb:
 		for sub in d.get_directories():

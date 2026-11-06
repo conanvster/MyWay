@@ -191,6 +191,8 @@ func build() -> void:
 			if at != -1:
 				_bones[name] = at
 				_rest[name] = _skeleton.get_bone_pose_rotation(at)
+	if _skeleton != null:
+		_attach_hair_files()
 	if _skeleton != null and not _hair_chains().is_empty():
 		_hair_springs()
 	_prepare_look()
@@ -200,6 +202,34 @@ func build() -> void:
 		_play_if_has(["Idle"])
 	# Одяг сховано, доки нічого не вдягнуто.
 	wear({}, null)
+
+
+## Зачіски окремими файлами поруч із моделлю (П6, 06.11.2026,
+## `tools/avatar_rozdilyty.py`): `<модель>_волосся-<стиль>.glb` — той самий
+## скелет, одна сітка. Сітку переносимо на скелет тіла — далі пружини,
+## вибір зачіски й колір працюють із нею, як із вбудованою.
+func _attach_hair_files() -> void:
+	var stem := path.get_file().get_basename() + "_волосся-"
+	var dir := path.get_base_dir()
+	var seen := {}
+	for raw: String in DirAccess.get_files_at(dir):
+		var file := raw.trim_suffix(".import").trim_suffix(".remap")
+		if seen.has(file) or not file.begins_with(stem) \
+				or file.get_extension() != "glb":
+			continue
+		seen[file] = true
+		var scene := load(dir.path_join(file)) as PackedScene
+		if scene == null:
+			continue
+		var holder: Node = scene.instantiate()
+		for m: MeshInstance3D in holder.find_children("Волосся-*",
+				"MeshInstance3D", true, false):
+			var keep := m.transform
+			m.get_parent().remove_child(m)
+			_skeleton.add_child(m)
+			m.transform = keep
+			m.skeleton = m.get_path_to(_skeleton)
+		holder.free()
 
 
 ## Вкласти річ у руку: `BoneAttachment3D` на кістці кисті. Масштаб і

@@ -77,6 +77,8 @@ var life: DungeonLife
 ## від своєї миті отримання — годинники машин звіряти не треба.
 var dungeon_days: Dictionary = {}
 var view: ClientView
+## Ефекти бою (П-33/П-272) — лише на клієнті.
+var fx: Fx = null
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
 ## Збереження персонажів через PostgREST (крок 3). Є лише на сервері.
@@ -160,6 +162,11 @@ func _ready() -> void:
 			summons.request(me, what)
 	runes = Runes.new(data.skills, data.professions)
 	view = ClientView.new(creatures, self, link)
+	if not Net.is_server:
+		fx = Fx.new()
+		fx.creatures = creatures
+		fx.skills = data.skills
+		add_child(fx)
 	dungeons = Dungeons.new()
 	dungeons.name = "Підземелля"
 	add_child(dungeons)
@@ -3616,6 +3623,8 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 		a.start_cast(name, seconds, 0)
 	if view != null:
 		view.cast_started(id)
+	if fx != null:
+		fx.cast_start(id, name, seconds)
 
 
 ## Дочитав або збили.
@@ -3628,6 +3637,16 @@ func client_cast_end(id: int, done: bool) -> void:
 		a.stop_cast()
 	if view != null:
 		view.cast_ended(id)
+	if fx != null:
+		fx.cast_end(id, done)
+
+
+## Скіл спрацював: хто, який (ключ) і кого зачепило — лише для ефектів
+## (П-272). Приходить ПЕРЕД числами шкоди того самого скіла.
+@rpc("authority", "call_remote", "reliable")
+func client_skill(id: int, key: String, victims: Array) -> void:
+	if fx != null:
+		fx.skill_landed(id, key, victims)
 
 
 ## Мешканець відповів: вікно розмови (П-132).
@@ -3711,6 +3730,8 @@ func client_swing(id: int, armed: bool = false, gap: float = 0.0) -> void:
 func client_damage(id: int, amount: int, behind: bool) -> void:
 	if hud != null:
 		hud.damage(id, amount, behind)
+	if fx != null:
+		fx.hit(id, amount, behind)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -3718,6 +3739,8 @@ func client_died(id: int) -> void:
 	if creatures.has(id):
 		creatures[id].hp = 0
 		creatures[id].lay_down()
+	if fx != null:
+		fx.death(id)
 	if hud != null:
 		hud.set_hp(id, 0)
 		if id == multiplayer.get_unique_id():

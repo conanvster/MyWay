@@ -260,6 +260,12 @@ func _apply(me: int, a: Node, skill: Skill, level: int, victims: Array) -> void:
 	var power: float = a.stats.magical_attack() * skill.power_share(level)
 	var mend: float = a.stats.magical_attack() * skill.heal_share(level)
 	var state: Dictionary = skill.state_at(level)
+	# Ефект на клієнтах (П-272) — ДО чисел шкоди, щоб клієнт знав, що
+	# число прийшло від скіла, і не малював ще й іскри звичайного удару.
+	var hit_ids: Array = []
+	for victim: Node in victims:
+		hit_ids.append(_id_of(victim))
+	_link.to_watchers(me, &"client_skill", [me, skill.key, hit_ids])
 	for victim: Node in victims:
 		if power > 0.0:
 			_land(me, a, victim, power)

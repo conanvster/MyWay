@@ -99,7 +99,18 @@ func _go() -> void:
 						Vector3(float(c[0]), 0, float(c[2])) + back, yaw,
 						-14.0, 7.0])
 	var trail := _forest_path(land, JSON.parse_string(text))
-	if not trail.is_empty() and spots.size() == SPOTS.size():
+	# `--світло` (П5, 06.11.2026): кожне місце — п'ятьма варіантами світла й
+	# обробки кадру, щоразу +1 зміна (`_light`). Знімки — у
+	# user://світло/<місце>-<варіант>.png, кадри — в журнал.
+	var light_mode := OS.get_cmdline_user_args().has("--світло")
+	if light_mode:
+		spots = [["площа Стільна", Vector3(0, 0, 6), 0.0, -14.0, 7.0]]
+		for one: Array in SPOTS:
+			if str(one[0]) in ["гай на рівнині, з висоти людини",
+					"гори заходу, схил", "мертвий схід",
+					"гравець на межі лісу"]:
+				spots.append(one)
+	if not trail.is_empty() and (spots.size() == SPOTS.size() or light_mode):
 		spots.push_front(["у лісі на стежці, з висоти людини", trail[0],
 				trail[1], -3.0])
 		spots.push_front(["гравець на лісовій стежці", trail[0], trail[1],
@@ -162,6 +173,9 @@ func _go() -> void:
 				% [name_of, ground, fps, draws / 60.0]
 				+ "трикутників %.0f тис. · трави %d клітинок, %d купок"
 				% [tris / 60.0 / 1000.0, grass.x, grass.y])
+		if light_mode:
+			await _light_series(land, name_of)
+			continue
 		Shot.take(get_tree().root)
 		# Ім'я знімка з роздільністю в секунду: між двома має пройти
 		# більше секунди, інакше другий затре перший.
@@ -170,6 +184,57 @@ func _go() -> void:
 			await get_tree().process_frame
 	print("[місця] знімки зроблено")
 	get_tree().quit()
+
+
+const LIGHTS := ["1-зараз", "2-agx", "3-agx-ssil", "4-agx-ssil-glow",
+		"5-agx-ssil-glow-корекція"]
+var _base := {}
+
+
+## П5: той самий кадр п'ятьма варіантами, кожен додає одну зміну.
+func _light_series(land: Node, name_of: String) -> void:
+	var air: Environment = land._air
+	if _base.is_empty():
+		for key: String in ["tonemap_mode", "tonemap_exposure", "ssil_enabled",
+				"glow_enabled", "adjustment_enabled"]:
+			_base[key] = air.get(key)
+	DirAccess.make_dir_recursive_absolute("user://світло")
+	for k in LIGHTS.size():
+		_light(air, k)
+		for i in 20:
+			await get_tree().process_frame
+		var started := Time.get_ticks_usec()
+		for i in 60:
+			await get_tree().process_frame
+		var fps := 60.0 / ((Time.get_ticks_usec() - started) / 1e6)
+		await RenderingServer.frame_post_draw
+		var path := "user://світло/%s-%s.png" % [name_of.replace(" ", "_")
+				.replace(",", ""), LIGHTS[k]]
+		get_viewport().get_texture().get_image().save_png(path)
+		print("[світло] %s · %s · кадрів %.0f" % [name_of, LIGHTS[k], fps])
+	_light(air, 0)
+
+
+func _light(air: Environment, step: int) -> void:
+	for key: String in _base:
+		air.set(key, _base[key])
+	if step >= 1:
+		air.tonemap_mode = Environment.TONE_MAPPER_AGX
+		air.tonemap_exposure = 1.1
+	if step >= 2:
+		air.ssil_enabled = true
+		air.ssil_radius = 5.0
+		air.ssil_intensity = 1.0
+	if step >= 3:
+		air.glow_enabled = true
+		air.glow_intensity = 0.6
+		air.glow_bloom = 0.0
+		air.glow_hdr_threshold = 1.2
+	if step >= 4:
+		air.adjustment_enabled = true
+		air.adjustment_contrast = 1.06
+		air.adjustment_saturation = 1.1
+		air.adjustment_brightness = 1.0
 
 
 ## Місця «згори» на кожне місто й село: камера на південь від центру,

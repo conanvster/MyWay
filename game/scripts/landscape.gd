@@ -2430,6 +2430,9 @@ func _photo_pair(name_of: String) -> Array:
 		print("[краєвид] ‼ немає %s" % path)
 		_photo_ready[name_of] = []
 		return []
+	# Об'ємна крона (06.11.2026): гілки — смуги того самого фото, ярусами
+	# довкола стовбура (`_crown_volume`). Вирізаємо ДО mipmap-рівнів.
+	var volume := _crown_volume(picture)
 	picture.generate_mipmaps()
 	var wide: float = float(picture.get_width()) / float(picture.get_height())
 	# Вітер (`wind.gdshader`): він і малює картку, і гойдає її. Ножицями,
@@ -2438,7 +2441,8 @@ func _photo_pair(name_of: String) -> Array:
 	var paint := ShaderMaterial.new()
 	paint.shader = WIND
 	paint.set_shader_parameter("albedo_tex",
-			ImageTexture.create_from_image(picture))
+			ImageTexture.create_from_image(picture) if volume.is_empty()
+			else volume[1])
 	# Велике дерево гойдається менше за травинку — і за розмахом, і за
 	# темпом: у крони більше інерції.
 	# Малі — лише метрові саджанці; решта сканів — великі дерева, і
@@ -2451,7 +2455,8 @@ func _photo_pair(name_of: String) -> Array:
 	# ~0,45 м у середньому пориві, до 0,9 м у сильному.
 	paint.set_shader_parameter("sway", 0.045 if not small else 0.075)
 	paint.set_shader_parameter("speed", 1.0 if not small else 1.5)
-	var mesh := _crown_mesh(wide)
+	var mesh: ArrayMesh = _crown_mesh(wide) if volume.is_empty() \
+			else volume[0]
 	_photo_ready[name_of] = [mesh, paint, _bark_paint(paint)]
 	return _photo_ready[name_of]
 
@@ -2497,6 +2502,203 @@ static func _raw_texture(path: String, bright := 1.0) -> ImageTexture:
 		picture.adjust_bcs(bright, 1.0, 1.0)
 	picture.generate_mipmaps()
 	return ImageTexture.create_from_image(picture)
+
+
+## Об'ємна крона з фото (слово замовника 06.11.2026: «маєм деякі дерева
+## зроблені з двох зображень хрестом, необхідно переробити їх в об'ємну
+## модель з круглою-циліндричною формою»).
+##
+## З прозорості фото міряється силует: на якій висоті крона і яка вона
+## там широка. Ліва й права половини фото на `CROWN_BANDS` висотах
+## вирізаються в атлас — це гілки з справжньою хвоєю, стовбуром до
+## лівого краю. Крона — яруси гілок колом довкола осі: радіус ярусу —
+## пів ширини силуету на тій висоті, гілка — дві картки навхрест уздовж
+## себе, з легким провисанням. З будь-якого боку й згори — круглий
+## конус тієї самої ялиці чи сосни, а не хрест чи зірка. Висота — 0…1,
+## як і в старої крони: масштаб, вітер і стовбур ті самі.
+##
+## Повертає [сітка, текстура-атлас] або [], якщо силует не прочитався
+## (тоді — стара зірка).
+const CROWN_BANDS := 10
+const CROWN_WHORLS := 20
+const CROWN_BRANCHES := 6
+
+
+static func _crown_volume(picture: Image) -> Array:
+	if picture.get_format() != Image.FORMAT_RGBA8:
+		picture.convert(Image.FORMAT_RGBA8)
+	var w := picture.get_width()
+	var h := picture.get_height()
+	var small := picture.duplicate() as Image
+	var sw := 96
+	var sh := 256
+	small.resize(sw, sh, Image.INTERPOLATE_BILINEAR)
+	# Ліва й права межа силуету в кожному рядку (частки ширини).
+	var left := PackedFloat32Array()
+	var right := PackedFloat32Array()
+	left.resize(sh)
+	right.resize(sh)
+	var centres: Array[float] = []
+	for j in sh:
+		var l := -1
+		var r := -1
+		for i in sw:
+			if small.get_pixel(i, j).a > 0.1:
+				if l < 0:
+					l = i
+				r = i
+		left[j] = -1.0 if l < 0 else float(l) / sw
+		right[j] = -1.0 if r < 0 else float(r + 1) / sw
+		if l >= 0 and r - l > sw * 0.12:
+			centres.append((left[j] + right[j]) * 0.5)
+	if centres.size() < 8:
+		return []
+	centres.sort()
+	var cx: float = centres[centres.size() / 2]
+	# Крона — рядки, ширші за стовбур. y — частка висоти від низу.
+	var lo := 1.0
+	var hi := 0.0
+	var half := PackedFloat32Array()
+	half.resize(sh)
+	for j in sh:
+		var y := 1.0 - (j + 0.5) / sh
+		if left[j] < 0.0:
+			half[j] = 0.0
+			continue
+		# Радіус у частках ВИСОТИ: ширина в частках ширини × w/h.
+		half[j] = maxf(cx - left[j], right[j] - cx) * float(w) / float(h)
+		if right[j] - left[j] > 0.12:
+			lo = minf(lo, y)
+			hi = maxf(hi, y)
+	if hi - lo < 0.1:
+		return []
+	# Яруси гілок — там, де на фото гілки, а не рівними смугами: рядки з
+	# найбільшою кількістю непрозорих пікселів (у сосни 5–8 рідких ярусів,
+	# у ялини — багато густих). Рівні смуги брали по кілька ярусів разом
+	# із проміжками, і сосна зблизька ставала темною грудкою (06.11.2026).
+	var dens := PackedFloat32Array()
+	dens.resize(sh)
+	for j in sh:
+		var c := 0
+		for i in sw:
+			if small.get_pixel(i, j).a > 0.1:
+				c += 1
+		dens[j] = c
+	var soft := PackedFloat32Array()
+	soft.resize(sh)
+	var peak := 0.0
+	for j in sh:
+		var sum := 0.0
+		var cnt := 0
+		for d in range(-2, 3):
+			if j + d >= 0 and j + d < sh:
+				sum += dens[j + d]
+				cnt += 1
+		soft[j] = sum / cnt
+		var y := 1.0 - (j + 0.5) / sh
+		if y >= lo and y <= hi:
+			peak = maxf(peak, soft[j])
+	var layers: Array[float] = []   # y ярусів (частки висоти)
+	for j in range(3, sh - 3):
+		var y := 1.0 - (j + 0.5) / sh
+		if y < lo or y > hi or soft[j] < peak * 0.25:
+			continue
+		var top := true
+		for d in range(-4, 5):
+			if j + d >= 0 and j + d < sh and soft[j + d] > soft[j]:
+				top = false
+		if top and (layers.is_empty() or absf(layers[-1] - y) > 0.022):
+			layers.append(y)
+	if layers.size() < 5:
+		layers.clear()
+		for k in CROWN_WHORLS:
+			layers.append(lo + (k + 0.5) * (hi - lo) / CROWN_WHORLS)
+	# Між рідкими ярусами — ще по одному тоншому, щоб не світились діри.
+	layers.sort()
+	var filled: Array[float] = []
+	for k in layers.size():
+		filled.append(layers[k])
+		if k + 1 < layers.size() and layers[k + 1] - layers[k] > 0.07:
+			filled.append((layers[k] + layers[k + 1]) * 0.5)
+	layers = filled
+	var count := layers.size()
+	var band := clampi(int(h * 0.045), 12, 96)
+	var cw := maxi(16, int(w * 0.5))
+	var atlas := Image.create(cw, band * count * 2, false, Image.FORMAT_RGBA8)
+	var trunk_px := int(cx * w)
+	for k in count:
+		var top := clampi(int((1.0 - layers[k]) * h) - band / 2, 0, h - band)
+		var from_left := picture.get_region(Rect2i(maxi(0, trunk_px - cw), top,
+				mini(cw, trunk_px), band))
+		from_left.flip_x()
+		atlas.blit_rect(from_left, Rect2i(Vector2i.ZERO, from_left.get_size()),
+				Vector2i(0, (k * 2) * band))
+		var from_right := picture.get_region(Rect2i(trunk_px, top,
+				mini(cw, w - trunk_px), band))
+		atlas.blit_rect(from_right, Rect2i(Vector2i.ZERO,
+				from_right.get_size()), Vector2i(0, (k * 2 + 1) * band))
+	atlas.generate_mipmaps()
+	var thick := float(band) / float(h)
+	var rows := count * 2
+
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var centre := Vector3(0, (lo + hi) * 0.5, 0)
+	for n in count:
+		var y: float = layers[n]
+		var j := clampi(int((1.0 - y) * sh), 0, sh - 1)
+		var reach := maxf(half[j], thick * 0.6)
+		for b in CROWN_BRANCHES:
+			var turn := n * 2.39996 + b * TAU / CROWN_BRANCHES \
+					+ sin(n * 7.1 + b * 3.3) * 0.25
+			var dir := Vector3(cos(turn), 0, sin(turn))
+			var root := Vector3(0, y, 0) + dir * 0.004
+			var tip := Vector3(0, y, 0) + dir * reach \
+					+ Vector3.DOWN * reach * 0.22
+			var axis := (tip - root).normalized()
+			var flat := axis.cross(Vector3.UP).normalized()
+			var up := flat.cross(axis).normalized()
+			var row := n * 2 + (b % 2)
+			var v0 := float(row) / rows
+			var v1 := float(row + 1) / rows
+			# Обидві картки — ±29° від вертикалі: горизонтальна збоку під
+			# гострим кутом розмазувала фото «дошками» (знімок 06.11.2026).
+			for across: Vector3 in [(up + flat * 0.55).normalized(),
+					(up - flat * 0.55).normalized()]:
+				var s0 := across * thick * 0.5
+				var quad := [root + s0, tip + s0, tip - s0, root - s0]
+				var uv := [Vector2(0, v0), Vector2(1, v0), Vector2(1, v1),
+						Vector2(0, v1)]
+				for i: int in [0, 1, 2, 0, 2, 3]:
+					var p: Vector3 = quad[i]
+					var bent := (p - centre).normalized()
+					st.set_normal((bent * 0.75 + Vector3.UP * 0.45).normalized())
+					st.set_uv(uv[i])
+					st.add_vertex(p)
+	var mesh := st.commit()
+	_trunk_into(mesh)
+	return [mesh, ImageTexture.create_from_image(atlas)]
+
+
+## Стовбур із корою — другою поверхнею сітки крони.
+static func _trunk_into(mesh: ArrayMesh) -> void:
+	var bark := SurfaceTool.new()
+	bark.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sides := 7
+	for s in sides:
+		var a0 := TAU * s / sides
+		var a1 := TAU * (s + 1) / sides
+		var ring := [[a0, 0.0, 0.012, float(s)], [a1, 0.0, 0.012, s + 1.0],
+				[a1, 0.6, 0.003, s + 1.0], [a0, 0.6, 0.003, float(s)]]
+		for i: int in [0, 1, 2, 0, 2, 3]:
+			var one: Array = ring[i]
+			var a: float = one[0]
+			bark.set_normal(Vector3(cos(a), 0.15, sin(a)).normalized())
+			bark.set_uv(Vector2(float(one[3]) / sides, float(one[1]) * 12.0))
+			bark.add_vertex(Vector3(cos(a) * float(one[2]), one[1],
+					sin(a) * float(one[2])))
+	bark.generate_tangents()
+	bark.commit(mesh)
 
 
 ## Крона з ШЕСТИ напівплощин навколо осі й стовбур із корою.

@@ -9,7 +9,7 @@ extends Node
 ## після перезапуску ставить ті самі рівні без уже вбитих босів.
 ##
 ## Ганяти так (сценою, бо потрібні автозавантаження):
-##     godot --headless --path game res://scenes/dungeon_levels.tscn -- --світ1
+##     godot --headless --path game res://scenes/dungeon_levels.tscn -- --світ2
 
 const MAIN := preload("res://scenes/main.tscn")
 

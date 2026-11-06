@@ -12,7 +12,7 @@ extends Node
 ##
 ## Ганяти так (сценою, бо потрібні автозавантаження):
 ##     godot --headless --path game res://scenes/rescue.tscn
-##     godot --headless --path game res://scenes/rescue.tscn -- --світ1
+##     godot --headless --path game res://scenes/rescue.tscn -- --світ2
 
 const MAIN := preload("res://scenes/main.tscn")
 

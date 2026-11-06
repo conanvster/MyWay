@@ -4,8 +4,10 @@ extends SceneTree
 ##     godot --headless --path game --script res://probes/wardens.gd
 ##
 ## Не «начебто б'ються», а числа: хто кого взяв на загрозу, скільки
-## метрів до нападника, де вартовий зупинився, кому відмовлено. Світ 1
-## (`map.json`): Стільна в (0, 0) радіусом 26, вартовий Тиміш на (10, 0, 1).
+## метрів до нападника, де вартовий зупинився, кому відмовлено. Світ 2
+## (з 06.11.2026 — усі перевірки на ньому): поселень і постів стільки,
+## скільки в `map2.json`; вартовий столиці стоїть біля головної брами,
+## тож гравець для перевірок стає поруч із постом, а не в центрі.
 
 const MOB := preload("res://scenes/mob.tscn")
 const AVATAR := preload("res://scenes/avatar.tscn")
@@ -38,7 +40,7 @@ func _go() -> void:
 	floor.add_child(plane)
 	root.add_child(floor)
 
-	GameData.chosen_map = GameData.MAP_PATH
+	GameData.chosen_map = GameData.MAP2_PATH
 	_data = GameData.new()
 	_data.load_all()
 	_combat = Combat.new(_creatures)
@@ -52,12 +54,15 @@ func _go() -> void:
 	_combat.on_kill = func(_v_id: int, victim: Node, killer: int) -> void:
 		_wardens.on_kill(victim, killer)
 
-	print("\n— поселення й пости (світ 1) —")
+	print("\n— поселення й пости (світ 2) —")
+	var places: int = _data.map.get("міста", []).size() \
+			+ _data.map.get("села", []).size()
 	var town: Dictionary = _wardens.settlements[0]
 	print("    поселень %d; у «%s» мешканців %s, постів %d"
 			% [_wardens.settlements.size(), town["назва"],
 			   town["мешканці"], town["пости"].size()])
-	_expect("4 поселення, у кожному пост", _wardens.settlements.size() == 4
+	_expect("%d поселень, у кожному пост" % places,
+			_wardens.settlements.size() == places
 			and _wardens.settlements.all(func(s: Dictionary) -> bool:
 				return s["пости"].size() == 1))
 	_expect("вартовий не серед мешканців (номер 3 — Тиміш)",
@@ -70,7 +75,7 @@ func _go() -> void:
 	print("    поставлено %d; вартовий %d: вид %d, рівень %d, здоров'я %d, "
 			% [placed, guard_id, guard.kind, guard.level, guard.hp]
 			+ "повідець %.1f м" % guard.leash)
-	_expect("вартових 4, вид 900", placed == 4
+	_expect("вартових %d, вид 900" % places, placed == places
 			and guard.kind == Wardens.GUARD_KIND)
 	_expect("здоров'я вартового з даних (сила/витр. 100) = 640",
 			guard.stats.max_hp() == 640)
@@ -86,7 +91,11 @@ func _go() -> void:
 	await process_frame
 	_creatures[1] = hero
 	hero.level = 40
-	hero.place_at(Vector3(-6, 1, 0), 0.0)
+	# Поруч із постом, на 5 м ближче до центру: охорона стоїть біля брами.
+	var post: Vector3 = guard.home
+	var inward := Vector3(-post.x, 0, -post.z).normalized()
+	var near_post := Vector3(post.x, 1, post.z) + inward * 5.0
+	hero.place_at(near_post, 0.0)
 	var hero_hp: int = hero.hp
 	for i in 10:
 		await _tick_all()
@@ -136,10 +145,17 @@ func _go() -> void:
 	guard.target_id = 0
 	var farthest := 0.0
 	hero.hp = 100000
+	# Тікає від центру назовні, за межу охорони + 12 м (у світі 2 межа —
+	# радіус муру + повідець, ~77 м; до 06.11.2026 тут було «до x = 70»).
+	var run_to: float = town["радіус"] + 10.0 + 12.0
+	var outward := Vector3(post.x, 0, post.z).normalized()
 	for i in 60 * 30:
 		var p: Vector3 = hero.global_position
-		if p.x < 70.0:
-			hero.place_at(Vector3(p.x + 0.12, 1, 0), 0.0)
+		if Vector2(p.x, p.z).length() < run_to:
+			hero.place_at(Vector3(p.x, 1, p.z) + outward * 0.12, 0.0)
+		# Тут перевіряється повідець, не шкода: у світі 2 погоня довша (від
+		# брами до межі), і гравець гинув — тоді й решта проби не мала сенсу.
+		hero.hp = hero.stats.max_hp()
 		await _tick_all()
 		var off := Vector2(guard.global_position.x, guard.global_position.z) \
 				.length()
@@ -154,11 +170,15 @@ func _go() -> void:
 			guard.home) < 3.0 or guard.target_id == 0)
 
 	print("\n— повернувся в поселення → знову полюють —")
-	hero.place_at(Vector3(-5, 1, 0), 0.0)
+	hero.place_at(near_post, 0.0)
 	t = 0.0
 	while t < 3.0 and guard.target_id != 1:
 		await _tick_all()
 		t += STEP
+	print("    вартовий за %.1f м від поста, за %.1f м від гравця, ціль %d"
+			% [guard.global_position.distance_to(guard.home),
+			   guard.global_position.distance_to(hero.global_position),
+			   guard.target_id])
 	_expect("вартовий узяв убивцю за %.1f с" % t, guard.target_id == 1)
 
 	print("\n— убитий вартовий: без нагороди, у «чорний список» —")
@@ -170,6 +190,9 @@ func _go() -> void:
 	await _tick_all()
 	hero.target_id = victim_town["вартові"][0]
 	hero.attack_ready_in = 0.0
+	print("    гравець за %.1f м від вартового «%s», здоров'я гравця %d"
+			% [hero.global_position.distance_to(g2.global_position),
+			   victim_town["назва"], hero.hp])
 	_combat.attack(1)
 	_expect("вартовий загинув", not g2.is_alive())
 	_expect("повага не прийшла (%d → %d)" % [respect_before, hero.respect],

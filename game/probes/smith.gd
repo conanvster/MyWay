@@ -12,7 +12,7 @@ extends Node
 ## сходяться на тисячах кидків, ремінь відчиняє смуги панелі, бос дає
 ## есенцію.
 ##
-##     godot --headless --path game res://scenes/smith.tscn -- --світ1
+##     godot --headless --path game res://scenes/smith.tscn -- --світ2
 
 const MAIN := preload("res://scenes/main.tscn")
 const SWORD := "меч з кори дуба"

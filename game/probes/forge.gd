@@ -24,7 +24,7 @@ func _expect(what: String, ok: bool) -> void:
 
 func _go() -> void:
 	await process_frame
-	GameData.chosen_map = GameData.MAP_PATH
+	GameData.chosen_map = GameData.MAP2_PATH
 	var data := GameData.new()
 	data.load_all()
 	var smith: Smith = data.smith

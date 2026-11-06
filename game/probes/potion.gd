@@ -3,7 +3,7 @@ extends Node
 ## додай в магазин, його можна додати в панель і використати під час бою,
 ## зілля піднімає 500 хп»).
 ##
-##     godot --headless --path game res://scenes/potion.tscn -- --світ1
+##     godot --headless --path game res://scenes/potion.tscn -- --світ2
 
 const MAIN := preload("res://scenes/main.tscn")
 const POTION := "зілля лікування"

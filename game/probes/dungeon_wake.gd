@@ -3,7 +3,7 @@ extends Node
 ## сплять, доки поруч немає гравця). Журнал сервера 19.09.2026: гравець
 ## у відновленому з бази підземеллі, «монстрів живих 0».
 ##
-##     godot --headless --path game res://scenes/dungeon_wake.tscn -- --світ1
+##     godot --headless --path game res://scenes/dungeon_wake.tscn -- --світ2
 
 const MAIN := preload("res://scenes/main.tscn")
 

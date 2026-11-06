@@ -1194,7 +1194,7 @@ func _demo_shop(delta: float) -> bool:
 	var me: Node = _me()
 	if me.global_position.distance_to(seller.global_position) \
 			> Shop.TALK_RANGE * 0.85:
-		me.walk_to = seller.global_position
+		me.walk_to = _towards_resident(me, seller)
 		return true
 	me.walk_to = Vector3.ZERO
 
@@ -1224,6 +1224,26 @@ func _demo_shop(delta: float) -> bool:
 			_shop_done = true
 			print("[крамар] показ закінчив торгувати")
 	return true
+
+
+## Куди йти до мешканця. У світі 2 він стоїть перед своєю будівлею,
+## обличчям до площі, і навпростець із вулиці на нього стоять доми —
+## показ упирався в стіну (06.11.2026). Тому спершу на точку перед ним на
+## площі (6 м уздовж його погляду), а вже звідти — до нього.
+func _towards_resident(me: Node, who: Node3D) -> Vector3:
+	var front := who.global_transform.basis.z
+	front.y = 0.0
+	if front.length() < 0.01:
+		return who.global_position
+	var spot := who.global_position + front.normalized() * 6.0
+	var to_me: Vector3 = me.global_position - who.global_position
+	to_me.y = 0.0
+	# Уже перед ним (у секторі його погляду) — прямо до нього.
+	if to_me.length() < 7.0 and to_me.normalized().dot(front.normalized()) > 0.5:
+		return who.global_position
+	if me.global_position.distance_to(spot) < 1.5:
+		return who.global_position
+	return spot
 
 
 ## Показ обміну. Повертає true, поки зайнятий ним (полювання стоїть).

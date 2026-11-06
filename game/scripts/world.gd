@@ -349,6 +349,21 @@ func _preload_step(delta: float) -> void:
 ## клієнт до нього не дотягнеться.
 const RANGE_KIND := 2
 const RANGE_STEPS: Array[float] = [5.0, 14.0, 23.0]
+## Куди від місця появи стоять зайці полігона: до першої брами столиці
+## (вулиця), або +x, коли мурів у світі немає.
+func _range_direction() -> Vector2:
+	for town: Dictionary in data.map.get("міста", []):
+		var c: Array = town.get("центр", [1e9, 0, 1e9])
+		if Vector2(float(c[0]), float(c[2])).length() > 1.0:
+			continue
+		var gates: Array = town.get("брами", [])
+		if gates.is_empty():
+			break
+		var g: Array = gates[0]["де"]
+		return Vector2(float(g[0]), float(g[1])).normalized()
+	return Vector2.RIGHT
+
+
 ## Заєць полігона встає знову на своєму місці (В-5). Без цього показ
 ## крамаря, що полює на 30 монет, залежав від везіння: з трьох зайців
 ## гроші інколи падали лише з одного (заміряно 21.09.2026: 28 і 24
@@ -361,8 +376,12 @@ var _range_wait: Dictionary = {}
 
 func _range() -> void:
 	_range_on = true
+	# Уздовж вулиці до першої брами: у світі 2 довкола площі стоять
+	# будівлі (ратуша, церква…), а вулиця завжди вільна. Без мурів
+	# (світ 1) — уздовж +x, як було.
+	var along := _range_direction()
 	for i in RANGE_STEPS.size():
-		var at := Vector3(RANGE_STEPS[i], 0.0, 0.0)
+		var at := Vector3(along.x, 0.0, along.y) * RANGE_STEPS[i]
 		at.y = ground_at(at.x, at.z) + 1.0
 		var mob: Node = spawn(-(i + 1), at)
 		mob.setup(at, RANGE_KIND, false, data.for_kind(RANGE_KIND))
@@ -384,7 +403,8 @@ func _tick_range(delta: float) -> void:
 		if float(_range_wait[id]) > 0.0:
 			continue
 		_range_wait.erase(id)
-		var at := Vector3(RANGE_STEPS[i], 0.0, 0.0)
+		var along := _range_direction()
+		var at := Vector3(along.x, 0.0, along.y) * RANGE_STEPS[i]
 		at.y = ground_at(at.x, at.z) + 1.0
 		var mob: Node = spawn(id, at)
 		mob.setup(at, RANGE_KIND, false, data.for_kind(RANGE_KIND))

@@ -10,8 +10,8 @@ extends Node
 ## далека річ не піднімається, що строк минає, що показ малює кожну річ
 ## спрощеним зображенням і прибирає підняту.
 ##
-##     godot --headless --path game res://scenes/ground.tscn -- --світ1
-##     godot --path game res://scenes/ground.tscn -- --світ1 \
+##     godot --headless --path game res://scenes/ground.tscn -- --світ2
+##     godot --path game res://scenes/ground.tscn -- --світ2 \
 ##             --знімок <файл.png>
 
 const MAIN := preload("res://scenes/main.tscn")

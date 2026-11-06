@@ -2683,6 +2683,83 @@ func river_y(x: float, z: float, level: float) -> float:
 	return minf(level, surface_y(x, z) + RIVER_ABOVE)
 
 
+## Відрізки річок у клітинах по `RIVER_CELL` м — щоб на десятки тисяч
+## рослин не перебирати всі 1500 відрізків.
+const RIVER_CELL := 32.0
+const RIVER_DRY := 2.0      ## від краю води до стовбура щонайменше, м
+var _river_cells: Dictionary = {}
+var _river_cells_ready := false
+
+
+func _river_index() -> void:
+	_river_cells_ready = true
+	_river_cells.clear()
+	for stream: Dictionary in data.get("русла", []):
+		var pts: Array = stream.get("точки", [])
+		for k in range(pts.size() - 1):
+			var a := Vector2(float(pts[k][0]), float(pts[k][1]))
+			var b := Vector2(float(pts[k + 1][0]), float(pts[k + 1][1]))
+			var half := maxf(float(pts[k][3]), float(pts[k + 1][3])) * 0.5
+			var reach := half + RIVER_DRY
+			var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * reach
+			var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * reach
+			for cx in range(floori(lo.x / RIVER_CELL), floori(hi.x / RIVER_CELL) + 1):
+				for cz in range(floori(lo.y / RIVER_CELL),
+						floori(hi.y / RIVER_CELL) + 1):
+					_river_cells.get_or_add(Vector2i(cx, cz), []).append(
+							[a, b, float(pts[k][3]) * 0.5,
+							float(pts[k + 1][3]) * 0.5])
+
+
+## Чи точка у воді річки (з запасом `extra` за край). Різнотрав'я
+## (`meadow.gd`) бере звідси, щоб травинки не стирчали з води.
+func in_river(x: float, z: float, extra: float = 0.0) -> bool:
+	if not _river_cells_ready:
+		_river_index()
+	var p := Vector2(x, z)
+	for seg: Array in _river_cells.get(Vector2i(floori(x / RIVER_CELL),
+			floori(z / RIVER_CELL)), []):
+		var a: Vector2 = seg[0]
+		var b: Vector2 = seg[1]
+		var close := Geometry2D.get_closest_point_to_segment(p, a, b)
+		var t := close.distance_to(a) / maxf(0.01, a.distance_to(b))
+		if close.distance_to(p) < lerpf(seg[2], seg[3], t) + extra:
+			return true
+	return false
+
+
+## Точка поза водою: якщо вона в річці чи ближче `RIVER_DRY` до краю —
+## зсув перпендикулярно від русла на берег, висота — земля там.
+func _off_river(at: Vector3) -> Vector3:
+	if not _river_cells_ready:
+		_river_index()
+	if _river_cells.is_empty():
+		return at
+	var p := Vector2(at.x, at.z)
+	var cell := Vector2i(floori(p.x / RIVER_CELL), floori(p.y / RIVER_CELL))
+	for pass_no in 3:
+		var moved := false
+		for seg: Array in _river_cells.get(cell, []):
+			var a: Vector2 = seg[0]
+			var b: Vector2 = seg[1]
+			var close := Geometry2D.get_closest_point_to_segment(p, a, b)
+			var t := close.distance_to(a) / maxf(0.01, a.distance_to(b))
+			var need := lerpf(seg[2], seg[3], t) + RIVER_DRY
+			var off := p - close
+			if off.length() >= need:
+				continue
+			var away := off.normalized() if off.length() > 0.01 \
+					else (b - a).normalized().orthogonal()
+			p = close + away * (need + 0.2)
+			moved = true
+		if not moved:
+			break
+		cell = Vector2i(floori(p.x / RIVER_CELL), floori(p.y / RIVER_CELL))
+	if p.x == at.x and p.y == at.z:
+		return at
+	return Vector3(p.x, height_at(p.x, p.y), p.y)
+
+
 func _forest() -> void:
 	var many: Array = data.get("ліси", [])
 	if many.is_empty():
@@ -2752,6 +2829,12 @@ func _one_forest(wood: Dictionary) -> void:
 func _place_tree(at: Vector3, height: float, bark: String, leaves: String,
 		model: String, spin: float, kind: String = "дерево",
 		size: float = 0.0) -> void:
+	# У воді не росте: переносимо на берег (слово замовника 06.11.2026:
+	# «перевір, чи немає в нас дерев у воді … перенеси дерева на суходол»).
+	# Тут, а не в `_greenery`: випадковість уже витрачена, тож вигляд
+	# решти лісу не зсувається. Камінь у руслі лишається — природно.
+	if kind != "камінь":
+		at = _off_river(at)
 	var key := _patch_at(at.x, at.z)
 	var spec := {"at": at, "height": height, "bark": bark, "leaves": leaves,
 			"model": model, "spin": spin, "вид": kind, "розмір": size}

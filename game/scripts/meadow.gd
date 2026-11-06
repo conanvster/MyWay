@@ -184,6 +184,9 @@ func _build(key: Vector2i, at: Vector2) -> void:
 			var y := _land.surface_y(x, z)
 			if y < _sea + 0.35 or _land.in_yard(x, z):
 				continue
+			# У річці трава не росте (06.11.2026: травинки стирчали з води).
+			if _land.in_river(x, z, 0.3):
+				continue
 			var patch := clampf(_flowers.get_noise_2d(x, z) * 1.6 + 0.35,
 					0.0, 1.0)
 			var bloom := cover.b * patch * 0.28 + verge * 0.22

@@ -36,7 +36,9 @@ var _look_box: VBoxContainer
 var _pick_line: HBoxContainer
 var _look_grid: GridContainer
 var _look_note: Label
-var _variant: OptionButton
+## Картки варіантів — кадри з розділу «Раси» вікі.
+var _cards: HBoxContainer
+var _card_buttons: Array[Button] = []
 var _stage: SubViewport
 var _turntable: Node3D
 var _preview: SkinnedModel
@@ -84,12 +86,11 @@ func setup() -> void:
 	_new_name = _field(_pick_box, "ім'я нового персонажа", false)
 	_race = _choice(_pick_box, ["людина", "орк", "ельф"])
 	_sex = _choice(_pick_box, ["чоловік", "жінка"])
-	_variant = _choice(_pick_box, [])
-	_race.item_selected.connect(func(_i: int) -> void: _refresh_preview())
-	_sex.item_selected.connect(func(_i: int) -> void: _refresh_preview())
-	_variant.item_selected.connect(func(i: int) -> void:
-			_chosen = {"варіант": i + 1}
-			_refresh_preview())
+	# Інша раса чи стать — той самий номер варіанта, але вже з її кадру.
+	_race.item_selected.connect(func(_i: int) -> void:
+			_pick_variant(int(_chosen.get("варіант", 1))))
+	_sex.item_selected.connect(func(_i: int) -> void:
+			_pick_variant(int(_chosen.get("варіант", 1))))
 	_build_look_box()
 	_new_name.text_submitted.connect(func(_t: String) -> void: _create_now())
 	_create = _button(_pick_box, "Створити", func() -> void: _create_now())
@@ -195,7 +196,7 @@ func show_characters(list: Array) -> void:
 	_pick_box.visible = true
 	_look_box.visible = true
 	if _preview == null:
-		_refresh_preview()
+		_pick_variant(1)
 	_why.text = "" if not list.is_empty() else "персонажів ще немає — створи"
 	_create.disabled = false
 	_new_name.text = ""
@@ -264,6 +265,23 @@ func _build_look_box() -> void:
 	side.custom_minimum_size = Vector2(LOOK_WIDE, 0)
 	side.add_theme_constant_override("separation", 8)
 	row.add_child(side)
+	_cards = HBoxContainer.new()
+	_cards.add_theme_constant_override("separation", 6)
+	side.add_child(_cards)
+	var group := ButtonGroup.new()
+	for v in Appearance.VARIANTS:
+		var card := Button.new()
+		card.toggle_mode = true
+		card.button_group = group
+		card.custom_minimum_size = Vector2(94, 176)
+		card.expand_icon = true
+		card.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+		card.text = "варіант %d" % (v + 1)
+		card.add_theme_font_size_override("font_size", 12)
+		card.pressed.connect(func() -> void: _pick_variant(v + 1))
+		_cards.add_child(card)
+		_card_buttons.append(card)
 	_look_grid = GridContainer.new()
 	_look_grid.columns = 2
 	_look_grid.add_theme_constant_override("h_separation", 8)
@@ -285,13 +303,12 @@ func _process(delta: float) -> void:
 func _refresh_preview() -> void:
 	var race := _race.get_item_text(_race.selected)
 	var sex := _sex.get_item_text(_sex.selected)
-	var ready: int = Appearance.ready_variants(race, sex)
-	var keep := int(_chosen.get("варіант", 1))
-	_variant.clear()
+	var keep := clampi(int(_chosen.get("варіант", 1)), 1, Appearance.VARIANTS)
 	for v in Appearance.VARIANTS:
-		_variant.add_item("варіант %d%s" % [v + 1,
-				"" if v < ready else " — ще не зроблено"])
-	_variant.select(clampi(keep - 1, 0, Appearance.VARIANTS - 1))
+		var pic := Appearance.picture(race, sex, v + 1)
+		_card_buttons[v].icon = load(pic) if ResourceLoader.exists(pic) \
+				else null
+		_card_buttons[v].set_pressed_no_signal(v + 1 == keep)
 	if _preview != null:
 		_preview.queue_free()
 		_preview = null
@@ -307,8 +324,6 @@ func _refresh_preview() -> void:
 	if scan == "":
 		_look_note.text = "Сканованої моделі «%s, %s» ще немає — показано " \
 				% [race, sex] + "просту; вибір зовнішності з'явиться з нею."
-	elif keep > ready:
-		_look_note.text = "Варіанта %d ще немає — показано варіант 1." % keep
 	else:
 		_look_note.text = ""
 	_fill_choices(scan != "")
@@ -340,7 +355,24 @@ func _fill_choices(scanned: bool) -> void:
 				Appearance.SKIN)
 		_choice_row("Губи", pairs.call(Appearance.LIPS), "губи", Appearance.LIPS)
 		_choice_row("Підводка", pairs.call(Appearance.LINER), "підводка")
+	var shape_titles := {"ніс": "Ніс", "губи_форма": "Губи, форма",
+			"очі_форма": "Очі, форма", "вуха": "Вуха"}
+	for key: String in Appearance.SHAPES:
+		var forms: Array = o["риси"].get(Appearance.SHAPES[key], [])
+		if forms.is_empty():
+			continue
+		var items: Array = [["як є", ""]]
+		for f: String in forms:
+			items.append([f, f])
+		_choice_row(shape_titles[key], items, key)
 	_preview.customize(Appearance.to_look(_chosen))
+
+
+## Картка варіанта: зовнішність із кадру вікі замість попереднього вибору.
+func _pick_variant(variant: int) -> void:
+	_chosen = Appearance.preset(_race.get_item_text(_race.selected),
+			_sex.get_item_text(_sex.selected), variant)
+	_refresh_preview()
 
 
 ## Рядок сітки: підпис і список. `palette` — щоб показати зразок кольору.

@@ -41,18 +41,26 @@ func _go() -> void:
 	var cases := [
 		["ельф", "жінка", {"зачіска": "коса", "волосся": "рудий",
 				"очі": "зелені"}],
+		["ельф", "жінка", {}, 2],
+		["людина", "жінка", {}, 3],
 		["людина", "жінка", {"зачіска": "каре", "волосся": "чорний",
 				"очі": "блакитні", "шкіра": "смаглява"}],
 		["орк", "жінка", {"зачіска": "коси", "волосся": "сивий",
 				"очі": "бурштинові"}],
+		["орк", "жінка", {}, 3],
 		["людина", "чоловік", {}],
 	]
 	for c: Array in cases:
 		screen._race.select(["людина", "орк", "ельф"].find(c[0]))
 		screen._sex.select(["чоловік", "жінка"].find(c[1]))
-		screen._chosen = {"варіант": 1}
+		screen._pick_variant(int(c[3]) if c.size() > 3 else 1)
 		screen._chosen.merge(c[2], true)
 		screen._refresh_preview()
+		_expect("картки: 3 кадри вікі, натиснута %d" % screen._chosen["варіант"],
+				screen._card_buttons.all(func(b: Button) -> bool:
+					return b.icon != null)
+				and screen._card_buttons[int(screen._chosen["варіант"]) - 1]
+					.button_pressed)
 		for i in 20:
 			await process_frame
 		var rows := screen._look_grid.get_child_count() / 2
@@ -60,6 +68,11 @@ func _go() -> void:
 		print("\n— %s, %s —" % [c[0], c[1]])
 		print("    зачіски моделі: %s; рядків вибору: %d; примітка: «%s»"
 				% [opts["зачіски"], rows, screen._look_note.text])
+		if c.size() > 3:
+			var want: Dictionary = Appearance.preset(c[0], c[1], c[3])
+			_expect("варіант %d = кадр вікі: %s" % [c[3], want],
+					screen._chosen == want)
+			c[2] = want
 		if c[2].is_empty():
 			_expect("без скану — вибору немає, примітка є",
 					rows == 0 and screen._look_note.text != "")
@@ -75,8 +88,8 @@ func _go() -> void:
 					% [c[2]["зачіска"], shown],
 					shown == "Волосся-" + str(c[2]["зачіска"]))
 		await RenderingServer.frame_post_draw
-		root.get_texture().get_image().save_png("%s/%s-%s.png"
-				% [_dir, c[0], c[1]])
+		root.get_texture().get_image().save_png("%s/%s-%s-%d.png"
+				% [_dir, c[0], c[1], screen._chosen["варіант"]])
 		screen._new_name.text = "Проба-" + c[0]
 		screen._create_now()
 		screen._create.disabled = false
@@ -84,7 +97,8 @@ func _go() -> void:
 	for row: Array in sent:
 		var clean := Appearance.clean(row[3])
 		print("    %s %s %s → %s" % [row[0], row[1], row[2], clean])
-	_expect("усі 4 створення пішли з зовнішністю", sent.size() == 4)
+	_expect("усі %d створень пішли з зовнішністю" % cases.size(),
+			sent.size() == cases.size())
 	_expect("сервер не пускає вигаданий колір",
 			not Appearance.clean({"волосся": "золотий", "варіант": 9})
 				.has("волосся")

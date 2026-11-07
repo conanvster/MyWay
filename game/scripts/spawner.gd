@@ -131,6 +131,11 @@ func tick(delta: float) -> void:
 			respawn(i)
 
 
+## Підсилення поверху дерева-велета на самому монстрі: [рівень, множник].
+## Потрібне, щоб перечитані числа виду (`apply_tuning`) не скинули його.
+const LIFT := &"giant_boost"
+
+
 ## Монстр з'являється у випадковій точці своєї зони (П-66).
 ## Новий номер монстра поза зонами — для вартових поселень (П-262):
 ## номери мусять не перетинатися з тими, що роздає сама поява.
@@ -154,10 +159,19 @@ func respawn(slot: int) -> int:
 	# будь-якого розходження; монстр падає вниз сам (гравітація вже є в
 	# `server_step`) і сідає точно на видиму поверхню, а не в ґрунт чи над
 	# ним.
-	if _world != null and _world.has_method("ground_at"):
+	if zone.on_floor:
+		# Поверх дерева-велета: рельєф під ним — на десятки метрів нижче.
+		at.y = zone.floor_y + 1.0
+	elif _world != null and _world.has_method("ground_at"):
 		at.y = _world.ground_at(at.x, at.z) + 6.0
+	var tuning := _data.for_kind(zone.kind)
+	var lifted := zone.level_set > 0 or zone.boost != 1.0
+	if lifted:
+		tuning = GiantTree.boosted(tuning, zone.level_set, zone.boost)
 	var m: Node = _world.spawn(id, at)
-	m.setup(at, zone.kind, zone.aggressive, _data.for_kind(zone.kind))
+	m.setup(at, zone.kind, zone.aggressive, tuning)
+	if lifted:
+		m.set_meta(LIFT, [zone.level_set, zone.boost])
 	m.is_boss = zone.boss
 	# Штраф світу за незачищені підземелля (Ф7) — і на тих, хто
 	# з'являється вже після нього.
@@ -215,7 +229,11 @@ func _wake_or_sleep() -> void:
 	for zone: MobZone in _zones:
 		var at := zone.global_position
 		var near := INF
+		var stacked := not is_nan(zone.floor_y)
 		for p: Vector3 in players:
+			# Поверх дерева: будить лише той, хто на цьому поверсі.
+			if stacked and (p.y < zone.floor_y - 2.0 or p.y > zone.ceil_y):
+				continue
 			near = minf(near, Vector2(p.x - at.x, p.z - at.z).length())
 		if near < WAKE_RANGE:
 			_quiet[zone] = 0.0
@@ -274,6 +292,10 @@ func apply_tuning() -> int:
 		if id >= 0:
 			continue
 		var m: Node = _creatures[id]
-		m.apply_tuning(_data.for_kind(m.kind))
+		var tuning := _data.for_kind(m.kind)
+		if m.has_meta(LIFT):
+			var lift: Array = m.get_meta(LIFT)
+			tuning = GiantTree.boosted(tuning, int(lift[0]), float(lift[1]))
+		m.apply_tuning(tuning)
 		touched += 1
 	return touched

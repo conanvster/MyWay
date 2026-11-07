@@ -1204,6 +1204,38 @@ func leave_dungeon(id: int) -> void:
 	link.notice(id, "повернувся до святині")
 
 
+## Перейти на поверх вище чи нижче в дереві-велеті (07.11.2026).
+## Перевіряє сервер: стоїть біля саме цього переходу, на його поверсі.
+@rpc("any_peer", "call_remote", "reliable")
+func ask_tree_step(tree_at: int, step: int, up: bool) -> void:
+	if not Net.is_server:
+		return
+	tree_step(multiplayer.get_remote_sender_id(), tree_at, step, up)
+
+
+func tree_step(id: int, tree_at: int, step: int, up: bool) -> void:
+	var a: Node = creatures.get(id)
+	var land: Node = get_node_or_null("Landscape")
+	if a == null or not a.is_alive() or land == null \
+			or not land.has_method("giant_trees"):
+		return
+	var trees: Array[GiantTree] = land.giant_trees()
+	if tree_at < 0 or tree_at >= trees.size():
+		return
+	var tree := trees[tree_at]
+	var here: Array = tree.step_at(a.global_position)
+	if here.is_empty() or int(here[0]) != step or bool(here[1]) != up:
+		link.notice(id, "перехід задалеко")
+		return
+	a.teleport_to(tree.arrival(step, up), a.facing)
+	link.to_watchers(id, &"client_place", [id, a.global_position, a.facing])
+	link.to_one(id, &"client_place", [id, a.global_position, a.facing])
+	var k: int = int(tree.steps[step]["з"]) + (1 if up else 0)
+	link.notice(id, "%s · поверх %d з %d · рівень %d · ×%.1f"
+			% [tree.title, k + 1, tree.radii.size(), tree.levels[k],
+			   tree.boosts[k]])
+
+
 ## Поруч із колом порталу святині, а не в ньому: інакше одразу знову
 ## «увійти?».
 func _beside_shrine(at: int) -> Vector3:
@@ -1531,12 +1563,29 @@ func _tick_grace_places() -> void:
 func _zones() -> Array:
 	var from_data: Array = data.map.get("зони появи", [])
 	if not from_data.is_empty():
-		return _zones_from_data(from_data) + _shrine_zones()
+		return _zones_from_data(from_data) + _shrine_zones() + _tree_zones()
 	var found := find_children("*", "MobZone", true, false)
 	if found.is_empty():
 		push_warning("[світ] у сцені немає жодної зони появи — монстрів не буде")
 		print("[світ] ‼ у сцені немає жодної зони появи")
 	return found
+
+
+## Поверхи дерев-велетів (`giant_tree.gd`, 07.11.2026): кожен поверх —
+## свої зони з рівнем і множником поверху.
+func _tree_zones() -> Array:
+	var land: Node = get_node_or_null("Landscape")
+	var out: Array = []
+	if land == null or not land.has_method("giant_trees"):
+		return out
+	for tree: GiantTree in land.giant_trees():
+		var made: Array = tree.zones(data.mobs)
+		out += made
+		print("[дерева] %s: поверхів %d, рівні %d–%d, множник ×%.1f–×%.1f, "
+				% [tree.title, tree.radii.size(), tree.levels[0],
+				tree.levels[-1], tree.boosts[0], tree.boosts[-1]]
+				+ "зон %d" % made.size())
+	return out
 
 
 ## Зона з даних: те саме `MobZone`, тільки форма не намальована мишею,
@@ -2178,8 +2227,20 @@ func _towns_for(a: Node, rules: Dictionary) -> Array:
 		if far < SAME_TOWN:
 			continue
 		out.append({"назва": str(town.get("назва", "місто")),
-				"далеко": far,
+				"далеко": far, "де": spot,
 				"ціна": maxi(least, int(round(far / 1000.0 * per_km)))})
+	# Дерева-велети (07.11.2026): «біля дерева недалеко точка для
+	# телепорту з міста» — переносить лише майстер магії в місті.
+	var land: Node = get_node_or_null("Landscape")
+	if land != null and land.has_method("giant_trees"):
+		for tree: GiantTree in land.giant_trees():
+			var far := here.distance_to(tree.port_spot)
+			if far < SAME_TOWN:
+				continue
+			out.append({"назва": "дерево «%s» (рівні %d–%d)" % [tree.title,
+					tree.levels[0], tree.levels[-1]],
+					"далеко": far, "де": tree.port_spot,
+					"ціна": maxi(least, int(round(far / 1000.0 * per_km)))})
 	return out
 
 
@@ -2375,11 +2436,7 @@ func ask_port(at: int, town_name: String) -> void:
 		link.notice(id, "%s бере %d, а в тебе %d"
 				% [who.title(), price, Shop.money_of(a)])
 		return
-	var spot := Vector2.ZERO
-	for town: Dictionary in data.map.get("міста", []):
-		if str(town.get("назва", "")) == town_name:
-			var at_town: Array = town["центр"]
-			spot = Vector2(float(at_town[0]), float(at_town[2]))
+	var spot: Vector2 = want["де"]
 	Shop.take_money(a, price)
 	combat.send_to(id, spot, "магія")
 	send_things(id)

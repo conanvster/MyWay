@@ -1698,11 +1698,30 @@ func _dweller(who: Dictionary, at: int) -> void:
 ## скелі й стіни, що в лісі, горах і святинях), нічого нового на диск
 ## не додається.
 func _landmarks() -> void:
+	# Повторна побудова (проби будують світ удруге) — дерева-велети не
+	# подвоюються: за номером дерева звертаються сервер і клієнт.
+	for old: GiantTree in giant_trees():
+		remove_child(old)
+		old.queue_free()
 	for mark: Dictionary in data.get("орієнтири", []):
 		var kind := str(mark.get("вид", ""))
 		# Тільки x і z: середнє число в даних — підйом над землею, і
 		# орієнтир мусить стояти НА ґрунті, хай там що в даних.
 		var spot := _point(mark.get("де", [0, 0, 0]))
+		# Дерево-велет із поверхами (`data/dereva.json`, 07.11.2026) — ціле
+		# місце для полювання, а не прикраса: своя побудова.
+		if kind == "дерево-велет":
+			var giant := GiantTree.spec_near(spot.x, spot.z)
+			if not giant.is_empty():
+				var tree := GiantTree.new()
+				add_child(tree)
+				tree.position = Vector3(spot.x, 0.0, spot.z)
+				tree.build(giant, self, DisplayServer.get_name() != "headless")
+				# Ті самі два виклики випадковості, що з'їв би `_giant_tree`:
+				# інакше зсунувся б розкид усього, що будується далі.
+				randi()
+				randf()
+				continue
 		var at := _on_ground(Vector3(spot.x, 0.0, spot.z))
 		var radius := float(mark.get("радіус", 20))
 		var holder := Node3D.new()
@@ -1966,6 +1985,16 @@ func _guard_zone(shrine: Shrine, name: String, kind: int, count: int,
 	shape.shape = ball
 	shape.position = at
 	zone.add_child(shape)
+
+
+## Дерева-велети з поверхами — у порядку даних (`data/dereva.json`):
+## сервер і клієнт звертаються до дерева за номером.
+func giant_trees() -> Array[GiantTree]:
+	var out: Array[GiantTree] = []
+	for child in get_children():
+		if child is GiantTree:
+			out.append(child)
+	return out
 
 
 ## Усі святині в тому самому порядку, що й у даних. Порядок важить:
@@ -3085,6 +3114,9 @@ func _place_tree(at: Vector3, height: float, bark: String, leaves: String,
 		at = _off_river(at)
 		if is_inf(at.y):
 			return
+	# Під стовбуром дерева-велета нічого не росте (і крізь його стіни теж).
+	if GiantTree.blocks(at.x, at.z):
+		return
 	var key := _patch_at(at.x, at.z)
 	var spec := {"at": at, "height": height, "bark": bark, "leaves": leaves,
 			"model": model, "spin": spin, "вид": kind, "розмір": size}

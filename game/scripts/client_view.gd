@@ -275,6 +275,50 @@ var _lantern: OmniLight3D = null
 ## Запрошення в підземелля й назад (П-190, Ф4′). Коло порталу саме пам'ятає,
 ## хто вже в ньому стоїть (`Portal.entered`), тож «відмовився — вийди й
 ## зайди знову» виходить само собою, як і вирішено в П-153.
+var _step_clock := 0.0
+## Перехід, про який уже спитали: "дерево:перехід:вгору". Поки стоїш
+## біля нього — не питаємо вдруге; відійшов — спитає знову.
+var _asked_step := ""
+
+
+## Драбина, сходи чи портал між поверхами дерева-велета (07.11.2026):
+## підійшов — «піднятися?» / «спуститися?».
+func _watch_tree_steps(delta: float) -> void:
+	_step_clock -= delta
+	if _step_clock > 0.0:
+		return
+	_step_clock = SHRINE_LOOK
+	var me: Node = _me()
+	var land: Node = _world.get_node_or_null("Landscape")
+	if me == null or _world.hud == null or land == null \
+			or not land.has_method("giant_trees"):
+		return
+	var trees: Array[GiantTree] = land.giant_trees()
+	for t in trees.size():
+		var here: Array = trees[t].step_at(me.global_position)
+		if here.is_empty():
+			continue
+		var key := "%d:%d:%s" % [t, int(here[0]), here[1]]
+		if key == _asked_step:
+			return
+		_asked_step = key
+		me.walk_to = Vector3.ZERO
+		var step: Dictionary = trees[t].steps[int(here[0])]
+		var up: bool = here[1]
+		var to: int = int(step["з"]) + (2 if up else 1)
+		var how: String = {"драбина": "драбиною", "сходи": "сходами",
+				"портал": "порталом"}.get(str(step["вид"]), "")
+		var at := t
+		var which := int(here[0])
+		_world.hud.ask_confirm("%s %s на %d поверх (рівень %d)?" % [
+				"Піднятися" if up else "Спуститися", how, to,
+				trees[t].levels[to - 1]],
+				func() -> void: _link.to_server(&"ask_tree_step",
+						[at, which, up]))
+		return
+	_asked_step = ""
+
+
 func _watch_portals(delta: float) -> void:
 	_portal_clock -= delta
 	if _portal_clock > 0.0:
@@ -378,6 +422,7 @@ func smooth(delta: float) -> void:
 	var k := 1.0 - exp(-SMOOTHING * delta)
 	_watch_shrines(delta)
 	_watch_portals(delta)
+	_watch_tree_steps(delta)
 	for id in _creatures:
 		var a: Node3D = _creatures[id]
 		var was := a.global_position

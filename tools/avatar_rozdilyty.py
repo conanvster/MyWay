@@ -184,6 +184,14 @@ def compact(j, binary, keep_meshes, keep_anims, jpeg_images=()):
     for a in accessors:
         if "bufferView" in a:
             a["bufferView"] = add_view(a["bufferView"])
+        # Розріджені дані (риси обличчя — форм-ключі) мають ще два свої
+        # bufferView. До 07.11.2026 їх не переписували: лишались старі
+        # номери, Godot читав чужі байти — «Ніс-кирпатий» людини стріляв
+        # шпилями на метр, решта рис не робила нічого.
+        if "sparse" in a:
+            for part in ("indices", "values"):
+                sp = a["sparse"][part]
+                sp["bufferView"] = add_view(sp["bufferView"])
     for im in images:
         if "bufferView" not in im:
             continue

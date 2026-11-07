@@ -125,6 +125,8 @@ var _log_text: RichTextLabel
 var _cells: Array = []
 var _floats: Array = []
 var _coords_text: Label
+## Пора доби й година (П-274): «вечір 19:40».
+var _clock_text: Label
 var _quest_box: Control
 var _quest_text: Label
 
@@ -3183,6 +3185,14 @@ func _build_coords() -> void:
 	_coords_text = _text(12, box)
 	_coords_text.position = Vector2(6, 1)
 	_coords_text.text = "x 0,0  y 0,0  z 0,0"
+	var clock := Control.new()
+	clock.position = Vector2(-96, 0)
+	clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(clock)
+	_plate(Vector2(92, 18), BACK, clock)
+	_clock_text = _text(12, clock)
+	_clock_text.position = Vector2(6, 1)
+	_clock_text.text = ""
 
 	# Лічильник завдання переходу «вовкулака 3|10» (П-227) — під
 	# координатами; немає завдання — рядка не видно.
@@ -3194,6 +3204,11 @@ func _build_coords() -> void:
 	_plate(Vector2(150, 18), BACK, _quest_box)
 	_quest_text = _text(12, _quest_box)
 	_quest_text.position = Vector2(6, 1)
+
+
+func show_clock(text: String) -> void:
+	if _clock_text != null and _clock_text.text != text:
+		_clock_text.text = text
 
 
 ## Рамка цілі — угорі посередині. Ховається, коли цілі немає (П-31).

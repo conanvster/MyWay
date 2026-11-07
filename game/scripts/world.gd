@@ -79,6 +79,8 @@ var dungeon_days: Dictionary = {}
 var view: ClientView
 ## Ефекти бою (П-33/П-272) — лише на клієнті.
 var fx: Fx = null
+## Зміна доби (П-274) — лише в клієнта.
+var day: DayCycle = null
 ## Показ. Є лише в того клієнта, чий персонаж уже з'явився.
 var hud: HUD
 ## Збереження персонажів через PostgREST (крок 3). Є лише на сервері.
@@ -185,6 +187,11 @@ func _ready() -> void:
 	if land != null:
 		land.build(data.map, not Net.is_server)
 		_stock_merchants(land)
+		if not Net.is_server:
+			day = DayCycle.new()
+			day.name = "Доба"
+			add_child(day)
+			day.setup(land, get_node_or_null("Light") as DirectionalLight3D)
 	if not Net.is_server:
 		_start_preload()
 
@@ -500,6 +507,13 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	if not Net.is_server:
+		if day != null:
+			var mine: Node3D = creatures.get(multiplayer.get_unique_id()) \
+					if Net.connected() else null
+			if mine != null:
+				day.follow(mine.global_position)
+			if hud != null:
+				hud.show_clock(day.clock_text())
 		view.smooth(delta)
 		view.approach(delta)
 		view.demo(delta)

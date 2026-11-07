@@ -13,6 +13,7 @@
 #   ./run.sh --місто     текстури міст і сіл на зразках: хата, дім, мур, брама
 #   ./run.sh --мости [тека]  6 переходів × 5 дизайнів мостів — кандидати на вибір (П-174)
 #   ./run.sh --дерева [тека] дерева-велети з поверхами: заміри, переходи, зони, знімки
+#   ./run.sh --доба [тека]   зміна доби: та сама місцина о восьмій порі (П-274)
 #   ./run.sh --рухи-людини  парад рухів моделі людини: по одній фігурі
 #                     на кожен рух із бібліотеки, кожна підписана назвою
 #                     (`--модель res://…` — інша модель на тому самому
@@ -118,6 +119,7 @@ case "${1:-}" in
     --місто) exec godot --path "$proj" "${vsync[@]}" --script res://probes/misto.gd -- "${@:2}" ;;
     --мости) exec godot --path "$proj" res://scenes/bridges_look.tscn -- "${@:2}" ;;
     --дерева) exec godot --path "$proj" res://scenes/giant_trees.tscn -- "${@:2}" ;;
+    --доба) exec godot --path "$proj" res://scenes/day_look.tscn -- "${@:2}" ;;
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd -- "${@:2}" ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --моделі) exec godot --path "$proj" "${vsync[@]}" res://scenes/model_viewer.tscn ;;

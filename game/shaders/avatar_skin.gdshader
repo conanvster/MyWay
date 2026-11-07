@@ -20,21 +20,29 @@ uniform vec3 lips_color = vec3(0.70, 0.35, 0.35);
 uniform float lips_mix = 0.0;
 uniform float roughness_v = 0.6;
 
+// Кольори з палітри й середній тон текстури — у sRGB (як у меню), а
+// текстура тут уже лінійна. Без переведення вибраний колір виходив
+// блідим: оливкова шкіра орка ставала майже білою (07.11.2026).
+vec3 lin(vec3 v) {
+	return pow(max(v, vec3(0.0)), vec3(2.2));
+}
+
 void fragment() {
 	vec3 c = texture(albedo_tex, UV).rgb;
+	vec3 ref_l = lin(skin_ref);
 	vec4 m = texture(masks_tex, UV);
 	float lum = dot(c, vec3(0.299, 0.587, 0.114));
-	float ref_lum = dot(skin_ref, vec3(0.299, 0.587, 0.114));
+	float ref_lum = dot(ref_l, vec3(0.299, 0.587, 0.114));
 	float inshe = max(max(m.r, m.b), m.a);
 	// шкіра: відношення нового тону до середнього тону текстури
-	vec3 shkira = c * (skin_tint / max(skin_ref, vec3(0.02)));
+	vec3 shkira = c * (lin(skin_tint) / max(ref_l, vec3(0.002)));
 	c = mix(c, shkira, 1.0 - inshe);
 	// скальп під зачіскою — колір волосся з тінню текстури
-	c = mix(c, hair_color * clamp(0.45 + 0.7 * lum / max(ref_lum, 0.05), 0.2, 1.3), m.a * hair_mix);
+	c = mix(c, lin(hair_color) * clamp(0.45 + 0.7 * lum / max(ref_lum, 0.05), 0.2, 1.3), m.a * hair_mix);
 	// райдужка
-	c = mix(c, eye_color * clamp(0.35 + 1.4 * lum, 0.2, 1.6), m.r * eye_mix);
+	c = mix(c, lin(eye_color) * clamp(0.35 + 1.4 * lum, 0.2, 1.6), m.r * eye_mix);
 	// губи
-	c = mix(c, lips_color * clamp(0.55 + 0.6 * lum / max(ref_lum, 0.05), 0.3, 1.3), m.b * lips_mix);
+	c = mix(c, lin(lips_color) * clamp(0.55 + 0.6 * lum / max(ref_lum, 0.05), 0.3, 1.3), m.b * lips_mix);
 	// підводка
 	c = mix(c, c * 0.18, m.g * liner);
 	ALBEDO = c;

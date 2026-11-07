@@ -73,8 +73,11 @@ func _go() -> void:
 			these = [str(BridgeLook.choices().get(str(i), BridgeLook.DEFAULT))]
 		for design: String in these:
 			BridgeLook.build_one(land, i, design)
-			var from := mid + Vector3(side.x, 0, side.y) * 15.0 \
-					- Vector3(along.x, 0, along.y) * 6.0 + Vector3.UP * 4.0
+			# Відстань — під проліт (з 07.11.2026 мости до 51 м).
+			var back := maxf(15.0, float(span["довжина"]) * 0.75)
+			var from := mid + Vector3(side.x, 0, side.y) * back \
+					- Vector3(along.x, 0, along.y) * back * 0.4 \
+					+ Vector3.UP * (4.0 + back * 0.15)
 			from.y = maxf(from.y, land.surface_y(from.x, from.z) + 2.5)
 			eye.position = from
 			eye.look_at(mid + Vector3.DOWN * 1.0)

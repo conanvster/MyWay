@@ -204,7 +204,7 @@ static func _trail(raw: Array, wander: FastNoiseLite) -> PackedVector2Array:
 	var line := PackedVector2Array()
 	for p: Array in raw:
 		line.append(Vector2(float(p[0]), float(p[1])))
-	for pass_no in 3:
+	for pass_no in 6:
 		if line.size() < 3:
 			break
 		var soft := PackedVector2Array([line[0]])
@@ -2826,14 +2826,23 @@ func _rivers() -> void:
 		st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
 		for here: Array in _river_line(points):
 			var at := Vector3(float(here[0]), float(here[2]), float(here[1]))
-			var along := Vector3(float(here[4]), 0.0, float(here[5]))
-			var side := along.cross(Vector3.UP) * float(here[3]) * 0.5
+			var across := Vector3(float(here[4]), 0.0, float(here[5])) \
+					.cross(Vector3.UP)
+			var reach := wet_reach(here)
 			# Нормаль ставимо самі: `generate_normals()` уміє лише
 			# окремі трикутники, а стрічка — це смуга.
-			# Кожен край — не вище за свою землю: на косогорі стрічка
-			# інакше висіла над нижчим берегом (до 15 м у горах).
-			for edge: Vector3 in [at - side, at + side]:
-				edge.y = minf(at.y, surface_y(edge.x, edge.z) + RIVER_ABOVE)
+			# Край — там, де берег виходить з води (+0,6 м у берег): вода
+			# рівна впоперек і сходиться з землею. До 07.11.2026 край
+			# стояв на ширині з даних, а врізане дно ширше (×2,2) — край
+			# висів на 1,4 м над дном. Берега не знайшли (косогір) — край
+			# на ширині з даних, не вище за свою землю.
+			for k in 2:
+				var side := -1.0 if k == 0 else 1.0
+				var edge := at + across * side * float(reach[k])
+				if reach[k + 2]:
+					edge = at + across * side * (float(reach[k]) + 0.6)
+				else:
+					edge.y = minf(at.y, surface_y(edge.x, edge.z) + 0.05)
 				st.set_normal(Vector3.UP)
 				st.add_vertex(edge)
 		var mesh := st.commit()
@@ -2879,6 +2888,35 @@ func _river_line(points: Array) -> Array:
 	return out
 
 
+## Де вода сходиться з берегом по обидва боки точки `_river_line`:
+## [ліво, право, ліво знайдено, право знайдено] — метри від осі.
+## Берег — перше місце (кроком 0,5 м), де земля вища за воду на 0,2 м;
+## шукаємо не далі врізаної смуги (`РІЧКА_БЕРЕГ` = 2,2 ширини в
+## `tools/svit2.py`) + 4 м. Не знайшли — ширина з даних.
+const WET_ABOVE := 0.2
+const WET_BAND := 2.2
+
+
+func wet_reach(here: Array) -> Array:
+	var at := Vector2(float(here[0]), float(here[1]))
+	var water := maxf(float(here[2]), sea_level())
+	var width := float(here[3])
+	var across := Vector2(-float(here[5]), float(here[4]))
+	var out := [width * 0.5, width * 0.5, false, false]
+	var most := width * WET_BAND + 4.0
+	for k in 2:
+		var dir := across * (-1.0 if k == 0 else 1.0)
+		var d := 0.0
+		while d <= most:
+			var p := at + dir * d
+			if surface_y(p.x, p.y) >= water + WET_ABOVE:
+				out[k] = maxf(d, 0.5)
+				out[k + 2] = true
+				break
+			d += 0.5
+	return out
+
+
 ## Висота води в точці: земля + `RIVER_ABOVE`, не вище за рівень даних.
 ## Те саме бере міст (`BridgeLook`), щоб настил лягав над водою.
 func river_y(x: float, z: float, level: float) -> float:
@@ -2896,21 +2934,25 @@ var _river_cells_ready := false
 func _river_index() -> void:
 	_river_cells_ready = true
 	_river_cells.clear()
+	# Відрізки кроком 4 м, півширина — до берега (`wet_reach`), не з
+	# даних: врізане дно ширше, і дерева інакше ставали в воду.
 	for stream: Dictionary in data.get("русла", []):
-		var pts: Array = stream.get("точки", [])
-		for k in range(pts.size() - 1):
-			var a := Vector2(float(pts[k][0]), float(pts[k][1]))
-			var b := Vector2(float(pts[k + 1][0]), float(pts[k + 1][1]))
-			var half := maxf(float(pts[k][3]), float(pts[k + 1][3])) * 0.5
-			var reach := half + RIVER_DRY
+		var line := _river_line(stream.get("точки", []))
+		var halves: Array = []
+		for here: Array in line:
+			var wet := wet_reach(here)
+			halves.append(maxf(float(wet[0]), float(wet[1])))
+		for k in range(line.size() - 1):
+			var a := Vector2(float(line[k][0]), float(line[k][1]))
+			var b := Vector2(float(line[k + 1][0]), float(line[k + 1][1]))
+			var reach := maxf(halves[k], halves[k + 1]) + RIVER_DRY
 			var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * reach
 			var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * reach
 			for cx in range(floori(lo.x / RIVER_CELL), floori(hi.x / RIVER_CELL) + 1):
 				for cz in range(floori(lo.y / RIVER_CELL),
 						floori(hi.y / RIVER_CELL) + 1):
 					_river_cells.get_or_add(Vector2i(cx, cz), []).append(
-							[a, b, float(pts[k][3]) * 0.5,
-							float(pts[k + 1][3]) * 0.5])
+							[a, b, halves[k], halves[k + 1]])
 
 
 ## Чи точка у воді річки (з запасом `extra` за край). Різнотрав'я
@@ -2939,7 +2981,7 @@ func _off_river(at: Vector3) -> Vector3:
 		return at
 	var p := Vector2(at.x, at.z)
 	var cell := Vector2i(floori(p.x / RIVER_CELL), floori(p.y / RIVER_CELL))
-	for pass_no in 3:
+	for pass_no in 6:
 		var moved := false
 		for seg: Array in _river_cells.get(cell, []):
 			var a: Vector2 = seg[0]
@@ -2959,6 +3001,10 @@ func _off_river(at: Vector3) -> Vector3:
 		cell = Vector2i(floori(p.x / RIVER_CELL), floori(p.y / RIVER_CELL))
 	if p.x == at.x and p.y == at.z:
 		return at
+	# Біля злиття відсунуте від одного русла потрапляє в інше (07.11.2026:
+	# 8 дерев у воді в одній купці) — таке не садимо зовсім.
+	if in_river(p.x, p.y, RIVER_DRY * 0.5):
+		return Vector3(p.x, INF, p.y)
 	return Vector3(p.x, height_at(p.x, p.y), p.y)
 
 
@@ -3037,6 +3083,8 @@ func _place_tree(at: Vector3, height: float, bark: String, leaves: String,
 	# решти лісу не зсувається. Камінь у руслі лишається — природно.
 	if kind != "камінь":
 		at = _off_river(at)
+		if is_inf(at.y):
+			return
 	var key := _patch_at(at.x, at.z)
 	var spec := {"at": at, "height": height, "bark": bark, "leaves": leaves,
 			"model": model, "spin": spin, "вид": kind, "розмір": size}

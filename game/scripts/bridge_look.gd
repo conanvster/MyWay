@@ -32,9 +32,9 @@ const DESIGN_NAMES := {
 }
 const DEFAULT := "колоди"
 const DECK_WIDE := 3.6
-const BANK := 3.5           ## скільки настилу лягає на кожен берег, м
+const BANK := 2.5           ## скільки настилу лягає на сухий берег, м
 const CLEAR := 0.9          ## настил над водою щонайменше, м
-const CLEAR_ARCH := 2.4     ## те саме для кам'яної арки
+const CLEAR_ARCH := 3.8     ## те саме для кам'яної арки (2,4 → 3,8 07.11: склепіння виднілись на метр)
 const RAMP_SLOPE := 4.0     ## насип: метрів довжини на метр висоти
 
 
@@ -99,8 +99,23 @@ static func span_of(land: Landscape, i: int,
 	if best.is_empty():
 		return {}
 	var along: Vector2 = best["уздовж"]
-	var long := float(best["ширина"]) + BANK * 2.0
-	var at: Vector2 = best["де"]
+	var cross: Vector2 = best["де"]
+	# Кінці — уздовж дороги до сухого берега (земля вища за воду й море),
+	# + BANK на берег. До 07.11.2026 проліт був «ширина з даних + 2×BANK»,
+	# а врізане русло ширше (×2,2 ширини) — кінці падали у воду, біля гирла
+	# ще й у море.
+	var dry := maxf(float(best["вода"]), land.sea_level()) + Landscape.WET_ABOVE
+	var most := float(best["ширина"]) * Landscape.WET_BAND * 2.0 + 20.0
+	var ends: Array[float] = []
+	for side: float in [-1.0, 1.0]:
+		var d := 0.0
+		while d < most and land.surface_y(cross.x + along.x * side * d,
+				cross.y + along.y * side * d) < dry:
+			d += 0.5
+		ends.append(maxf(d, float(best["ширина"]) * 0.5) + BANK)
+	var long := ends[0] + ends[1]
+	var at := cross + along * (ends[1] - ends[0]) * 0.5
+	best["де"] = at
 	var a_end := at - along * long * 0.5
 	var b_end := at + along * long * 0.5
 	best["довжина"] = long
@@ -260,10 +275,16 @@ static func _quads(list: Array) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for q: Array in list:
 		for tri: Array in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]:
+			# Нормаль — на кожен бік своя. `generate_normals()` тут
+			# усереднював протилежні нормалі спільних вершин до нуля —
+			# темні трикутники на арці й укосах (07.11.2026).
+			var n: Vector3 = (tri[2] - tri[0]).cross(tri[1] - tri[0]) \
+					.normalized()
 			for order: Array in [[0, 1, 2], [0, 2, 1]]:
+				var face := n if order[1] == 1 else -n
 				for k: int in order:
+					st.set_normal(face)
 					st.add_vertex(tri[k])
-	st.generate_normals()
 	return st.commit()
 
 
@@ -342,42 +363,75 @@ static func _covered(deck: Node3D, b: Dictionary) -> void:
 		deck.add_child(slope)
 
 
-## Кам'яна арка: склепіння з тесаного каменю від берега до берега, товстий
-## настил і парапети з цегли.
+## Кам'яна арка: склепіння з тесаного каменю, товстий настил і парапети
+## з цегли. Довгий проліт — кілька склепінь (~12 м) на биках у воді; над
+## кожним склепінням заповнення йде по його кривій. До 07.11.2026 тут було
+## одне склепіння під суцільною коробкою-«спандрелем» — на 51 м міст
+## читався рівною стіною.
+const ARCH_SPAN := 12.0
+const ARCH_PIER := 1.6
+
+
 static func _arch(deck: Node3D, b: Dictionary, rubble: bool = false) -> void:
 	var long: float = b["довжина"]
+	var water: float = b["вода"]
 	var stone := TownLook.paint("castle_wall_varriation" if rubble
 			else "medieval_blocks_03", 2.5)
 	var brick := stone if rubble else TownLook.paint("castle_brick_07", 2.0)
+	var under := -0.75
 	_box(deck, Vector3(long, 0.8, DECK_WIDE + 0.4), Vector3(0, -0.35, 0), stone)
-	# Склепіння — від води до настилу, не нижче за воду.
-	var rise := clampf(-float(b["вода"]) - 1.2, 0.4, minf(long * 0.28, 3.2))
-	var pieces := 14
-	var inner := long * 0.5 - BANK * 0.5
-	for k in pieces:
-		var t0 := -1.0 + 2.0 * k / pieces
-		var t1 := -1.0 + 2.0 * (k + 1) / pieces
-		var p0 := Vector3(t0 * inner, -0.8 - rise * (1.0 - t0 * t0), 0)
-		var p1 := Vector3(t1 * inner, -0.8 - rise * (1.0 - t1 * t1), 0)
-		var mid := (p0 + p1) * 0.5
-		var seg := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(p0.distance_to(p1) + 0.1, 0.7, DECK_WIDE + 0.4)
-		seg.mesh = box
-		seg.material_override = stone
-		seg.position = mid
-		seg.rotation.z = atan2(p1.y - p0.y, p1.x - p0.x)
-		deck.add_child(seg)
-	# Підпора-«спандрель» над склепінням до настилу, по боках.
+	var inner := long * 0.5 - BANK
+	var count := maxi(1, roundi(inner * 2.0 / ARCH_SPAN))
+	var span := (inner * 2.0 - (count - 1) * ARCH_PIER) / count
+	# Склепіння спирається трохи над водою; стрілка — не більша за 0,4 прольоту.
+	var rise := clampf(under - (water + 0.15), 0.4, span * 0.4)
+	var spring := under - rise
+	var face := DECK_WIDE * 0.5 + 0.2
+	var fill: Array = []
+	var pieces := 10
+	for i in count:
+		var x0 := -inner + i * (span + ARCH_PIER)
+		var mid_x := x0 + span * 0.5
+		for k in pieces:
+			var t0 := -1.0 + 2.0 * k / pieces
+			var t1 := -1.0 + 2.0 * (k + 1) / pieces
+			var p0 := Vector3(mid_x + t0 * span * 0.5,
+					spring + rise * (1.0 - t0 * t0), 0)
+			var p1 := Vector3(mid_x + t1 * span * 0.5,
+					spring + rise * (1.0 - t1 * t1), 0)
+			var seg := MeshInstance3D.new()
+			var box := BoxMesh.new()
+			box.size = Vector3(p0.distance_to(p1) + 0.1, 0.55, face * 2.0)
+			seg.mesh = box
+			seg.material_override = stone
+			seg.position = (p0 + p1) * 0.5 + Vector3(0, -0.2, 0)
+			seg.rotation.z = atan2(p1.y - p0.y, p1.x - p0.x)
+			deck.add_child(seg)
+			for side: float in [-1.0, 1.0]:
+				var z := side * face
+				fill.append([Vector3(p0.x, p0.y, z), Vector3(p1.x, p1.y, z),
+						Vector3(p1.x, under, z), Vector3(p0.x, under, z)])
+		# Бик між склепіннями: від дна до настилу, у воді ширший.
+		if i < count - 1:
+			var px := x0 + span + ARCH_PIER * 0.5
+			var low := water - 2.0
+			_box(deck, Vector3(ARCH_PIER, under - low, face * 2.0),
+					Vector3(px, (under + low) * 0.5, 0), stone)
+			_box(deck, Vector3(ARCH_PIER + 0.3, spring - low + 0.3,
+					face * 2.0 + 0.8),
+					Vector3(px, (spring + 0.3 + low) * 0.5, 0), stone)
+	var walls := MeshInstance3D.new()
+	walls.mesh = _quads(fill)
+	walls.material_override = stone
+	deck.add_child(walls)
 	for side: float in [-1.0, 1.0]:
-		_box(deck, Vector3(long - BANK, rise * 0.9, 0.35),
-				Vector3(0, -0.8 - rise * 0.45, side * (DECK_WIDE * 0.5 + 0.03)),
-				stone)
 		_box(deck, Vector3(long, 0.95, 0.4),
 				Vector3(0, 0.5, side * (DECK_WIDE * 0.5 + 0.0)), brick)
+	# Устої на берегах: від води до настилу.
 	for end: float in [-1.0, 1.0]:
-		_box(deck, Vector3(BANK, b["вода"] * -1.0 + 0.4, DECK_WIDE + 0.6),
-				Vector3(end * (long * 0.5 - BANK * 0.5), b["вода"] * 0.5 - 0.4, 0),
+		var low := water - 1.0
+		_box(deck, Vector3(BANK, under - low, DECK_WIDE + 0.6),
+				Vector3(end * (inner + BANK * 0.5), (under + low) * 0.5, 0),
 				stone)
 
 

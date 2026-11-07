@@ -48,13 +48,19 @@ func _go() -> void:
 		_expect(row[0], player.speed_scale, row[2])
 
 	print("\n— удар —")
+	# З 07.11.2026 темп — щоб увесь рух удару вклався в паузу: тривалість
+	# кліпа / паузу (раніше 1,2 с / паузу, і кліп 1,5 с обривався).
 	view._anim.erase(7)
+	var clip: float = body.move_length("Sword_Attack")
+	print("    рух удару — %.2f с" % clip)
 	view.swung(7, true, 1.2)
-	_expect("звичайний темп", player.speed_scale, 1.0)
+	_expect("звичайний темп — рух у паузу 1,2 с", player.speed_scale,
+			maxf(1.0, clip / 1.2))
 	view.swung(7, true, 0.6)
-	_expect("баф ×2 на атаку", player.speed_scale, 2.0)
+	_expect("баф ×2 на атаку — удвічі швидше", player.speed_scale,
+			maxf(1.0, clip / 0.6))
 	view._human_state(7, a, body, 0.0, still, step)
-	_expect("поки б'є — темп удару", player.speed_scale, 2.0)
+	_expect("поки б'є — темп удару", player.speed_scale, maxf(1.0, clip / 0.6))
 	view.swung(7, true, 3.0)
 	_expect("повільний — не повільніше файла", player.speed_scale, 1.0)
 	view._anim[7]["удар_до"] = 0.0

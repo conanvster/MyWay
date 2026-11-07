@@ -715,14 +715,22 @@ func sign_in(login: String, password: String, register: bool = false) -> void:
 
 
 ## Створити персонажа на своєму акаунті.
+##
+## `look` — зовнішність JSON-рядком (`Appearance`, 07.11.2026); сервер
+## лишає лише відомі ключі й назви. У базу вона лягає першим записом
+## персонажа (стовпець `appearance`, `db/migration-appearance.sql`), а до
+## нього — тримається тут, у `_signed`.
 @rpc("any_peer", "call_remote", "reliable")
-func create_character(name: String, race: String, sex: String) -> void:
+func create_character(name: String, race: String, sex: String,
+		look: String = "") -> void:
 	if not Net.is_server or store == null:
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if not _signed.has(id):
 		return
 	var who: Dictionary = _signed[id]
+	who.get_or_add("зовнішність", {})[name] = \
+			Appearance.clean(JSON.parse_string(look) if look != "" else {})
 	store.answered.connect(func(_rpc: String, reply: Dictionary) -> void:
 			if not bool(reply.get("ok", false)):
 				rpc_id(id, "client_sign_failed",
@@ -1592,6 +1600,11 @@ func _on_joined(id: int) -> void:
 				if name != _names.get(id, "") or not creatures.has(id):
 					return
 				Store.apply_row(creatures[id], row, data.items)
+				# Щойно створений: зовнішність ще не в базі — з вибору.
+				var chosen: Dictionary = _signed.get(id, {}) \
+						.get("зовнішність", {})
+				if creatures[id].appearance.is_empty() and chosen.has(name):
+					creatures[id].appearance = chosen[name]
 				# Позначка вбивці прийшла з бази — колір імені всім (П-87).
 				link.to_all(&"client_outlaw",
 						[id, outlaws.kills_of(creatures[id])])
@@ -1835,6 +1848,8 @@ func look_of(a: Node) -> Dictionary:
 	var out := {}
 	if not ("gear" in a):
 		return out
+	if "appearance" in a and not a.appearance.is_empty():
+		out["зовнішність"] = a.appearance
 	for slot: String in a.gear:
 		if not SkinnedModel.PIECES.has(slot) \
 				and not SkinnedModel.HELD.has(slot):
@@ -3642,7 +3657,7 @@ func client_cast(id: int, name: String, seconds: float) -> void:
 	if a != null:
 		a.start_cast(name, seconds, 0)
 	if view != null:
-		view.cast_started(id)
+		view.cast_started(id, seconds)
 	if fx != null:
 		fx.cast_start(id, name, seconds)
 

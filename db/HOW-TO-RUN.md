@@ -88,6 +88,16 @@ sudo -u postgres psql -d myway < db/migration-quest.sql
 sudo -u postgres psql -d myway < db/migration-outlaw.sql
 ```
 
+### Зовнішність персонажа (07.11.2026)
+
+Стовпець `appearance` — варіант, зачіска, кольори (вибір на екрані створення).
+Без нього вибір живе лише до перезапуску сервера.
+
+```
+cd ~/гра-lineage
+sudo -u postgres psql -d myway < db/migration-appearance.sql
+```
+
 Кожна закінчується рядком `Done!`; без нього — зупинилась на помилці.
 Повторний запуск безпечний (`ADD COLUMN IF NOT EXISTS`). Після обох —
 перезапустити сервер гри.

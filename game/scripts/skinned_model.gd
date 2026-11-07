@@ -225,6 +225,7 @@ func _attach_hair_files() -> void:
 		for m: MeshInstance3D in holder.find_children("Волосся-*",
 				"MeshInstance3D", true, false):
 			var keep := m.transform
+			m.owner = null
 			m.get_parent().remove_child(m)
 			_skeleton.add_child(m)
 			m.transform = keep
@@ -791,7 +792,10 @@ func _fit(body: Node) -> void:
 		if mesh.mesh == null:
 			continue
 		var here: Transform3D = from_body * mesh.global_transform
-		var part: AABB = here * mesh.mesh.get_aabb()
+		# Лише свої скани: у наборів кістяк буває масштабований інакше
+		# за вершини, і там правдиві межі — якраз «з кістками».
+		var part: AABB = here * (_true_aabb(mesh)
+				if path.begins_with(OWN_SKELETON_DIR) else mesh.mesh.get_aabb())
 		box = part if first else box.merge(part)
 		first = false
 	var tall: float = box.size.y if not first else 1.0
@@ -801,6 +805,31 @@ func _fit(body: Node) -> void:
 	body.scale = Vector3(times, times, times)
 	# Ставимо на землю: у наборах початок то в ногах, то посередині.
 	body.position.y = -box.position.y * times
+
+
+## Межі сітки за самими вершинами. Шкірену сітку Godot міряє з кістками:
+## у людини l2002 (07.11.2026) `get_aabb()` — 2,81 м заввишки при вершинах
+## 1,82 м, і `_fit` стискав її до 0,62 — вдвічі менша за ельфійку. Обхід
+## вершин — раз на сітку (кеш), лише для шкірених.
+static var _aabbs: Dictionary = {}
+
+
+static func _true_aabb(view: MeshInstance3D) -> AABB:
+	var mesh := view.mesh
+	if view.skin == null and view.skeleton == NodePath(""):
+		return mesh.get_aabb()
+	var key := mesh.get_instance_id()
+	if _aabbs.has(key):
+		return _aabbs[key]
+	var lo := Vector3.INF
+	var hi := -Vector3.INF
+	for i in mesh.get_surface_count():
+		for v: Vector3 in mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]:
+			lo = lo.min(v)
+			hi = hi.max(v)
+	var box := AABB(lo, hi - lo) if lo.x != INF else mesh.get_aabb()
+	_aabbs[key] = box
+	return box
 
 
 ## `backward` (П-150): набір рухів має лише ходу ВПЕРЕД (`Walk`, `Jog_Fwd`,
@@ -855,8 +884,13 @@ const LOOPING_MOVES := {
 ## Показати конкретний рух за точною назвою (П-162: падіння, каст, бій
 ## за зброєю тощо) — ЩО показати, вирішує той, хто кличе
 ## (`client_view._human_state`); тут лише програвання.
-func show_move(name: String, reverse := false) -> void:
-	_play_if_has([_stand_in(name)], LOOPING_MOVES.get(name, false), reverse)
+##
+## Одноразовий рух (влучання, смерть, блок) показ стану кличе щокадру —
+## перезапускати його можна лише на `restart` (новий удар), інакше він
+## застигав на першому кадрі (знайдено 07.11.2026).
+func show_move(name: String, reverse := false, restart := false) -> void:
+	_play_if_has([_stand_in(name)], LOOPING_MOVES.get(name, false), reverse,
+			restart)
 
 
 ## Свій рух, коли він є; інакше замінник зі `STAND_INS`.
@@ -876,6 +910,17 @@ func _stand_in(name: String) -> String:
 func set_tempo(k: float) -> void:
 	if _player != null:
 		_player.speed_scale = k
+
+
+## Тривалість руху в секундах (з урахуванням заміни зі `STAND_INS`), 0 —
+## руху немає. Темп удару й касту рахується від неї (07.11.2026): у
+## сканів Mixamo удар мечем 1,52 с, а не як у наборі UAL.
+func move_length(name: String) -> float:
+	if _player == null:
+		return 0.0
+	var found := _find_animation(_player.get_animation_list(),
+			_stand_in(name), true)
+	return _player.get_animation(found).length if found != "" else 0.0
 
 
 ## Чи є такий рух точно (не за нечіткою відповідністю) в цієї моделі.
@@ -935,7 +980,7 @@ func _bend(name: String, by: float) -> void:
 ## нечітку відповідність за кінцівкою, для наборів на кшталт скелета
 ## («SkeletonArmature|Skeleton_Idle»), де точного варіанта нема взагалі.
 func _play_if_has(names: Array, loop: bool = true,
-		reverse: bool = false) -> void:
+		reverse: bool = false, restart: bool = true) -> void:
 	if _player == null:
 		return
 	var have := _player.get_animation_list()
@@ -951,7 +996,8 @@ func _play_if_has(names: Array, loop: bool = true,
 		# важливий: неперервний рух (Walk, Idle) не рестартуємо, поки не
 		# зміниться; одноразовий (удар, Hit_Chest) МАЄ рестартувати на
 		# кожен новий виклик — інакше другий удар поспіль не покажеться.
-		if loop and _current_name == found and _current_reverse == reverse:
+		if (loop or not restart) and _current_name == found \
+				and _current_reverse == reverse:
 			return
 		if reverse:
 			_player.play_backwards(found)

@@ -199,6 +199,8 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		},
 		"race": who.race,
 		"sex": who.sex,
+		# Зовнішність (07.11.2026) — без стовпця запис іде без неї.
+		"appearance": who.appearance,
 		"hp": who.hp,
 		"mp": who.mp,
 		"x": who.global_position.x,
@@ -268,6 +270,9 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 				int(saved_stats.get(field, who.base_stats.get(prop))))
 	who.race = str(row.get("race", who.race))
 	who.sex = str(row.get("sex", who.sex))
+	var looks: Variant = row.get("appearance", {})
+	if looks is Dictionary and not (looks as Dictionary).is_empty():
+		who.appearance = Appearance.clean(looks)
 	# Стати треба перерахувати ДО того, як нижче обмежимо здоров'я й ману
 	# максимумом — інакше max_hp() тут ще читає старі базові стати.
 	who.refresh_stats()

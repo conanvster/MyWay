@@ -47,6 +47,9 @@ const JOG_REF := JOG_SPEED
 const SWING_REF := 1.2
 const TEMPO_MIN := 0.6
 const TEMPO_MAX := 3.0
+## Каст — до ×4: рух касту сканів 2,28 с, а сильні бафи ріжуть читання до
+## 0,6 с; далі рух коротшає лише до межі.
+const CAST_TEMPO_MAX := 4.0
 ## Не дати першому ж кадру забити Enter/Exit одразу на Idle-каст.
 const CAST_ENTER_LOCK := 0.4
 const CAST_EXIT_LOCK := 0.35
@@ -141,8 +144,9 @@ func ask_sign_in() -> void:
 			register: bool) -> void:
 		_link.to_server(&"sign_in", [login, password, register]))
 	_sign.wants_new_character.connect(func(name: String, race: String,
-			sex: String) -> void:
-		_link.to_server(&"create_character", [name, race, sex]))
+			sex: String, look: Dictionary) -> void:
+		_link.to_server(&"create_character", [name, race, sex,
+				JSON.stringify(look)]))
 	_sign.wants_enter.connect(func(character: String) -> void:
 		_link.to_server(&"enter_world", [character]))
 
@@ -442,15 +446,21 @@ func _human_state(id: int, a: Node3D, body: Node3D, speed: float,
 	st["hp"] = a.hp
 
 	if now < st.get("спалах_до", 0.0):
-		body.show_move("Hit_Chest")
+		# Зі щитом у руці — блок (рух є у сканів), інакше — влучання.
+		body.show_move("Block" if a.has_method("holds_shield")
+				and a.holds_shield() and body.has_move("Block")
+				else "Hit_Chest")
 		_anim[id] = st
 		return
 
 	if a.is_casting():
-		if now < st.get("каст_вхід_до", 0.0):
+		# Входу в каст у сканів немає — одразу сам каст.
+		if now < st.get("каст_вхід_до", 0.0) \
+				and body.has_move("Spell_Simple_Enter"):
 			body.show_move("Spell_Simple_Enter")
 		else:
 			body.show_move("Spell_Simple_Idle")
+			body.set_tempo(st.get("темп_касту", 1.0))
 		_anim[id] = st
 		return
 
@@ -530,34 +540,55 @@ func swung(id: int, armed: bool, gap: float = 0.0) -> void:
 	if body == null or not rich:
 		return
 	var st: Dictionary = _anim.get(id, {})
-	if armed:
-		body.show_move("Sword_Attack")
-	else:
+	# Рух за зброєю (07.11.2026, слово замовника: «рухи — відповідні діям»):
+	# лук — постріл, решта — замах; моделі без пострілу — замах.
+	var move := "Sword_Attack"
+	if not armed:
 		var punch: bool = st.get("punch", false)
-		body.show_move("Punch_Cross" if punch else "Punch_Jab")
+		move = "Punch_Cross" if punch else "Punch_Jab"
 		st["punch"] = not punch
+	elif a.has_method("held_kind") and a.held_kind() == "лук" \
+			and body.has_move("Bow_Shot"):
+		move = "Bow_Shot"
+	body.show_move(move, false, true)
 	# Спершу сам удар не менше STRIKE_HOLD (П-162), і лише ПІСЛЯ нього —
 	# COMBAT_STANCE стійки; інакше стійка перебивала б удар одразу на
 	# наступному кадрі, і його не встигали побачити.
 	# Бафом прискорений удар — швидший замах і коротше тримання: інакше
 	# наступний удар приходив би раніше, ніж скінчився попередній.
 	# Повільніше за файл не граємо: повільний боєць просто довше стоїть.
+	# Темп — щоб увесь рух уклався в паузу між ударами (від справжньої
+	# тривалості кліпа: у сканів удар 1,52 с і на паузі 1,2 с обривався
+	# посередині). Паузу ріжуть спритність і бафи (`Stats.attack_cooldown`).
 	var tempo := 1.0
+	var clip: float = body.move_length(move)
 	if gap > 0.0:
-		tempo = clampf(SWING_REF / gap, 1.0, TEMPO_MAX)
+		tempo = clampf((clip if clip > 0.0 else SWING_REF) / gap,
+				1.0, TEMPO_MAX)
 	body.set_tempo(tempo)
 	st["темп_удару"] = tempo
+	var hold := maxf(STRIKE_HOLD, clip) / tempo
 	var now := Time.get_ticks_msec() / 1000.0
-	st["удар_до"] = now + STRIKE_HOLD / tempo
-	st["бій_до"] = now + STRIKE_HOLD / tempo + COMBAT_STANCE
+	st["удар_до"] = now + hold
+	st["бій_до"] = now + hold + COMBAT_STANCE
 	_anim[id] = st
 
 
 ## Хтось почав/скінчив читати скіл (П-162) — короткі замки на вхід/вихід,
 ## щоб `_human_state` не забив Enter/Exit ще на тому самому кадрі.
-func cast_started(id: int) -> void:
+## `seconds` — скільки читати (`Stats.cast_time`, бафи на швидкість касту
+## його ріжуть): рух касту грає в такому темпі, щоб скінчитись разом із
+## читанням.
+func cast_started(id: int, seconds: float = 0.0) -> void:
 	var st: Dictionary = _anim.get(id, {})
 	st["каст_вхід_до"] = Time.get_ticks_msec() / 1000.0 + CAST_ENTER_LOCK
+	st["темп_касту"] = 1.0
+	var a: Node = _creatures.get(id)
+	var body: Node3D = a.model() if a != null else null
+	if body is SkinnedModel and seconds > 0.0:
+		var clip: float = body.move_length("Spell_Simple_Idle")
+		if clip > 0.0:
+			st["темп_касту"] = clampf(clip / seconds, TEMPO_MIN, CAST_TEMPO_MAX)
 	_anim[id] = st
 
 

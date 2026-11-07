@@ -62,10 +62,8 @@ const RACE_MODEL := "res://models/own/races/%s-%s.gltf"
 ## (18.10.2026, слово замовника: «виправ, чому нема в грі досі орчихи
 ## нової»). Рухів у них 10, решту підставляє `SkinnedModel.STAND_INS`;
 ## одягу частинами ще немає — вдягнене не видно, зброя в руці видно.
-const SCAN_DIR := "res://models/own/avatary/"
-const SCAN_MODEL := {
-	"орк-жінка": SCAN_DIR + "ork-s1303-mixamo/ork-s1303-mixamo.glb",
-}
+## 07.11.2026 — до орчихи додано ельфійку e1903 і людину l2002, а перелік
+## перенесено в `Appearance.SCANS` (там же — модель на кожен варіант).
 ## Зріст раси, метрів. Числа виконавця, замовник не називав.
 const RACE_HEIGHT := {"людина": 1.75, "ельф": 1.85, "орк": 1.9}
 
@@ -114,10 +112,15 @@ func _ready() -> void:
 ## самому скелеті, `tools/blender/avatar_build.py`); порожньо — модель
 ## раси.
 func apply_sex(sex: String, race: String = "людина", path: String = "") -> void:
+	# Клієнт знає расу й стать лише звідси — запам'ятати для `wear`
+	# (інший варіант перебудовує модель тією ж расою).
+	self.sex = sex
+	self.race = race
 	var who := "жінка" if sex == "жінка" else "чоловік"
-	var kind := "%s-%s" % [race, who]
+	var scan: String = Appearance.model_of(race, sex,
+			int(appearance.get("варіант", 1)))
 	var made := path if path != "" else \
-			str(SCAN_MODEL.get(kind, RACE_MODEL % [race, who]))
+			(scan if scan != "" else RACE_MODEL % [race, who])
 	if not ResourceLoader.exists(made):
 		made = RACE_MODEL % [race, who]
 	if not ResourceLoader.exists(made):
@@ -138,6 +141,7 @@ func apply_sex(sex: String, race: String = "людина", path: String = "") ->
 	add_child(skin)
 	skin.build()
 	seat_model()
+	skin.customize(Appearance.to_look(appearance))
 	# Нова модель — роздягнена; вдягаємо те, що вже було вдягнуто.
 	skin.wear(_look, _goods)
 	# Розворот обличчя (Superhero змонтований у +Z, рушій рахує вперед
@@ -151,12 +155,39 @@ var _look: Dictionary = {}
 var _goods: ItemBook = null
 
 
+## `look["зовнішність"]` (`world.look_of`) — вибір гравця: інший варіант
+## перебудовує модель, решта — `SkinnedModel.customize`.
 func wear(look: Dictionary, goods: ItemBook) -> void:
-	_look = look
+	# Комірки спорядження окремо: `SkinnedModel.wear` кожен ключ бере за
+	# комірку.
+	_look = look.duplicate()
+	_look.erase("зовнішність")
 	_goods = goods
+	var chosen: Dictionary = look.get("зовнішність", appearance)
+	if chosen != appearance:
+		var other_variant := int(chosen.get("варіант", 1)) \
+				!= int(appearance.get("варіант", 1))
+		appearance = chosen
+		if other_variant:
+			apply_sex(sex, race)
 	var skin := model()
 	if skin is SkinnedModel:
-		skin.wear(look, goods)
+		skin.customize(Appearance.to_look(appearance))
+		skin.wear(_look, goods)
+
+
+## Тип зброї в руці (`тип` у `data/items.json`: меч, лук, посох…) — з
+## того, що сервер розіслав як вдягнуте (`world.look_of`). Порожньо —
+## порожні руки або книга речей ще не прийшла.
+func held_kind() -> String:
+	var base := str(_look.get("зброя", ""))
+	if base == "" or _goods == null:
+		return ""
+	return str(_goods.base_of(base).get("тип", ""))
+
+
+func holds_shield() -> bool:
+	return str(_look.get("щит", "")) != ""
 
 
 func become_local() -> void:

@@ -7,7 +7,7 @@ Hunyuan на скелеті `game_engine`), переносить на скеле
 вирізається, скін лишається.
 
     blender -b <з-єднання.blend> -P tools/blender/pilot_eksport.py -- \
-        <вихід.glb> [--рухи Idle,Walk]
+        <вихід.glb> [--рухи Idle,Walk] [--з-формами]
 """
 import os
 import sys
@@ -16,6 +16,11 @@ import bpy
 
 TUT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TUT)
+# `--з-формами` (крок 3, риси): форм-ключі рис лишаються в GLB — сітки з
+# ними вже без модифікаторів, крім скелета (`pilot_rysy.py`).
+Z_FORMAMY = "--з-формами" in sys.argv
+if Z_FORMAMY:
+    sys.argv.remove("--з-формами")
 ARGS = sys.argv[sys.argv.index("--") + 1:]
 KUDY = os.path.abspath(ARGS[0])
 import mpfb_avatar as ma  # noqa: E402  (читає ті самі ARGS: вихід, --рухи)
@@ -25,7 +30,8 @@ for pb in arm.pose.bones:
     pb.matrix_basis.identity()
 # Сітки без форм (shape keys), інакше export_apply не застосує маски.
 for o in bpy.data.objects:
-    if o.type == "MESH" and o.data.shape_keys:
+    if o.type == "MESH" and o.data.shape_keys and not (
+            Z_FORMAMY and all(md.type == "ARMATURE" for md in o.modifiers)):
         bpy.context.view_layer.objects.active = o
         o.shape_key_add(name="змішано", from_mix=True)
         for k in list(o.data.shape_keys.key_blocks):

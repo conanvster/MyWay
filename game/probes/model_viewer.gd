@@ -204,6 +204,13 @@ func _scena() -> void:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	# `--світло k` — приглушити сонце й небо (світла шкіра MPFB у знімках
+	# зблизька пересвічувалась до білого, П-281)
+	var args := OS.get_cmdline_user_args()
+	if "--світло" in args:
+		var k := float(args[args.find("--світло") + 1])
+		sun.light_energy *= k
+		env.ambient_light_energy *= k
 	var we := WorldEnvironment.new()
 	we.environment = env
 	_world.add_child(we)
@@ -361,6 +368,8 @@ func _spysok_vyhliadu() -> void:
 	var rysy: Dictionary = o["риси"]
 	if styles.is_empty() and rysy.is_empty() and not o["маски"]:
 		return
+	var shkiry: Array = o.get("шкіри", [])
+	var ochi_t: Array = o.get("очі_текстури", [])
 	_vyhliad.add_child(HSeparator.new())
 	if not styles.is_empty():
 		var it: Array = []
@@ -383,6 +392,17 @@ func _spysok_vyhliadu() -> void:
 			_vybir("Губи — колір", KOLORY_GUB, "колір_губ")
 	if o["маски"]:
 		_vybir("Колір шкіри", KOLORY_SHKIRY, "колір_шкіри")
+	# людина MPFB (П-281): справжні шкіри й очі MakeHuman замість фарбування
+	if not shkiry.is_empty():
+		var it: Array = [["як у моделі", ""]]
+		for n: String in shkiry:
+			it.append([n, n])
+		_vybir("Шкіра — текстура", it, "текстура_шкіри")
+	if not ochi_t.is_empty():
+		var it2: Array = [["як у моделі", ""]]
+		for n: String in ochi_t:
+			it2.append([n, n])
+		_vybir("Очі — текстура", it2, "текстура_очей")
 
 
 ## Підпис і список; кольори — зі зразком. Вибір → `SkinnedModel.customize`.
@@ -444,7 +464,8 @@ func _kartynky() -> Array:
 		for f in d.get_files():
 			if (f.ends_with(".png") or f.ends_with(".jpg")) \
 					and (f.begins_with(stem + "_") or dir.ends_with(stem + "/")) \
-					and not ("маски" in f or "волосинки" in f):
+					and not ("маски" in f or "волосинки" in f
+							or "_шкіра-" in f or "_очі-" in f):
 				out.append(dir + f)
 	var sd := DirAccess.open(SKINS_DIR + stem + "/")
 	if sd != null:

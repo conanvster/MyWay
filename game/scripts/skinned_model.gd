@@ -568,6 +568,7 @@ func _hair_springs() -> void:
 ##   «підводка» (0…1), «ніс», «губи», «очі», «вуха» (назва варіанта після
 ##   дефіса в імені ключа або «звичайні»).
 const SKIN_SHADER := preload("res://shaders/avatar_skin.gdshader")
+const EYE_SHADER := preload("res://shaders/avatar_eye.gdshader")
 var _body_mesh: MeshInstance3D
 var _skin_mat: ShaderMaterial
 var _look: Dictionary = {}
@@ -592,7 +593,34 @@ func look_options() -> Dictionary:
 				if not rysy.has(k):
 					rysy[k] = []
 				rysy[k].append(parts[1])
-	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null}
+	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null,
+			"шкіри": _variant_files("шкіра"), "очі_текстури": _variant_files("очі")}
+
+
+## Окремі картинки-варіанти поруч із моделлю: `<модель>_<вид>-<назва>.png`
+## (людина MPFB, П-281: шкіри й текстури очей MakeHuman — одна розгортка).
+func _variant_files(kind: String) -> Array:
+	var out: Array = []
+	var stem := path.get_file().get_basename() + "_" + kind + "-"
+	var d := DirAccess.open(path.get_base_dir())
+	if d == null:
+		return out
+	for f in d.get_files():
+		f = f.trim_suffix(".import")
+		if f.begins_with(stem) and (f.ends_with(".png") or f.ends_with(".jpg")):
+			var n := f.trim_prefix(stem).get_basename()
+			if not n in out:
+				out.append(n)
+	out.sort()
+	return out
+
+
+func _variant_texture(kind: String, variant: String) -> Texture2D:
+	for ext: String in [".png", ".jpg"]:
+		var p: String = path.get_basename() + "_" + kind + "-" + variant + ext
+		if ResourceLoader.exists(p):
+			return load(p)
+	return null
 
 
 func _prepare_look() -> void:
@@ -613,6 +641,7 @@ func _prepare_look() -> void:
 		m.visible = first
 		m.set_meta(HAIR_CHOSEN, first)
 		first = false
+	_prepare_eyes()
 	var masks_path := path.get_basename() + "_маски.png"
 	if _body_mesh == null or not ResourceLoader.exists(masks_path):
 		return
@@ -628,6 +657,34 @@ func _prepare_look() -> void:
 	_skin_mat.set_shader_parameter("skin_ref", ref)
 	_skin_mat.set_shader_parameter("skin_tint", ref)
 	_body_mesh.material_override = _skin_mat
+
+
+## Очі MPFB — окрема сітка («high-poly»/«low-poly») зі своєю текстурою:
+## маска `<модель>_маски-очі.png` (R — райдужка) і шейдер очей (прозора
+## рогівка) — тоді колір очей фарбує райдужку, а не все яблуко (П-281).
+var _eye_mesh: MeshInstance3D
+var _eye_mat: ShaderMaterial
+
+
+func _prepare_eyes() -> void:
+	var masks_path := path.get_basename() + "_маски-очі.png"
+	if not ResourceLoader.exists(masks_path):
+		return
+	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		var n := str(m.name)
+		if not (n.ends_with("high-poly") or n.ends_with("low-poly")) or m.mesh == null:
+			continue
+		var src := m.get_active_material(0)
+		if not (src is BaseMaterial3D) or src.albedo_texture == null:
+			continue
+		_eye_mesh = m
+		_eye_mat = ShaderMaterial.new()
+		_eye_mat.shader = EYE_SHADER
+		_eye_mat.set_shader_parameter("albedo_tex", src.albedo_texture)
+		_eye_mat.set_shader_parameter("masks_tex", load(masks_path))
+		_eye_mat.set_shader_parameter("roughness_v", 0.12)
+		m.material_override = _eye_mat
+		return
 
 
 ## Середній тон шкіри текстури: пікселі поза масками й не порожні.
@@ -695,14 +752,42 @@ func customize(look: Dictionary) -> void:
 		if lc is Color:
 			_skin_mat.set_shader_parameter("lips_color", Vector3(lc.r, lc.g, lc.b))
 		_skin_mat.set_shader_parameter("liner", float(_look.get("підводка", 0.0)))
-	if _body_mesh != null and _body_mesh.mesh is ArrayMesh:
-		var am: ArrayMesh = _body_mesh.mesh
+		# інша шкіра MakeHuman (та сама розгортка) — тон рахується заново
+		var st := str(_look.get("текстура_шкіри", ""))
+		var tex := _variant_texture("шкіра", st) if st != "" else null
+		if tex == null and _skin_mat.has_meta("albedo_0"):
+			tex = _skin_mat.get_meta("albedo_0")
+		if tex != null:
+			if not _skin_mat.has_meta("albedo_0"):
+				_skin_mat.set_meta("albedo_0", _skin_mat.get_shader_parameter("albedo_tex"))
+			_skin_mat.set_shader_parameter("albedo_tex", tex)
+			var r2 := _skin_ref(tex, _skin_mat.get_shader_parameter("masks_tex"))
+			_skin_mat.set_shader_parameter("skin_ref", r2)
+			_skin_mat.set_shader_parameter("skin_tint",
+					Vector3(sc.r, sc.g, sc.b) if sc is Color else r2)
+	if _eye_mat != null:
+		var ec: Variant = _look.get("колір_очей")
+		_eye_mat.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)
+		if ec is Color:
+			_eye_mat.set_shader_parameter("eye_color", Vector3(ec.r, ec.g, ec.b))
+		var et := str(_look.get("текстура_очей", ""))
+		if not _eye_mat.has_meta("albedo_0"):
+			_eye_mat.set_meta("albedo_0", _eye_mat.get_shader_parameter("albedo_tex"))
+		var etex := _variant_texture("очі", et) if et != "" else null
+		_eye_mat.set_shader_parameter("albedo_tex",
+				etex if etex != null else _eye_mat.get_meta("albedo_0"))
+	# Риси — на тіло й на все, що до нього прилаштоване з тими самими
+	# ключами (очі, брови, вії MPFB — П-281).
+	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		if not (m.mesh is ArrayMesh):
+			continue
+		var am: ArrayMesh = m.mesh
 		for i in am.get_blend_shape_count():
 			var parts := str(am.get_blend_shape_name(i)).split("-", true, 1)
 			if parts.size() < 2:
 				continue
 			var want := str(_look.get(parts[0].to_lower(), ""))
-			_body_mesh.set_blend_shape_value(i, 1.0 if want == parts[1] else 0.0)
+			m.set_blend_shape_value(i, 1.0 if want == parts[1] else 0.0)
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

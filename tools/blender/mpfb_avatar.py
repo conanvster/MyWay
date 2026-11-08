@@ -1135,4 +1135,7 @@ def kadry(h):
         bpy.ops.render.render(write_still=True)
 
 
-main()
+# `blender -P` запускає як __main__; pilot_eksport.py бере звідси
+# perenapravyty() імпортом.
+if __name__ == "__main__":
+    main()

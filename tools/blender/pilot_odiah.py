@@ -54,6 +54,8 @@ if h.data.shape_keys:
 bpy.context.view_layer.update()
 
 KANAL = {"Сорочка": 0, "Штани": 1, "Чоботи": 2, "Рукавиці": 3}
+# деталі `Одяг-<комірка>-<тип>-<деталь>` — канал за кінцем імені
+KANAL_DETALI = {"сорочка": 0, "штани": 1, "чоботи": 2, "наручі": 3}
 KOLIR = {"Сорочка": (0.42, 0.30, 0.18), "Штани": (0.22, 0.17, 0.12),
          "Чоботи": (0.12, 0.08, 0.05), "Пасок": (0.1, 0.065, 0.04)}
 
@@ -518,7 +520,329 @@ def sposib_v():
     return rechi
 
 
-SPOSOBY = {"А": sposib_a, "Б": sposib_b, "Б-заготовка": sposib_b_zahotovka, "В": sposib_v}
+# ── Важка: два шари — тканина й об'ємні пластини ─────────────────────────
+# Слово замовника 08.11.2026: одяг «не буде прилягати до тіла а буде трохи
+# обемнішим хоч і повторюватиме тіло … важкої броні, взуття … очікую обемну
+# структуру а десь будуть проглядати частини тіла». Тканина (стьобанка,
+# широкі штани) — шкіра, відсунута на 1,5–3 см і згладжена; пластини —
+# окремі тверді оболонки навколо осі (кістки чи тулуба) з товщиною й
+# валиком по краю, кожна на одній кістці (на русі не тягнуться, а
+# повертаються цілими), між ними проміжки — видно тканину й тіло.
+# Імена: `Одяг-<комірка>-<тип>-<деталь>` (`skinned_model.gd`, `wear`);
+# `підклад-…` — тканина під бронею (у грі темніший тон речі).
+def oblast_bvh(kosti):
+    """Дерево променів по шкірі, де головна кістка — з `kosti`."""
+    dom = dominanta(h)
+    mw = h.matrix_world
+    verts = [mw @ v.co for v in h.data.vertices]
+    polys = [tuple(p.vertices) for p in h.data.polygons
+             if all(dom.get(i, "") in kosti for i in p.vertices)]
+    return BVHTree.FromPolygons(verts, polys)
+
+
+def ramka(u, bik):
+    """Ортонормована рамка навколо осі `u`: v — уперед (−Y), w — назовні
+    (для бік «l» +X, «r» −X, «» — +X)."""
+    u = u.normalized()
+    v = Vector((0, -1, 0)) - u * Vector((0, -1, 0)).dot(u)
+    if v.length < 1e-4:
+        v = Vector((0, 0, 1)) - u * u.z
+    v.normalize()
+    w = u.cross(v)
+    znak = -1 if bik == "r" else 1
+    if w.x * znak < 0 or (abs(w.x) < 1e-6 and w.z < 0):
+        w = -w
+    return u, v, w
+
+
+def obolonka(imia, promin, nt, nth, kosti, zazor, povne=False, zhlad=8,
+             tovsh=0.004, valyk=0.003, vahy=None):
+    """Тверда оболонка: сітка (t ∈ 0…1) × (кут θ); `promin(t, θ)` → (початок,
+    напрям) усередині тіла; промінь влучає в шкіру області `kosti`, радіус —
+    обгортка (згладжена, ніде не нижче шкіри) + `zazor(t, θ)`. Товщина
+    `tovsh`, край — валик назовні. `vahy(p)` → {кістка: вага}."""
+    bvh = oblast_bvh(kosti)
+    T = np.linspace(0, 1, nt)
+    TH = np.linspace(0, 1, nth, endpoint=not povne)
+    org = np.zeros((nt, nth, 3))
+    dr = np.zeros((nt, nth, 3))
+    r = np.full((nt, nth), np.nan)
+    for i, t in enumerate(T):
+        for j, th in enumerate(TH):
+            o, d = promin(t, th)
+            d = d.normalized()
+            org[i, j], dr[i, j] = o, d
+            hit = bvh.ray_cast(o, d, 0.5)
+            if hit[0] is not None:
+                r[i, j] = hit[3]
+    # промахи — середнє ряду (або 0: верхівка шолома над тім'ям)
+    for i in range(nt):
+        ok = ~np.isnan(r[i])
+        r[i, ~ok] = r[i, ok].mean() if ok.any() else 0.0
+    syre = r.copy()
+    for _ in range(zhlad):
+        p = np.pad(r, ((1, 1), (0, 0)), mode="edge")
+        if povne:
+            p = np.concatenate([p[:, -1:], p, p[:, :1]], axis=1)
+        else:
+            p = np.pad(p, ((0, 0), (1, 1)), mode="edge")
+        hl = (p[:-2, 1:-1] + p[2:, 1:-1] + p[1:-1, :-2] + p[1:-1, 2:] + 2 * p[1:-1, 1:-1]) / 6
+        r = np.maximum(hl, syre)
+    z = np.array([[zazor(t, th) for th in TH] for t in T])
+    r = r + z
+    if valyk:
+        r[0] += valyk
+        r[-1] += valyk
+        if not povne:
+            r[:, 0] += valyk
+            r[:, -1] += valyk
+    co = org + dr * r[..., None]
+    me = bpy.data.meshes.new(imia)
+    faces = []
+    nj = nth if povne else nth - 1
+    for i in range(nt - 1):
+        for j in range(nj):
+            j2 = (j + 1) % nth
+            faces.append((i * nth + j, i * nth + j2, (i + 1) * nth + j2, (i + 1) * nth + j))
+    me.from_pydata(co.reshape(-1, 3).tolist(), [], faces)
+    o = bpy.data.objects.new(imia, me)
+    bpy.context.scene.collection.objects.link(o)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    # нормалі назовні — від осі
+    c0 = Vector(org.reshape(-1, 3).mean(0))
+    if sum((p.center - c0).dot(p.normal) for p in me.polygons) < 0:
+        for p in me.polygons:
+            p.flip()
+    sd = o.modifiers.new("товщина", "SOLIDIFY")
+    sd.thickness = tovsh
+    sd.offset = 1.0
+    sd.use_even_offset = True
+    bv = o.modifiers.new("фаска", "BEVEL")
+    bv.width = min(0.0015, tovsh * 0.4)
+    bv.segments = 2
+    bv.limit_method = "ANGLE"
+    bv.harden_normals = False
+    dg = bpy.context.evaluated_depsgraph_get()
+    novyi = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
+    o.modifiers.clear()
+    o.data = novyi
+    for p in o.data.polygons:
+        p.use_smooth = True
+    if vahy is not None:
+        nv = len(o.data.vertices)
+        w = {}
+        for v in o.data.vertices:
+            for k, x in vahy(v.co).items():
+                w.setdefault(k, np.zeros(nv))[v.index] = x
+        zadaty_vahy(o, w)
+        md = o.modifiers.new("Armature", "ARMATURE")
+        md.object = rig
+        o.parent = rig
+    return o
+
+
+def z_iednaty(imia, chastyny):
+    bpy.ops.object.select_all(action="DESELECT")
+    for x in chastyny:
+        x.select_set(True)
+    bpy.context.view_layer.objects.active = chastyny[0]
+    if len(chastyny) > 1:
+        bpy.ops.object.join()
+    o = chastyny[0]
+    o.name = imia
+    o.data.name = imia
+    return o
+
+
+def tverda(kist):
+    return lambda p: {kist: 1.0}
+
+
+def kistka(n):
+    b = rig.data.bones[n]
+    return b.head_local.copy(), b.tail_local.copy()
+
+
+def vzdovzh(n, bik, t0, t1, th0, th1):
+    """Промінь навколо кістки `n`: t — від t0 до t1 її довжини, θ (градуси;
+    0 — уперед, 90 — назовні)."""
+    a, b = kistka(n)
+    u, v, w = ramka(b - a, bik)
+
+    def f(t, th):
+        tt = t0 + (t1 - t0) * t
+        k = np.radians(th0 + (th1 - th0) * th)
+        return a + (b - a) * tt, v * np.cos(k) + w * np.sin(k)
+    return f
+
+
+def sposib_vazhka():
+    TULUB = {"pelvis", "spine_01", "spine_02", "spine_03", "clavicle_l", "clavicle_r", "neck_01"}
+    rechi = []
+    # ── підклад: стьобанка до стегон з рукавами до ліктя, широкі штани ──
+    sorochka = shmatok_tila(
+        "Одяг-тіло-важка-підклад-сорочка",
+        TULUB | {"upperarm_l", "upperarm_r"},
+        lambda p: p.z >= 0.88 and (p.z <= 1.45 or abs(p.x) > 0.10)
+        and not (abs(p.x) > 0.27 and p.z < 1.26),
+        lambda p: 0.017, zhladyty=20)
+    vazhy_vid_tila(sorochka, rozmyty=1)
+
+    def shyr(p):        # штани: вузько в поясі, найширше під коліном, заправлені
+        z = p.z
+        if z > 0.65:
+            return 0.014 + 0.016 * (0.92 - min(z, 0.92)) / 0.27
+        if z > 0.40:
+            return 0.030
+        return 0.014 + 0.016 * max(0.0, (z - 0.30) / 0.10)
+    shtany = shmatok_tila("Одяг-тіло-важка-підклад-штани",
+                          {"pelvis", "spine_01", "thigh_l", "thigh_r", "calf_l", "calf_r"},
+                          lambda p: 0.26 <= p.z <= 0.99, shyr, zhladyty=3)
+    vazhy_vid_tila(shtany, rozmyty=1)
+    rechi += [sorochka, shtany]
+
+    # ── нагрудник: від пояса до ключиць, по боках — пройми для рук ──
+    vis = Vector((0, -0.01, 0))
+
+    def tulub(zb, zt, th0=0.0, th1=360.0, proima=0.0):
+        def f(t, th):
+            k = np.radians(th0 + (th1 - th0) * th)
+            verkh = zt - proima * np.sin(k) ** 2       # нижче на боках
+            return Vector((vis.x, vis.y, zb + (verkh - zb) * t)), \
+                Vector((np.sin(k), -np.cos(k), 0))
+        return f
+    nahrudnyk = obolonka("Одяг-тіло-важка-нагрудник", tulub(1.13, 1.40, proima=0.12), 14, 64,
+                         TULUB, lambda t, th: 0.026, povne=True, zhlad=14, tovsh=0.005,
+                         valyk=0.004, vahy=lambda p: {"spine_03": 1.0} if p.z > 1.20 else
+                         {"spine_03": 0.6, "spine_02": 0.4})
+    rechi.append(nahrudnyk)
+    # пластини на животі: три смуги внахльост, кожна трохи ширша за верхню
+    plast = []
+    for i, (zb, zt, kist) in enumerate([(1.075, 1.140, "spine_02"), (1.025, 1.090, "spine_01"),
+                                         (0.975, 1.040, "spine_01")]):
+        plast.append(obolonka("смуга%d" % i, tulub(zb, zt), 5, 64, TULUB,
+                              (lambda d: lambda t, th: d)(0.030 + 0.005 * i), povne=True,
+                              zhlad=14, tovsh=0.004, valyk=0.003, vahy=tverda(kist)))
+    # пояс під пластинами
+    plast.append(obolonka("пояс", tulub(0.92, 0.985), 5, 64, TULUB, lambda t, th: 0.040,
+                          povne=True, zhlad=14, tovsh=0.006, valyk=0.002,
+                          vahy=tverda("pelvis")))
+    rechi.append(z_iednaty("Одяг-тіло-важка-пластини", plast))
+
+    # ── наплічники: по три пластини на плече, верхня накриває плече ──
+    napl = []
+    for bik in ("l", "r"):
+        for i, (t0, t1, zz) in enumerate([(-0.18, 0.12, 0.030), (0.06, 0.30, 0.040),
+                                          (0.24, 0.48, 0.050)]):
+            napl.append(obolonka(
+                "напл%s%d" % (bik, i), vzdovzh("upperarm_" + bik, bik, t0, t1, -35, 215), 6, 28,
+                {"upperarm_" + bik, "clavicle_" + bik, "spine_03"},
+                (lambda zz: lambda t, th: zz)(zz), zhlad=10, tovsh=0.005, valyk=0.004,
+                vahy=tverda("upperarm_" + bik)))
+    rechi.append(z_iednaty("Одяг-тіло-важка-наплічники", napl))
+
+    # ── набедреники: спереду й збоку на кожному стегні, звисають з пояса ──
+    nab = []
+    for bik in ("l", "r"):
+        for i, (th0, th1) in enumerate([(-70, 8), (18, 100)]):
+            def vh(p, bik=bik):
+                a, b = kistka("thigh_" + bik)
+                t = float(np.clip((a.z - p.z) / (a.z - b.z) / 0.4, 0, 1))
+                return {"pelvis": 1 - 0.6 * t, "thigh_" + bik: 0.6 * t}
+            nab.append(obolonka(
+                "наб%s%d" % (bik, i), vzdovzh("thigh_" + bik, bik, 0.0, 0.36, th0, th1), 7, 14,
+                {"thigh_" + bik, "pelvis"}, lambda t, th: 0.040 + 0.025 * t, zhlad=8,
+                tovsh=0.004, valyk=0.003, vahy=vh))
+    rechi.append(z_iednaty("Одяг-тіло-важка-набедреники", nab))
+
+    # ── наручі: передпліччя від ліктя до зап'ястя, ширше до зап'ястя ──
+    nar = []
+    for bik in ("l", "r"):
+        nar.append(obolonka("нар" + bik, vzdovzh("lowerarm_" + bik, bik, 0.30, 0.95, 0, 360), 8, 32,
+                            {"lowerarm_" + bik}, lambda t, th: 0.010 + 0.010 * t, povne=True,
+                            zhlad=8, tovsh=0.004, valyk=0.003, vahy=tverda("lowerarm_" + bik)))
+    rechi.append(z_iednaty("Одяг-рукавиці-важка-наручі", nar))
+
+    # ── чоботи: стопа й гомілка до 28 см, шире вгорі ──
+    import make_races as mr
+    choboty = shmatok_tila("Одяг-взуття-важка-чоботи",
+                           {"calf_l", "calf_r", "foot_l", "foot_r", "ball_l", "ball_r"},
+                           lambda p: 0.09 <= p.z <= 0.28,
+                           lambda p: 0.012 + 0.012 * float(np.clip((p.z - 0.12) / 0.16, 0, 1)))
+    tmp = tilo_bez_kliuchiv()
+    for g in list(tmp.vertex_groups):
+        if g.name not in KOSTI:
+            tmp.vertex_groups.remove(g)
+    mr.FOOT_TOP = 0.10
+    stopy = mr._boot_feet(tmp, 0.012)
+    bpy.data.objects.remove(tmp)
+    choboty = z_iednaty("Одяг-взуття-важка-чоботи", [choboty] + list(stopy))
+    vazhy_vid_tila(choboty, rozmyty=1)
+    rechi.append(choboty)
+    # поножі й наколінники
+    pon = []
+    for bik in ("l", "r"):
+        pon.append(obolonka("пон" + bik, vzdovzh("calf_" + bik, bik, 0.08, 0.72, -115, 115), 10, 28,
+                            {"calf_" + bik}, lambda t, th: 0.044 - 0.016 * t, zhlad=10,
+                            tovsh=0.005, valyk=0.004, vahy=tverda("calf_" + bik)))
+        pon.append(obolonka("кол" + bik, vzdovzh("calf_" + bik, bik, -0.12, 0.10, -80, 80), 6, 16,
+                            {"calf_" + bik, "thigh_" + bik}, lambda t, th: 0.052, zhlad=8,
+                            tovsh=0.005, valyk=0.004, vahy=tverda("calf_" + bik)))
+    rechi.append(z_iednaty("Одяг-взуття-важка-поножі", pon))
+
+    # ── шолом: купол, нащічники й захист потилиці, обличчя відкрите ──
+    C = Vector((0, -0.025, 1.625))
+
+    def sfera(t, th):
+        k = np.radians(th * 360 - 180)                  # 0 — потилиця, ±180 — обличчя
+        lytse = abs(abs(np.degrees(k)) - 180) < 52
+        nyz = 14 if lytse else -38
+        f = np.radians(nyz + (86 - nyz) * t)
+        hor = Vector((np.sin(k), np.cos(k), 0))         # k=0 → +Y (потилиця)
+        return C, hor * np.cos(f) + Vector((0, 0, 1)) * np.sin(f)
+    sholom = obolonka("Одяг-голова-важка-шолом", sfera, 14, 56, {"head", "neck_01"},
+                      lambda t, th: 0.030, povne=True, zhlad=10, tovsh=0.005, valyk=0.004,
+                      vahy=tverda("head"))
+    # гребінь від потилиці через тім'я до чола й наносник
+    def hreb(t, th):
+        a = np.radians(-30 + 218 * t)                   # 0 — потилиця, 90 — тім'я, 180 — чоло
+        lat = np.radians(-7 + 14 * th)
+        base = Vector((0, np.cos(a), np.sin(a)))
+        return C, base * np.cos(lat) + Vector((1, 0, 0)) * np.sin(lat)
+    hreben = obolonka("гребінь", hreb, 40, 5, {"head", "neck_01"},
+                      lambda t, th: 0.036 + (0.008 if 0.1 < t < 0.75 else 0.0) * np.sin(np.pi * th),
+                      zhlad=6, tovsh=0.005, valyk=0.002, vahy=tverda("head"))
+    # бровка: обідок над чолом і довкола купола
+    def obid(t, th):
+        k = np.radians(th * 360 - 180)
+        lytse = abs(abs(np.degrees(k)) - 180) < 52
+        f = np.radians((14 if lytse else -38) + 6 * t)
+        hor = Vector((np.sin(k), np.cos(k), 0))
+        return C, hor * np.cos(f) + Vector((0, 0, 1)) * np.sin(f)
+    obidok = obolonka("обідок", obid, 3, 56, {"head", "neck_01"}, lambda t, th: 0.040,
+                      povne=True, zhlad=10, tovsh=0.006, valyk=0.0, vahy=tverda("head"))
+    sholom = z_iednaty("Одяг-голова-важка-шолом", [sholom, hreben, obidok])
+    rechi.append(sholom)
+
+    for o in rechi:
+        for pl in o.data.polygons:
+            pl.use_smooth = True
+        o.data.materials.clear()
+    for o in rechi:
+        if os.environ.get("BEZ_AO"):
+            continue
+        zapekty_ao(o, 1024 if "підклад" in o.name or "нагрудник" in o.name else 512)
+    return rechi
+
+
+
+SPOSOBY = {"А": sposib_a, "Б": sposib_b, "Б-заготовка": sposib_b_zahotovka, "В": sposib_v,
+           "важка": sposib_vazhka}
 
 
 # ── Тіло під річчю ───────────────────────────────────────────────────────
@@ -527,6 +851,8 @@ def pid_odiahom(rechi, dalno):
     dereva = []
     for o in rechi:
         k = next((v for n, v in KANAL.items() if o.name == "Одяг-" + n), None)
+        if k is None:
+            k = next((v for n, v in KANAL_DETALI.items() if o.name.endswith("-" + n)), None)
         if k is None:
             continue
         ev = o.evaluated_get(dg)
@@ -575,6 +901,6 @@ if SPOSIB == "Б-заготовка":
 for o in rechi:
     print("[одяг] %s: вершин %d, модифікатори %s" % (
         o.name, len(o.data.vertices), [m.type for m in o.modifiers]))
-pid_odiahom(rechi, {"А": 0.03, "Б": 0.05, "В": 0.09}[SPOSIB])
+pid_odiahom(rechi, {"А": 0.03, "Б": 0.05, "В": 0.09, "важка": 0.09}[SPOSIB])
 bpy.ops.wm.save_as_mainfile(filepath=VYKHID)
 print("[одяг] →", VYKHID)

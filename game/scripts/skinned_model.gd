@@ -311,26 +311,68 @@ func _borrow_player(body: Node, from_path: String) -> AnimationPlayer:
 ## жодного перемальовування моделей.
 func wear(look: Dictionary, goods: ItemBook) -> void:
 	var shown := {}
+	var sets := _detail_sets()
 	for slot: String in look:
 		var base: Dictionary = goods.base_of(look[slot]) if goods != null \
 				else {}
-		for piece: String in PIECES.get(slot, []):
-			shown[piece] = base.get("вигляд", {})
+		var vyhl: Dictionary = base.get("вигляд", {})
+		var parts: Array = sets.get(slot, {}).get(str(base.get("тип", "")), [])
+		if parts.is_empty():
+			parts = PIECES.get(slot, [])
+		for piece: String in parts:
+			shown[piece] = vyhl
 	for mesh: MeshInstance3D in find_children(PIECE_PREFIX + "*",
 			"MeshInstance3D", true, false):
 		var piece := str(mesh.name).trim_prefix(PIECE_PREFIX)
 		mesh.visible = shown.has(piece)
 		if mesh.visible:
-			mesh.material_override = _cloth_on(mesh, shown[piece])
+			var vyhl: Dictionary = shown[piece]
+			if piece.contains("-підклад-"):
+				vyhl = _under_tone(vyhl)
+			mesh.material_override = _cloth_on(mesh, vyhl)
 	_hold_gear(look, goods)
 	_hide_under(shown)
 	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
 	# лише обрана зачіска: у моделі зі сканів їх кілька, і «показати
 	# все волосся» вдягало всі зачіски одна на одну.
+	var helmet := shown.has("Шолом")
+	for piece: String in shown:
+		helmet = helmet or piece.begins_with("голова-")
 	for hair: Node in find_children("Волосся*", "MeshInstance3D", true,
 			false):
-		hair.visible = not shown.has("Шолом") \
+		hair.visible = not helmet \
 				and bool(hair.get_meta(HAIR_CHOSEN, true))
+
+
+## Набори деталей за типом речі (П-281, крок 4, 08.11.2026 — одяг двома
+## шарами: тканина й об'ємні пластини, `spec/аватари-підходи.md`): сітки
+## `Одяг-<комірка>-<тип>-<деталь>` (`Одяг-тіло-важка-нагрудник`) —
+## {комірка: {тип: [«<комірка>-<тип>-<деталь>», …]}}. Річ показує деталі
+## своєї комірки й свого `тип` з items.json; немає такого набору — старі
+## частини `PIECES` (манекени, ельфійки).
+func _detail_sets() -> Dictionary:
+	if has_meta("detail_sets"):
+		return get_meta("detail_sets")
+	var sets := {}
+	for mesh: MeshInstance3D in find_children(PIECE_PREFIX + "*",
+			"MeshInstance3D", true, false):
+		var piece := str(mesh.name).trim_prefix(PIECE_PREFIX)
+		var bits := piece.split("-")
+		if bits.size() < 3 or not PIECES.has(bits[0]):
+			continue
+		var by_kind: Dictionary = sets.get_or_add(bits[0], {})
+		(by_kind.get_or_add(bits[1], []) as Array).append(piece)
+	set_meta("detail_sets", sets)
+	return sets
+
+
+## Тканина під бронею (`…-підклад-…`) — темніший і тьмяніший тон кольору
+## речі, без її плитки: пластини сталеві — стьобанка під ними не сталева.
+static func _under_tone(look: Dictionary) -> Dictionary:
+	var c := Color(str(look.get("колір", "#8a7a60")))
+	var grey := (c.r + c.g + c.b) / 3.0
+	c = Color(grey, grey, grey).lerp(c, 0.4).lerp(Color(0.16, 0.13, 0.10), 0.6)
+	return {"колір": "#" + c.to_html(false), "шорсткість": 0.95}
 
 
 ## Тіло під вдягненою річчю — геть (людина MPFB, П-281, крок 4): інакше
@@ -338,23 +380,28 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 ## `під_одяг` (R — під сорочкою, G — штанами, B — взуттям, A —
 ## рукавицями; `pilot_odiah.py`), шейдер шкіри відкидає ці місця. Без
 ## кольорів вершин (ельфійки, манекени) — нічого не ховається. Білизна
-## під сорочкою й штанами теж ховається.
+## під сорочкою й штанами теж ховається. Деталі наборів — за кінцем
+## імені (`…-сорочка`, `…-штани`, `…-чоботи`, `…-наручі`); під
+## пластинами тіло не ховається — крізь проміжки його видно.
 const HIDE_CHANNEL := {"Сорочка": 0, "Штани": 1, "Чоботи": 2, "Рукавиці": 3}
-const UNDERWEAR := {"білизна-верх": "Сорочка", "білизна-низ": "Штани"}
+const HIDE_DETAIL := {"сорочка": 0, "штани": 1, "чоботи": 2, "наручі": 3}
+const UNDERWEAR := {"білизна-верх": 0, "білизна-низ": 1}
 
 
 func _hide_under(shown: Dictionary) -> void:
+	var hide := Vector4.ZERO
+	for piece: String in shown:
+		var ch: int = HIDE_CHANNEL.get(piece, HIDE_DETAIL.get(piece.get_slice("-",
+				piece.get_slice_count("-") - 1), -1))
+		if ch >= 0:
+			hide[ch] = 1.0
 	for m: MeshInstance3D in find_children("білизна-*", "MeshInstance3D", true, false):
-		var under: String = UNDERWEAR.get(str(m.name), "")
-		m.visible = under == "" or not shown.has(under)
+		var under: int = UNDERWEAR.get(str(m.name), -1)
+		m.visible = under < 0 or hide[under] < 0.5
 	if _skin_mat == null or _body_mesh == null or _body_mesh.mesh == null:
 		return
 	if not (_body_mesh.mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR):
 		return
-	var hide := Vector4.ZERO
-	for piece: String in HIDE_CHANNEL:
-		if shown.has(piece):
-			hide[HIDE_CHANNEL[piece]] = 1.0
 	_skin_mat.set_shader_parameter("hide_under", hide)
 
 

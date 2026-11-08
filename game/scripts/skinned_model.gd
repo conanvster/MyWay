@@ -593,8 +593,27 @@ func look_options() -> Dictionary:
 				if not rysy.has(k):
 					rysy[k] = []
 				rysy[k].append(parts[1])
+	var nabory := {}
+	for k: String in PART_SETS:
+		var vs := _part_set(k)
+		if not vs.is_empty():
+			nabory[k] = vs.map(func(m: MeshInstance3D) -> String:
+				return str(m.name).trim_prefix(PART_SETS[k]))
 	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null,
-			"шкіри": _variant_files("шкіра"), "очі_текстури": _variant_files("очі")}
+			"шкіри": _variant_files("шкіра"), "очі_текстури": _variant_files("очі"),
+			"набори": nabory}
+
+
+## Набори окремих сіток, з яких видно одну (людина MPFB, П-281): брови й
+## вії — у кожного варіанта MPFB своя сітка й розгортка. Сітки
+## `Брови-<n>-<назва>`, `Вії-<n>-<назва>`; типово видно першу за номером.
+const PART_SETS := {"брови": "Брови-", "вії": "Вії-"}
+
+
+func _part_set(kind: String) -> Array:
+	var out: Array = find_children(PART_SETS[kind] + "*", "MeshInstance3D", true, false)
+	out.sort_custom(func(a: Node, b: Node) -> bool: return str(a.name) < str(b.name))
+	return out
 
 
 ## Окремі картинки-варіанти поруч із моделлю: `<модель>_<вид>-<назва>.png`
@@ -641,6 +660,12 @@ func _prepare_look() -> void:
 		m.visible = first
 		m.set_meta(HAIR_CHOSEN, first)
 		first = false
+	for k: String in PART_SETS:
+		var vs := _part_set(k)
+		for i in vs.size():
+			(vs[i] as MeshInstance3D).visible = i == 0
+			# прозорі картки MPFB — без тіні (у тіньовому проході вони суцільні)
+			(vs[i] as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_prepare_eyes()
 	var masks_path := path.get_basename() + "_маски.png"
 	if _body_mesh == null or not ResourceLoader.exists(masks_path):
@@ -656,6 +681,9 @@ func _prepare_look() -> void:
 	var ref := _skin_ref(albedo, load(masks_path))
 	_skin_mat.set_shader_parameter("skin_ref", ref)
 	_skin_mat.set_shader_parameter("skin_tint", ref)
+	# людина MPFB: губи — та сама шкіра, темнішають разом із нею (у
+	# ельфійок губи намальовані окремо — лишаються як є)
+	_skin_mat.set_shader_parameter("lips_skin", 1.0 if _eye_mat != null else 0.0)
 	_body_mesh.material_override = _skin_mat
 
 
@@ -729,6 +757,12 @@ func customize(look: Dictionary) -> void:
 		for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 			m.visible = str(m.name) == "Волосся-" + style
 			m.set_meta(HAIR_CHOSEN, m.visible)
+	for k: String in PART_SETS:
+		var want := str(_look.get(k, ""))
+		var vs := _part_set(k)
+		for i in vs.size():
+			var m: MeshInstance3D = vs[i]
+			m.visible = str(m.name) == PART_SETS[k] + want if want != "" else i == 0
 	var hc: Variant = _look.get("колір_волосся")
 	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 		var mat := m.get_surface_override_material(0)

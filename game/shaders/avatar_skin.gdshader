@@ -19,6 +19,7 @@ uniform float liner = 0.0;                          // 0 — як є, 1 — те
 uniform vec3 lips_color = vec3(0.70, 0.35, 0.35);
 uniform float lips_mix = 0.0;
 uniform float roughness_v = 0.6;
+uniform float lips_skin = 0.0;                      // 1 — губи беруть тон шкіри (людина MPFB)
 
 // Кольори з палітри й середній тон текстури — у sRGB (як у меню), а
 // текстура тут уже лінійна. Без переведення вибраний колір виходив
@@ -33,7 +34,7 @@ void fragment() {
 	vec4 m = texture(masks_tex, UV);
 	float lum = dot(c, vec3(0.299, 0.587, 0.114));
 	float ref_lum = dot(ref_l, vec3(0.299, 0.587, 0.114));
-	float inshe = max(max(m.r, m.b), m.a);
+	float inshe = max(max(m.r, m.b * (1.0 - lips_skin)), m.a);
 	// шкіра: відношення нового тону до середнього тону текстури
 	vec3 shkira = c * (lin(skin_tint) / max(ref_l, vec3(0.002)));
 	c = mix(c, shkira, 1.0 - inshe);

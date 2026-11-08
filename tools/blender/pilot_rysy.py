@@ -23,6 +23,7 @@
 (губи, підводка, скальп; `tools/pilot_maski.py`).
 
     blender -b <зачіски.blend> -P tools/blender/pilot_rysy.py -- <вихід.blend> --спосіб гаус|цілі
+        [--брови eyebrow010:дугою,… --вії eyelashes01:природні,…]
 """
 import functools
 import os
@@ -257,10 +258,36 @@ for i in np.where(pv > 0)[0]:
     hp.add([int(i)], float(pv[i]), "REPLACE")
 print("[риси] підводка: вершин %d" % int((pv > 0).sum()))
 
+# ── Набори брів і вій на вибір (остаточна модель Б+В, 08.11.2026) ────────
+# `--брови eyebrow010:дугою,eyebrow006:тонкі … --вії eyelashes01:природні,…`
+# — кожен — своя сітка MPFB (у кожного .mhclo своя розгортка, тож не
+# заміна текстури), назва в моделі `Брови-<n>-<назва>` / `Вії-<n>-<назва>`;
+# гра показує одну з кожного набору (`skinned_model.gd`, «брови», «вії»).
+from bl_ext.blender_org.mpfb.services.humanservice import HumanService  # noqa: E402
+
+NABORY = []          # (об'єкт, нова назва)
+for prapor, grp, typ, pidpys in (("--брови", "eyebrows", "Eyebrows", "Брови"),
+                                 ("--вії", "eyelashes", "Eyelashes", "Вії")):
+    if prapor not in ARGS:
+        continue
+    for i, par in enumerate(ARGS[ARGS.index(prapor) + 1].split(",")):
+        asset, nazva = par.split(":")
+        o = next((x for x in bpy.data.objects if x.type == "MESH"
+                  and x.name.split(".", 1)[-1] == asset), None)
+        if o is None:
+            d = os.path.join(DANI, grp, asset)
+            HumanService.add_mhclo_asset(
+                os.path.join(d, next(f for f in os.listdir(d) if f.endswith(".mhclo"))),
+                h, asset_type=typ, material_type="MAKESKIN")
+            o = next(x for x in bpy.data.objects if x.type == "MESH"
+                     and x.name.split(".", 1)[-1] == asset)
+        NABORY.append((o, "%s-%d-%s" % (pidpys, i + 1, nazva)))
+print("[риси] набори:", [(o.name, n) for o, n in NABORY])
+
 # ── Очі, брови, вії — переприлаштувати під кожен ключ ────────────────────
 PROKSI = []
 for o in bpy.data.objects:
-    if o.type != "MESH" or o.parent != rig or o == h:
+    if o.type != "MESH" or o.parent not in (rig, h) or o == h:
         continue
     for grp, pref in (("eyes", "high-poly"), ("eyes", "low-poly"),
                       ("eyebrows", "eyebrow"), ("eyelashes", "eyelashes")):
@@ -333,6 +360,11 @@ def zastosuvaty(o):
 
 for o in [h] + [o for o, _ in PROKSI]:
     zastosuvaty(o)
+for o, n in NABORY:
+    print("[риси] %s → %s: батько %s, модифікатори %s"
+          % (o.name, n, o.parent.name if o.parent else "-", [md.type for md in o.modifiers]))
+    o.name = n
+    o.data.name = n
 
 # ── Дані масок: UV трикутників і ваги (губи, підводка, скальп) ───────────
 me = h.data

@@ -403,6 +403,13 @@ func _spysok_vyhliadu() -> void:
 		for n: String in ochi_t:
 			it2.append([n, n])
 		_vybir("Очі — текстура", it2, "текстура_очей")
+	var nabory: Dictionary = o.get("набори", {})
+	for k: String in ["брови", "вії"]:
+		if nabory.has(k):
+			var it3: Array = []
+			for n: String in nabory[k]:
+				it3.append([n.get_slice("-", 1) if n.contains("-") else n, n])
+			_vybir(k.capitalize(), it3, k)
 
 
 ## Підпис і список; кольори — зі зразком. Вибір → `SkinnedModel.customize`.

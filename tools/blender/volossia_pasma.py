@@ -53,6 +53,11 @@ def arg(k, typ, default):
 
 STYL = arg("--стиль", str, "розпущене")
 PASOM = arg("--пасом", int, 1300)
+# Природніше (08.11.2026, пілот MPFB; слово замовника про ельфійок: «додані
+# очікувані параметри, але все ще виглядає не природньо»): пасма збиваються
+# в пучки до кінчиків, кілька вибиваються, картки вужчі, текстура
+# 1024×2048 з тонкими волосинками різного тону й м'якими кінчиками.
+PRYRODNE = "--природне" in ARGS
 random.seed(arg("--зерно", int, 7))
 KOLIR = (0.93, 0.92, 0.90)          # нейтральний: колір — множником у грі
 KROK = 0.015
@@ -188,6 +193,11 @@ def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=Fa
         q += poperek * (math.sin(i * 2 * math.pi / hv_t + hv_f)
                         - math.sin((i - 1) * 2 * math.pi / hv_t + hv_f)) * hv_a * sila
         d = (q - p).normalized() if (q - p).length > 1e-5 else d
+        if PRYRODNE and not vpered and q.z < Z_OCHI - 0.06 and q.z > p.z - KROK * 0.4:
+            # уперлось у плече й не йде вниз — зсковзує назад за спину
+            # (інакше пасма збивались на плечах у клапті)
+            d = (d * 0.3 + NAZAD * 0.8 + VNYZ * 0.3).normalized()
+            q = vidshtovhnuty(p + d * KROK, zazor)
         pts.append(q)
         if q.z < kinets:
             break
@@ -277,6 +287,7 @@ def kosa(B, kinets, n_pasom):
 
 # ── 1. Корені й пасма за стилем ─────────────────────────────────────────
 pasma = []
+bez_puchkiv = set()      # коси: своє плетіння, у пучки не збирати
 kreslennia = []          # додаткові сітки: резинка
 kintsi = S["kintsi"]
 vsi = koreni(PASOM)
@@ -301,6 +312,7 @@ elif STYL == "коси":
         pasma.append(rist(p, (T - p).normalized(), z, pole_do(T), -10.0,
                           maks=int((T - p).length / KROK) + 2, hv=0.0))
     for dx in (-0.034, 0.0, 0.034):
+        bez_puchkiv.update(range(len(pasma), len(pasma) + 150))
         pasma += kosa(T + n_t * 0.004 + Vector((dx, 0, -0.01 * abs(dx) / 0.034)),
                       kintsi + random.uniform(-0.03, 0.03), 150)
     kreslennia.append(("резинка", T, n_t))
@@ -328,6 +340,7 @@ elif STYL in ("напівхвіст", "коса"):
             pasma.append(rist(p, n * 0.3 + VNYZ, z, pole_vnyz(prodil=False),
                               kintsi + random.uniform(-0.08, 0.04)))
     if STYL == "коса":
+        bez_puchkiv.update(range(len(pasma), len(pasma) + 180))
         pasma += kosa(T + n_t * 0.004, kintsi - 0.04, 180)
     # резинка/затискач — тор біля T
     kreslennia.append(("резинка", T, n_t))
@@ -342,14 +355,53 @@ for p, n, z, d in koreni(PASOM // 2, shary=(0.0025,)):
         pole = pole_vnyz()
     pasma.append(rist(p, pole(p, 0), 0.0025, pole, -10.0, maks=7, hv=0.0))
 
+# ── 1б. Пучки (--природне) ──────────────────────────────────────────────
+# Справжнє волосся лягає пучками: сусідні пасма до кінчиків тягнуться до
+# спільного «провідника», корені лишаються де були. 3 % вибиваються.
+if PRYRODNE:
+    from mathutils.kdtree import KDTree
+    dovgi = [i for i, p_ in enumerate(pasma)
+             if len(p_) >= 10 and i not in bez_puchkiv]
+    providni = random.sample(dovgi, max(1, len(dovgi) // 9))
+    kd = KDTree(len(providni))
+    for j, i in enumerate(providni):
+        kd.insert(pasma[i][0], j)
+    kd.balance()
+    zibrano = 0
+    for i in dovgi:
+        s_ = pasma[i]
+        if i in providni:
+            continue
+        if random.random() < 0.03:          # вибилось
+            for k in range(2, len(s_)):
+                t = k / (len(s_) - 1)
+                s_[k] = vidshtovhnuty(s_[k] + Vector((random.gauss(0, 1), random.gauss(0, 1),
+                                                      random.gauss(0, 0.5))) * 0.006 * t, 0.004)
+            continue
+        _, j, d_ = kd.find(s_[0])
+        g = pasma[providni[j]]
+        if d_ > 0.035 or abs(len(g) - len(s_)) > 0.35 * len(s_):
+            continue
+        zsuv = (s_[0] - g[0]) * 0.3
+        sila = random.uniform(0.45, 0.75)
+        for k in range(1, len(s_)):
+            t = k / (len(s_) - 1)
+            tsil = g[min(k, len(g) - 1)] + zsuv
+            s_[k] = vidshtovhnuty(s_[k].lerp(tsil, sila * t ** 1.2), 0.004)
+        zibrano += 1
+    print("[пасма] пучків %d, зібрано пасом %d" % (len(providni), zibrano))
+
 # ── 2. Картки ───────────────────────────────────────────────────────────
 me = bpy.data.meshes.new("Волосся-" + STYL)
 bm = bmesh.new()
 uv_l = bm.loops.layers.uv.new("UVMap")
 for pts in pasma:
+    if PRYRODNE and len(pts) > 6:
+        # кожна друга точка (3 см на ланку): вигин той самий, граней удвічі менше
+        pts = pts[::2] + ([pts[-1]] if (len(pts) - 1) % 2 else [])
     if len(pts) < 3:
         continue
-    shyr = random.uniform(0.012, 0.022)
+    shyr = random.uniform(0.009, 0.017) if PRYRODNE else random.uniform(0.012, 0.022)
     u0 = random.choice((0.0, 0.25, 0.5, 0.75))
     ryad = []
     for i, p in enumerate(pts):
@@ -397,39 +449,89 @@ bpy.context.scene.collection.objects.link(vol)
 print("[пасма] карток %d, граней %d" % (len(pasma), len(me.polygons)))
 
 # ── 3. Текстура волосинок: 4 смуги-пучки, нейтрально-світла ─────────────
-W, H = 512, 1024
-img = np.zeros((H, W, 4), dtype=np.float32)
-rng = np.random.default_rng(11)
-for s in range(4):
-    x0 = s * W // 4
-    for _ in range(52):
-        x = x0 + rng.uniform(3, W // 4 - 3)
-        dovzh = rng.uniform(0.88, 1.0)
-        jas = rng.uniform(0.62, 1.05)
-        tovsh = rng.uniform(0.6, 1.6)
-        for y in range(int(H * dovzh)):
-            xx = x + math.sin(y * 0.01 + x) * 1.5
-            for dx in (-1, 0, 1):
-                xi = int(xx) + dx
-                if x0 <= xi < x0 + W // 4:
-                    a = max(0.0, 1.0 - abs(xi - xx) / tovsh)
-                    a *= 1.0 - max(0.0, (y / H - (dovzh - 0.06)) / 0.06)
-                    img[H - 1 - y, xi, :3] = np.maximum(img[H - 1 - y, xi, :3],
-                                                        np.array(KOLIR) * jas * a)
-                    img[H - 1 - y, xi, 3] = max(img[H - 1 - y, xi, 3], a)
-osn = np.zeros((H, W), dtype=np.float32)
-for s in range(4):
-    x0 = s * W // 4
+if PRYRODNE:
+    # 1024×2048: у смузі ~170 волосинок завширшки 1–2,5 пкс, тон кожної свій
+    # (світліші й темніші — глибина без кольору: колір дає гра), кінчики
+    # звужуються й тоншають, корінь темніший, легкий вигин.
+    W, H = 1024, 2048
+    img = np.zeros((H, W, 4), dtype=np.float32)
+    rng = np.random.default_rng(11)
+    yy = np.arange(H, dtype=np.float32)
+    for s in range(4):
+        x0 = s * W // 4
+        sw = W // 4
+        for _ in range(170):
+            x = x0 + rng.uniform(4, sw - 4)
+            # кожна волосинка коротша/довша, щільніше посередині смуги
+            x = x0 + sw / 2 + (x - x0 - sw / 2) * rng.uniform(0.55, 1.0)
+            dovzh = rng.uniform(0.70, 1.0)
+            jas = float(np.clip(rng.normal(0.85, 0.16), 0.45, 1.15))
+            tovsh = rng.uniform(0.7, 1.4)
+            faza, amp = rng.uniform(0, 6.28), rng.uniform(0.5, 2.5)
+            n = int(H * dovzh)
+            xs = x + np.sin(yy[:n] * rng.uniform(0.002, 0.006) + faza) * amp
+            t = yy[:n] / H
+            kinets = np.clip((dovzh - t) / 0.10, 0, 1)        # звуження до кінця
+            for dx in (-2, -1, 0, 1, 2):
+                xi = np.floor(xs).astype(int) + dx
+                ok = (xi >= x0) & (xi < x0 + sw)
+                a_ = np.clip(1.0 - np.abs(xi - xs) / (tovsh * (0.4 + 0.6 * kinets)), 0, 1) * kinets
+                rows = (H - 1 - yy[:n].astype(int))[ok]
+                cols = xi[ok]
+                a_ = a_[ok]
+                img[rows, cols, 3] = np.maximum(img[rows, cols, 3], a_)
+                c_ = np.array(KOLIR) * jas
+                img[rows, cols, :3] = np.maximum(img[rows, cols, :3], c_[None, :] * a_[:, None])
+    # підшерсток: тло пучка, щоб крізь картку не світило. Щільне посередині
+    # (0,95): гра відкидає прозоріше за 0,45, і на відстані (міп-рівні)
+    # тонкі волосинки розмивались нижче — довге волосся зникало на бігу.
+    osn = np.zeros((H, W), dtype=np.float32)
     xx = np.arange(W // 4)
-    osn[:, x0:x0 + W // 4] = np.clip(1.0 - np.abs(xx - W / 8) / (W / 8), 0, 1)[None, :] ** 0.7 * 0.85
-# кінці прозорі лише в останніх 12%: гра відкидає прозоріше за 0,45
-osn *= np.clip(np.linspace(0, 1, H) / 0.12, 0, 1)[:, None]
-img[..., 3] = np.maximum(img[..., 3], osn)
-# корінь трохи темніший (глибина пучка) — природніше на будь-якому кольорі
-tin = np.clip(0.78 + 0.22 * np.linspace(0, 1, H) ** 0.5, 0, 1)[::-1]
-img[..., :3] = np.where(img[..., :3] > 0, img[..., :3], np.array(KOLIR) * 0.8)
-img[..., :3] *= tin[:, None, None]
-img[-8:, -8:] = (0.12, 0.11, 0.10, 1.0)      # кут для резинки (uv 0,99)
+    prof = np.clip(1.0 - np.abs(xx - W / 8) / (W / 8 * 0.92), 0, 1) ** 0.45 * 0.95
+    for s in range(4):
+        osn[:, s * W // 4:(s + 1) * W // 4] = prof[None, :]
+    osn *= np.clip(np.linspace(0, 1, H) / 0.10, 0, 1)[:, None]
+    img[..., 3] = np.maximum(img[..., 3], osn)
+    pid = np.array(KOLIR) * 0.62
+    m_ = img[..., 3:4]
+    img[..., :3] = np.where(img[..., :3].sum(-1, keepdims=True) > 0, img[..., :3] / np.maximum(m_, 1e-3), pid)
+    tin = np.clip(0.70 + 0.30 * np.linspace(0, 1, H) ** 0.6, 0, 1)[::-1]
+    img[..., :3] *= tin[:, None, None]
+    img[-8:, -8:] = (0.12, 0.11, 0.10, 1.0)
+else:
+    W, H = 512, 1024
+    img = np.zeros((H, W, 4), dtype=np.float32)
+    rng = np.random.default_rng(11)
+    for s in range(4):
+        x0 = s * W // 4
+        for _ in range(52):
+            x = x0 + rng.uniform(3, W // 4 - 3)
+            dovzh = rng.uniform(0.88, 1.0)
+            jas = rng.uniform(0.62, 1.05)
+            tovsh = rng.uniform(0.6, 1.6)
+            for y in range(int(H * dovzh)):
+                xx = x + math.sin(y * 0.01 + x) * 1.5
+                for dx in (-1, 0, 1):
+                    xi = int(xx) + dx
+                    if x0 <= xi < x0 + W // 4:
+                        a = max(0.0, 1.0 - abs(xi - xx) / tovsh)
+                        a *= 1.0 - max(0.0, (y / H - (dovzh - 0.06)) / 0.06)
+                        img[H - 1 - y, xi, :3] = np.maximum(img[H - 1 - y, xi, :3],
+                                                            np.array(KOLIR) * jas * a)
+                        img[H - 1 - y, xi, 3] = max(img[H - 1 - y, xi, 3], a)
+    osn = np.zeros((H, W), dtype=np.float32)
+    for s in range(4):
+        x0 = s * W // 4
+        xx = np.arange(W // 4)
+        osn[:, x0:x0 + W // 4] = np.clip(1.0 - np.abs(xx - W / 8) / (W / 8), 0, 1)[None, :] ** 0.7 * 0.85
+    # кінці прозорі лише в останніх 12%: гра відкидає прозоріше за 0,45
+    osn *= np.clip(np.linspace(0, 1, H) / 0.12, 0, 1)[:, None]
+    img[..., 3] = np.maximum(img[..., 3], osn)
+    # корінь трохи темніший (глибина пучка) — природніше на будь-якому кольорі
+    tin = np.clip(0.78 + 0.22 * np.linspace(0, 1, H) ** 0.5, 0, 1)[::-1]
+    img[..., :3] = np.where(img[..., :3] > 0, img[..., :3], np.array(KOLIR) * 0.8)
+    img[..., :3] *= tin[:, None, None]
+    img[-8:, -8:] = (0.12, 0.11, 0.10, 1.0)      # кут для резинки (uv 0,99)
 im = bpy.data.images.new("волосинки", W, H, alpha=True)
 im.pixels.foreach_set(img.clip(0, 1).ravel())
 im.pack()

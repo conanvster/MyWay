@@ -398,7 +398,17 @@ const HAIR_BLOCKERS := [
 		["mixamorig_LeftShoulder", 0.06, 0.16, 0.06], ["mixamorig_RightShoulder", 0.06, 0.16, 0.06],
 		["mixamorig_LeftArm", 0.055, 0.30, 0.13], ["mixamorig_RightArm", 0.055, 0.30, 0.13],
 		["mixamorig_LeftForeArm", 0.045, 0.26, 0.12], ["mixamorig_RightForeArm", 0.045, 0.26, 0.12],
-		["mixamorig_LeftUpLeg", 0.08, 0.40, 0.2], ["mixamorig_RightUpLeg", 0.08, 0.40, 0.2]]
+		["mixamorig_LeftUpLeg", 0.08, 0.40, 0.2], ["mixamorig_RightUpLeg", 0.08, 0.40, 0.2],
+		# Скелет MPFB `game_engine` (пілот П-281, 08.11.2026) — ті самі місця
+		# тіла; розміри однаково беруться з тіла (`_blocker_sizes`).
+		["pelvis", 0.13, 0.25, 0.05],
+		["spine_01", 0.11, 0.20, 0.03], ["spine_02", 0.11, 0.26, 0.05],
+		["spine_03", 0.12, 0.32, 0.08], ["neck_01", 0.055, 0.14, 0.06],
+		["head", 0.10, 0.22, 0.09],
+		["clavicle_l", 0.06, 0.16, 0.07], ["clavicle_r", 0.06, 0.16, 0.07],
+		["upperarm_l", 0.055, 0.30, 0.13], ["upperarm_r", 0.055, 0.30, 0.13],
+		["lowerarm_l", 0.045, 0.26, 0.12], ["lowerarm_r", 0.045, 0.26, 0.12],
+		["thigh_l", 0.08, 0.40, 0.2], ["thigh_r", 0.08, 0.40, 0.2]]
 
 
 ## Ланцюжки пасом: [назва, ланок] — усі `hair_<назва>_1` у кістяку.
@@ -479,13 +489,19 @@ func _blocker_sizes() -> Dictionary:
 		d.sort()
 		y.sort()
 		var tulub := k in ["mixamorig_Hips", "mixamorig_Spine", "mixamorig_Spine1",
-				"mixamorig_Spine2", "mixamorig_Neck", "mixamorig_Head"]
-		var rad := d[int(d.size() * (0.5 if tulub else 0.8))]
+				"mixamorig_Spine2", "mixamorig_Neck", "mixamorig_Head",
+				"neck_01", "head"]
+		# Тулуб MPFB: вісь хребта ближче до спини, а груди й живіт далеко
+		# попереду — медіана давала капсулу 0,14 м, ширшу за спину, і вона
+		# відштовхувала косу (пілот П-281, 08.11.2026). 30-й процентиль.
+		var tulub_mpfb := k in ["pelvis", "spine_01", "spine_02", "spine_03"]
+		var rad := d[int(d.size() * (0.3 if tulub_mpfb else (0.5 if tulub else 0.8)))]
 		var y0 := y[int(y.size() * 0.05)]
 		var y1 := y[int(y.size() * 0.95)]
 		out[k] = [rad, maxf(y1 - y0 + rad, 2.0 * rad), (y0 + y1) * 0.5]
-	if out.has("mixamorig_Spine2"):
-		var kf: float = out["mixamorig_Spine2"][0] / 0.12
+	var grudy := "mixamorig_Spine2" if out.has("mixamorig_Spine2") else "spine_03"
+	if out.has(grudy):
+		var kf: float = out[grudy][0] / 0.12
 		for b: Array in HAIR_BLOCKERS:
 			if not out.has(b[0]):
 				out[b[0]] = [b[1] * kf, b[2] * kf, b[3] * kf]
@@ -500,6 +516,9 @@ func _hair_springs() -> void:
 			var src := m.get_active_material(i)
 			if src is BaseMaterial3D:
 				var mat: BaseMaterial3D = src.duplicate()
+				# свій колір зачіски з файла (пілот MPFB) — до нього вертається
+				# `customize`, коли колір у меню не вибрано
+				mat.set_meta("base_albedo", src.albedo_color)
 				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 				mat.alpha_scissor_threshold = 0.45
 				mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE
@@ -657,7 +676,8 @@ func customize(look: Dictionary) -> void:
 	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 		var mat := m.get_surface_override_material(0)
 		if mat is BaseMaterial3D:
-			(mat as BaseMaterial3D).albedo_color = hc if hc is Color else Color.WHITE
+			(mat as BaseMaterial3D).albedo_color = hc if hc is Color \
+					else mat.get_meta("base_albedo", Color.WHITE)
 	if _skin_mat != null:
 		var ref: Vector3 = _skin_mat.get_shader_parameter("skin_ref")
 		var sc: Variant = _look.get("колір_шкіри")

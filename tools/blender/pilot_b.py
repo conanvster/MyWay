@@ -9,7 +9,7 @@
 Рендер — Cycles на процесорі (GPU зайнятий стендом).
 
     blender -b -P tools/blender/pilot_b.py -- <тека> [--макро k=v,...]
-        [--зачіска long01] [--брови eyebrow010] [--шкіра young_caucasian_female]
+        [--зачіска long01 | -] [--брови eyebrow010] [--шкіра young_caucasian_female]
         [--колір-волосся 0.2,0.12,0.07] [--без-рендеру]
 """
 import functools
@@ -81,6 +81,8 @@ def build():
                            ("Eyelashes", "eyelashes", "eyelashes01"),
                            ("Eyebrows", "eyebrows", BROVY),
                            ("Hair", "hair", ZACHISKA)):
+        if name == "-":       # без зачіски: основа під окреме волосся
+            continue
         HumanService.add_mhclo_asset(mhclo(grp, name), h, asset_type=typ,
                                      material_type="MAKESKIN")
     # Риси обличчя під кадр: «ціль=вага,…» (імена — як у MPFB targets/).
@@ -96,7 +98,7 @@ def build():
         asset("skins", SHKIRA, SHKIRA + ".mhmat"), h, skin_type="MAKESKIN")
     # Колір волосся — множником на текстуру зачіски (каштанове, як на кадрі).
     for o in bpy.data.objects:
-        if o.type == "MESH" and ZACHISKA in o.name.lower():
+        if o.type == "MESH" and ZACHISKA != "-" and ZACHISKA in o.name.lower():
             for m in o.data.materials:
                 tint(m, KOLIR)
     return h
@@ -190,4 +192,5 @@ def main():
     shoot(cam, "обличчя", 15, hi.z - 0.13, 1.2, 85)
 
 
-main()
+if __name__ == "__main__":
+    main()

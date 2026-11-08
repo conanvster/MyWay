@@ -19,7 +19,9 @@ uniform float liner = 0.0;                          // 0 — як є, 1 — те
 uniform vec3 lips_color = vec3(0.70, 0.35, 0.35);
 uniform float lips_mix = 0.0;
 uniform float roughness_v = 0.6;
-uniform float lips_skin = 0.0;                      // 1 — губи беруть тон шкіри (людина MPFB)
+uniform float lips_skin = 0.0;
+// тіло під вдягненою річчю (кольори вершин `під_одяг`, людина MPFB)
+uniform vec4 hide_under = vec4(0.0);                      // 1 — губи беруть тон шкіри (людина MPFB)
 
 // Кольори з палітри й середній тон текстури — у sRGB (як у меню), а
 // текстура тут уже лінійна. Без переведення вибраний колір виходив
@@ -29,6 +31,9 @@ vec3 lin(vec3 v) {
 }
 
 void fragment() {
+	if (dot(COLOR, hide_under) > 0.5) {
+		discard;
+	}
 	vec3 c = texture(albedo_tex, UV).rgb;
 	vec3 ref_l = lin(skin_ref);
 	vec4 m = texture(masks_tex, UV);

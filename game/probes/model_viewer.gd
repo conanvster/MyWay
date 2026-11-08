@@ -86,6 +86,18 @@ var _pitch := -0.15
 var _dist := 4.0
 var _vybrana: Dictionary = {}
 var _gl: StandardMaterial3D
+## Одяг у переглядачі (П-281, крок 4): що вдягнуто, комірка -> річ.
+var _vdiahnuto: Dictionary = {}
+var _knyha: ItemBook
+
+
+func _rechi() -> ItemBook:
+	if _knyha == null:
+		_knyha = ItemBook.new()
+		var f := FileAccess.open("res://data/items.json", FileAccess.READ)
+		if f != null:
+			_knyha.load_from(JSON.parse_string(f.get_as_text()))
+	return _knyha
 
 
 func _ready() -> void:
@@ -371,6 +383,7 @@ func _spysok_vyhliadu() -> void:
 	var shkiry: Array = o.get("шкіри", [])
 	var ochi_t: Array = o.get("очі_текстури", [])
 	_vyhliad.add_child(HSeparator.new())
+	_spysok_odiahu()
 	if not styles.is_empty():
 		var it: Array = []
 		for st: String in styles:
@@ -410,6 +423,35 @@ func _spysok_vyhliadu() -> void:
 			for n: String in nabory[k]:
 				it3.append([n.get_slice("-", 1) if n.contains("-") else n, n])
 			_vybir(k.capitalize(), it3, k)
+
+
+## Одяг (П-281, крок 4): у моделі є частини `Одяг-…` — речі з
+## items.json за коміркою, як вдягне гра (`SkinnedModel.wear`).
+func _spysok_odiahu() -> void:
+	_vdiahnuto = {}
+	if _skin_node.find_children("Одяг-*", "MeshInstance3D", true, false).is_empty():
+		return
+	var book := _rechi()
+	for slot: String in ["тіло", "взуття", "ремінь", "рукавиці", "голова"]:
+		var it: Array = [["нічого", ""]]
+		for n: String in book.bases:
+			if str(book.bases[n].get("слот", "")) == slot:
+				it.append([n, n])
+		var l := Label.new()
+		l.text = "Одяг — " + slot
+		_vyhliad.add_child(l)
+		var ob := OptionButton.new()
+		ob.custom_minimum_size = Vector2(190, 0)
+		ob.clip_text = true
+		for i in it.size():
+			ob.add_item(it[i][0], i)
+		ob.item_selected.connect(func(i: int) -> void:
+			if it[i][1] == "":
+				_vdiahnuto.erase(slot)
+			else:
+				_vdiahnuto[slot] = it[i][1]
+			_skin_node.wear(_vdiahnuto, book))
+		_vyhliad.add_child(ob)
 
 
 ## Підпис і список; кольори — зі зразком. Вибір → `SkinnedModel.customize`.
@@ -566,6 +608,12 @@ func _proba(args: PackedStringArray) -> void:
 				look[kv[0]] = Color(kv[1]) if kv[1].begins_with("#") else \
 						(float(kv[1]) if kv[1].is_valid_float() else kv[1])
 		_skin_node.customize(look)
+	if "--вдягти" in args:      # комірка=річ;… — як у меню «Одяг»
+		for pair: String in args[args.find("--вдягти") + 1].split(";"):
+			var kv := pair.split("=")
+			if kv.size() == 2:
+				_vdiahnuto[kv[0]] = kv[1]
+		_skin_node.wear(_vdiahnuto, _rechi())
 	if "--глина" in args:
 		_zastosuvaty(null, true)
 	if "--скін" in args:         # частина назви картинки-скіна

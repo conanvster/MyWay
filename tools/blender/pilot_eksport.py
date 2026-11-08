@@ -7,7 +7,7 @@ Hunyuan на скелеті `game_engine`), переносить на скеле
 вирізається, скін лишається.
 
     blender -b <з-єднання.blend> -P tools/blender/pilot_eksport.py -- \
-        <вихід.glb> [--рухи Idle,Walk] [--з-формами]
+        <вихід.glb> [--рухи Idle,Walk] [--з-формами] [--колір-вершин під_одяг]
 """
 import os
 import sys
@@ -21,6 +21,13 @@ sys.path.insert(0, TUT)
 Z_FORMAMY = "--з-формами" in sys.argv
 if Z_FORMAMY:
     sys.argv.remove("--з-формами")
+# `--колір-вершин <назва>` (крок 4, одяг): атрибут тіла `під_одяг` — у
+# COLOR_0 (лише сітки з таким атрибутом), гра ховає тіло під річчю.
+KOLIR_VERSHYN = None
+if "--колір-вершин" in sys.argv:
+    i_ = sys.argv.index("--колір-вершин")
+    KOLIR_VERSHYN = sys.argv[i_ + 1]
+    del sys.argv[i_:i_ + 2]
 ARGS = sys.argv[sys.argv.index("--") + 1:]
 KUDY = os.path.abspath(ARGS[0])
 import mpfb_avatar as ma  # noqa: E402  (читає ті самі ARGS: вихід, --рухи)
@@ -43,5 +50,9 @@ os.makedirs(os.path.dirname(KUDY), exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=KUDY, export_format="GLB",
                           export_animations=True,
                           export_animation_mode="NLA_TRACKS",
-                          export_skins=True, export_apply=True)
+                          export_skins=True, export_apply=True,
+                          **({"export_vertex_color": "NAME",
+                              "export_vertex_color_name": KOLIR_VERSHYN,
+                              "export_all_vertex_colors": False}
+                             if KOLIR_VERSHYN else {}))
 print("[пілот] →", KUDY, flush=True)

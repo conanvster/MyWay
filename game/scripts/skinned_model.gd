@@ -321,8 +321,9 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		var piece := str(mesh.name).trim_prefix(PIECE_PREFIX)
 		mesh.visible = shown.has(piece)
 		if mesh.visible:
-			mesh.material_override = _cloth(shown[piece])
+			mesh.material_override = _cloth_on(mesh, shown[piece])
 	_hold_gear(look, goods)
+	_hide_under(shown)
 	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
 	# лише обрана зачіска: у моделі зі сканів їх кілька, і «показати
 	# все волосся» вдягало всі зачіски одна на одну.
@@ -330,6 +331,31 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 			false):
 		hair.visible = not shown.has("Шолом") \
 				and bool(hair.get_meta(HAIR_CHOSEN, true))
+
+
+## Тіло під вдягненою річчю — геть (людина MPFB, П-281, крок 4): інакше
+## на русі шкіра пролазить крізь одяг. Модель несе на тілі кольори вершин
+## `під_одяг` (R — під сорочкою, G — штанами, B — взуттям, A —
+## рукавицями; `pilot_odiah.py`), шейдер шкіри відкидає ці місця. Без
+## кольорів вершин (ельфійки, манекени) — нічого не ховається. Білизна
+## під сорочкою й штанами теж ховається.
+const HIDE_CHANNEL := {"Сорочка": 0, "Штани": 1, "Чоботи": 2, "Рукавиці": 3}
+const UNDERWEAR := {"білизна-верх": "Сорочка", "білизна-низ": "Штани"}
+
+
+func _hide_under(shown: Dictionary) -> void:
+	for m: MeshInstance3D in find_children("білизна-*", "MeshInstance3D", true, false):
+		var under: String = UNDERWEAR.get(str(m.name), "")
+		m.visible = under == "" or not shown.has(under)
+	if _skin_mat == null or _body_mesh == null or _body_mesh.mesh == null:
+		return
+	if not (_body_mesh.mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR):
+		return
+	var hide := Vector4.ZERO
+	for piece: String in HIDE_CHANNEL:
+		if shown.has(piece):
+			hide[HIDE_CHANNEL[piece]] = 1.0
+	_skin_mat.set_shader_parameter("hide_under", hide)
 
 
 ## Зброя й щит у руках — з `WeaponLook`. Щоразу наново: вдягання
@@ -855,6 +881,77 @@ static func _cloth(look: Dictionary) -> StandardMaterial3D:
 			print("[одяг] ‼ немає текстури ", picture)
 	_cloths[key] = m
 	return m
+
+
+const CLOTH_SHADER := preload("res://shaders/avatar_cloth.gdshader")
+static var _own_means: Dictionary = {}
+
+
+## Річ на частині з власним кроєм (П-281, крок 4): у частини є своя
+## картинка (шви, складки) чи карта нормалей — тоді шейдер тканини
+## (`avatar_cloth.gdshader`): барва й матеріал від речі, світлотінь і
+## рельєф від частини. Без них — звичайний `_cloth`, як у манекенів.
+func _cloth_on(mesh: MeshInstance3D, look: Dictionary) -> Material:
+	var src: Material = mesh.mesh.surface_get_material(0) if mesh.mesh != null else null
+	var own: Texture2D = null
+	var nrm: Texture2D = null
+	if src is BaseMaterial3D:
+		own = (src as BaseMaterial3D).albedo_texture
+		if (src as BaseMaterial3D).normal_enabled:
+			nrm = (src as BaseMaterial3D).normal_texture
+	if own == null and nrm == null:
+		return _cloth(look)
+	var key := "%s|%s" % [mesh.get_instance_id(), str(look)]
+	if mesh.has_meta("cloth_key") and mesh.get_meta("cloth_key") == key:
+		return mesh.material_override
+	var m := ShaderMaterial.new()
+	m.shader = CLOTH_SHADER
+	m.set_shader_parameter("item_color", Color(str(look.get("колір", "#8a7a60"))))
+	m.set_shader_parameter("roughness_v", float(look.get("шорсткість", 0.9)))
+	var picture := str(look.get("текстура", ""))
+	if picture != "" and ResourceLoader.exists(picture):
+		m.set_shader_parameter("item_tex", load(picture))
+		m.set_shader_parameter("has_item_tex", true)
+		m.set_shader_parameter("item_scale", float(look.get("масштаб", 4.0)))
+	if own != null:
+		m.set_shader_parameter("own_tex", own)
+		m.set_shader_parameter("has_own_tex", true)
+		m.set_shader_parameter("own_mean", _own_mean(own))
+	if nrm != null:
+		m.set_shader_parameter("own_normal", nrm)
+		m.set_shader_parameter("has_own_normal", true)
+	mesh.set_meta("cloth_key", key)
+	return m
+
+
+## Звична яскравість картинки (лінійна, як у шейдері) — 80-й перцентиль по
+## дрібній копії: відкрита, незатулена тканина дає рівно колір речі. Середнє
+## не годиться — у світлотіні (AO) штани під полами й халявами майже всі в
+## тіні, у візерунку (смуги блузи MPFB) його тягнуть темні смуги.
+static func _own_mean(tex: Texture2D) -> float:
+	var k := tex.resource_path if tex.resource_path != "" else str(tex.get_rid())
+	if _own_means.has(k):
+		return _own_means[k]
+	var img := tex.get_image()
+	var mean := 0.5
+	if img != null:
+		if img.is_compressed():
+			img.decompress()
+		img.resize(48, 48)
+		var vals: Array[float] = []
+		for y in 48:
+			for x in 48:
+				var c := img.get_pixel(x, y)
+				# поза розгорткою — прозоре чи чорне тло, не тканина
+				if c.a < 0.5 or c.get_luminance() < 0.04:
+					continue
+				var l := c.srgb_to_linear()
+				vals.append(l.r * 0.299 + l.g * 0.587 + l.b * 0.114)
+		if not vals.is_empty():
+			vals.sort()
+			mean = vals[vals.size() * 4 / 5]
+	_own_means[k] = mean
+	return mean
 
 
 const FUR_SHADER := preload("res://scripts/fur_shell.gdshader")

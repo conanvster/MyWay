@@ -131,8 +131,74 @@ def naviaty(kist, vid, do):
     bpy.context.view_layer.update()
 
 
+def holova(kist):
+    bpy.context.view_layer.update()
+    return np.array((rig.matrix_world @ rig.pose.bones[kist].head)[:])
+
+
+def khvist(kist):
+    bpy.context.view_layer.update()
+    return np.array((rig.matrix_world @ rig.pose.bones[kist].tail)[:])
+
+
+def vis_ruky(bik):
+    """Вісь руки сітки: центри перерізів від плеча до кінчиків."""
+    sh = holova("upperarm_" + ("l" if bik > 0 else "r"))
+    m = GV[:, 0] * bik > abs(sh[0]) + 0.02
+    Q = GV[m]
+    tip = kraini(GV, bik, True)
+    ax = (tip - sh) / np.linalg.norm(tip - sh)
+    t = (Q - sh) @ ax
+    # лише рука: ближче 12 см до прямої плече → кінчики (стегно й пояс
+    # теж лежать за плечем по X і тягли вісь до тіла)
+    rad = np.linalg.norm((Q - sh) - np.outer(t, ax), axis=1)
+    Q, t = Q[rad < 0.12], t[rad < 0.12]
+    L = np.linalg.norm(tip - sh)
+    tochky = [sh]
+    for a in np.linspace(0.06, 0.94, 23):
+        s_ = np.abs(t - a * L) < 0.025 * L
+        if s_.sum() > 20:
+            tochky.append(Q[s_].mean(0))
+    tochky.append(tip)
+    P = np.array(tochky)
+    dl = np.r_[0, np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))]
+    vis = lambda f: np.array([np.interp(f * dl[-1], dl, P[:, k]) for k in range(3)])
+    # зап'ястя — найвужчий переріз між 55 і 92 % довжини (у орка кисть велика,
+    # пропорції людини ставили зап'ястя в долоню, 09.11)
+    prof = []
+    for f in np.linspace(0.55, 0.92, 38):
+        c = vis(f)
+        s_ = np.abs((Q - c) @ ax) < 0.012
+        if s_.sum() > 15:
+            prof.append((np.linalg.norm(Q[s_] - c, axis=1).mean(), f))
+    vis.zap = min(prof)[1] if prof else None
+    return vis
+
+
 for bik, sfx in ((1, "l"), (-1, "r")):
-    naviaty("upperarm_" + sfx, kraini(B, bik, True), kraini(GV, bik, True))
+    if "--рука-по-суглобах" not in A:
+        naviaty("upperarm_" + sfx, kraini(B, bik, True), kraini(GV, bik, True))
+        naviaty("thigh_" + sfx, kraini(B, bik, False), kraini(GV, bik, False))
+        continue
+    # (`--рука-по-суглобах`, спроба 09.11: руки в T-позі прямі, але пальці
+    # сітки після цього визначаються хибно — суглоби ставить замовник вручну,
+    # `skelet_vruchnu.py`)
+    # рука — по суглобах: плече на лікоть, передпліччя на зап'ястя, кисть на
+    # кінчики (лише плече на кінчик лишало передпліччя під кутом — у T-позі
+    # й ударі лікті ламалися, слово замовника 09.11)
+    vis = vis_ruky(bik)
+    Lu = np.linalg.norm(khvist("upperarm_" + sfx) - holova("upperarm_" + sfx))
+    Ll = np.linalg.norm(holova("hand_" + sfx) - holova("lowerarm_" + sfx))
+    Lh = np.linalg.norm(khvist("middle_03_" + sfx) - holova("hand_" + sfx))
+    Lt = Lu + Ll + Lh
+    # (найвужчий переріз по всій руці хибив: 55 % зліва, 88 % справа — тож
+    # пропорції; зап'ястя уточнює крок пальців локально)
+    fz = (Lu + Ll) / Lt
+    naviaty("upperarm_" + sfx, holova("lowerarm_" + sfx), vis(fz * Lu / (Lu + Ll)))
+    naviaty("lowerarm_" + sfx, holova("hand_" + sfx), vis(fz))
+    naviaty("hand_" + sfx, khvist("middle_03_" + sfx), vis(1.0))
+    log("рука %s: зап'ястя на %.0f %% довжини, лікоть %s, зап'ястя %s, кінчик %s" % (sfx, 100 * fz,
+        vis(fz * Lu / (Lu + Ll)).round(3), vis(fz).round(3), vis(1.0).round(3)))
     naviaty("thigh_" + sfx, kraini(B, bik, False), kraini(GV, bik, False))
 dg = bpy.context.evaluated_depsgraph_get()
 pm = h.evaluated_get(dg).to_mesh()
@@ -241,11 +307,28 @@ def palci_sitky():
         wr = np.array((mw @ eb["hand_" + bik].head)[:])
         lo = np.array((mw @ eb["lowerarm_" + bik].head)[:])
         os_ = (wr - lo) / np.linalg.norm(wr - lo)
+        # зап'ястя сітки — найвужчий переріз у межах ±6 см від зап'ястя скелета
+        blyz = (U[:, 0] * sx > 0) & (np.linalg.norm(U - wr, axis=1) < 0.2)
+        prof = []
+        for zs in np.linspace(-0.06, 0.06, 25):
+            c0 = wr + os_ * zs
+            s_ = blyz & (np.abs((U - c0) @ os_) < 0.006)
+            if s_.sum() > 15:
+                q = U[s_]
+                cc = q.mean(0)
+                prof.append((np.linalg.norm((q - cc) - np.outer((q - cc) @ os_, os_), axis=1).mean(), zs))
+        if prof:
+            wr = wr + os_ * min(prof)[1]
+            log("пальці %s: зап'ястя сітки зсунуто на %.1f см від скелета" % (bik, 100 * min(prof)[1]))
         pr = (U - wr) @ os_
         H = (pr > -0.02) & (U[:, 0] * sx > 0) & (np.linalg.norm(U - wr, axis=1) < 0.35)
         Hi = np.nonzero(H)[0]
         # зап'ястя сітки — кільце поблизу площини кістки кисті
         kil = Hi[np.abs(pr[Hi]) < 0.008]
+        log("пальці %s: зап'ястя скелета %s, вершин за ним %d, у кільці %d, найближча вершина сітки %.3f м"
+            % (bik, wr.round(3), len(Hi), len(kil), np.linalg.norm(U - wr, axis=1).min()))
+        if len(kil) == 0:
+            continue
         wr_g = U[kil].mean(0)
         # відстань по поверхні від кільця (Дейкстра в межах кисті)
         d = np.full(len(U), np.inf)
@@ -314,6 +397,13 @@ def palci_sitky():
         kand.sort(reverse=True)
         log("пальці %s: кисть %d, кільце %d, вершин %d, відростків %s, макс відстань %.3f"
             % (bik, len(Hi), len(kil), nova, [round(k[0], 3) for k in kand[:8]], d[Hi].max()))
+        # лише вздовж кисті: кінчик пальця далеко від зап'ястя вздовж осі
+        # кисті; клапті наруча звисають убік біля зап'ястя (09.11)
+        dal = Hi[d[Hi] > 0.5 * d[Hi].max()]
+        ax_k = U[dal].mean(0) - wr_g
+        ax_k /= np.linalg.norm(ax_k)
+        dov_k = ((U[Hi] - wr_g) @ ax_k).max()
+        kand = [k_ for k_ in kand if (U[k_[2]] - wr_g) @ ax_k > 0.55 * dov_k]
         # без дублів: кінчик і основа — далі 2 см від уже вибраних
         nalezh = np.array([koren(mitka0[i]) if mitka0[i] >= 0 else -1 for i in range(len(U))])
         vybr = []

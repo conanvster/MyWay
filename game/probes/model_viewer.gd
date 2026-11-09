@@ -630,6 +630,9 @@ func _proba(args: PackedStringArray) -> void:
 	if "--кут" in args:
 		_yaw = deg_to_rad(float(args[args.find("--кут") + 1]))
 		_kamera()
+	if "--нахил" in args:        # градуси, мінус — згори (−80 — майже над головою)
+		_pitch = deg_to_rad(float(args[args.find("--нахил") + 1]))
+		_kamera()
 	if "--капсули" in args:     # заміри капсул волосся з тіла
 		for k: String in _skin_node._hair_capsules:
 			var m: Array = _skin_node._hair_capsules[k]

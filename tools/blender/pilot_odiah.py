@@ -875,6 +875,20 @@ def sposib_vazhka():
     o_t.append(nakladka(NG, "хрест2", lambda s, u: (0.66 + 0.06 * u, (-6 + 12 * s) / 360),
                         8, 3, dod=0.0015, tovsh=0.003))
     o_t.append(zaklepky(NG, "хрест3", [(0.69, 0.0)], r=0.006, splask=0.5))
+    REB = dict(dod=0.001, tovsh=0.0035)
+    o_t.append(nakladka(NG, "нр0", lambda s, u: (0.08 + 0.38 * s, (-1.2 + 2.4 * u) / 360 % 1.0),
+                        10, 3, **REB))
+    for zn in (-1, 1):
+        # V-ребра: від плечей униз до середини живота
+        o_t.append(nakladka(NG, "нрv%d" % zn, lambda s, u, zn=zn:
+                            (0.90 - 0.80 * s, (zn * (34 - 26 * s) + (-1.3 + 2.6 * u)) / 360 % 1.0),
+                            16, 3, **REB))
+        o_t.append(nakladka(NG, "нрс%d" % zn, lambda s, u, zn=zn:
+                            (0.88 - 0.80 * s, (180 + zn * (30 - 18 * s) + (-1.3 + 2.6 * u)) / 360),
+                            16, 3, **REB))
+    o_t.append(nakladka(NG, "нрс0", lambda s, u: (0.08 + 0.84 * s, 0.5 + (-1.2 + 2.4 * u) / 360),
+                        16, 3, **REB))
+    o_t.append(zaklepky(NG, "нз", [(0.035, a / 360 % 1.0) for a in range(0, 360, 20)], r=0.004))
 
     # пластини на животі: три смуги внахльост, кожна трохи ширша за верхню
     plast = []
@@ -885,6 +899,9 @@ def sposib_vazhka():
                               (lambda d: lambda t, th: d)(0.030 + 0.005 * i), povne=True,
                               zhlad=14, tovsh=0.004, valyk=0.003, vahy=tverda(kist)))
         o_t.append(obidok(im, im + "о", 0.0, 0.22, nu=2))
+        o_t.append(zaklepky(im, im + "з", [(0.6, a / 360 % 1.0) for a in
+                                           (-60, -30, -12, 12, 30, 60, 120, 165, 195, 240)],
+                            r=0.0042))
     rechi.append(z_iednaty("Одяг-тіло-важка-пластини", plast))
     # шкіряний пояс із латунними пряжками
     poyas = obolonka("Одяг-тіло-важка-шкіра-пояс", tulub(0.925, 0.985), 5, 72, TULUB,
@@ -927,6 +944,9 @@ def sposib_vazhka():
         o_t.append(obidok(im, im + "о", 0.90, 1.0, nu=2))
         o_t.append(zaklepky(im, im + "д", [(0.42, 0.25)], r=0.020, splask=0.18))
         o_t.append(zaklepky(im, im + "з", [(0.42, 0.25)], r=0.007, splask=0.9))
+        o_t.append(obidok(im, im + "к", 0.70, 0.75, nu=2, dod=0.001, tovsh=0.0035))
+        o_t.append(nakladka(im, im + "р", lambda s, u: (0.08 + 0.60 * s, 0.75 + (-0.012 + 0.024 * u)),
+                            10, 3, dod=0.001, tovsh=0.0035))
         for i, (t0, t1, zz, roz) in enumerate([(0.10, 0.32, 0.034, 0.0), (0.26, 0.46, 0.042, 0.0),
                                                (0.40, 0.60, 0.048, 0.030)]):
             im = "напл%s%d" % (bik, i)
@@ -936,6 +956,8 @@ def sposib_vazhka():
                 (lambda zz, roz: lambda t, th: zz + roz * t * t)(zz, roz), zhlad=10,
                 tovsh=0.0045, valyk=0.003, vahy=tverda("upperarm_" + bik)))
             o_t.append(obidok(im, im + "о", 0.80, 1.0, nu=2))
+            o_t.append(zaklepky(im, im + "з", [(0.45, 0.06), (0.45, 0.94), (0.45, 0.5)],
+                                r=0.004))
     rechi.append(z_iednaty("Одяг-тіло-важка-наплічники", napl))
 
     # ── набедреники: дві великі спереду, менші з боків, заклепки по кутах ──
@@ -952,6 +974,10 @@ def sposib_vazhka():
                 {"thigh_" + bik, "pelvis"}, lambda t, th: 0.042 + 0.026 * t, zhlad=8,
                 tovsh=0.0045, valyk=0.003, vahy=vh))
             o_t.append(obidok(im, im + "о", 0.88, 1.0, nu=2))
+            o_t.append(nakladka(im, im + "б0", lambda s, u: (0.05 + 0.83 * s, 0.0 + 0.05 * u), 10, 2))
+            o_t.append(nakladka(im, im + "б1", lambda s, u: (0.05 + 0.83 * s, 0.95 + 0.05 * u), 10, 2))
+            o_t.append(nakladka(im, im + "р", lambda s, u: (0.18 + 0.55 * s, 0.47 + 0.06 * u), 10, 3,
+                                dod=0.001, tovsh=0.0035))
             o_t.append(zaklepky(im, im + "з", [(0.12, 0.12), (0.12, 0.88), (0.80, 0.12),
                                                (0.80, 0.88)]))
     rechi.append(z_iednaty("Одяг-тіло-важка-набедреники", nab))
@@ -967,6 +993,11 @@ def sposib_vazhka():
                             zhlad=8, tovsh=0.004, valyk=0.004, vahy=tverda("lowerarm_" + bik)))
         o_r.append(obidok(im, im + "о1", 0.0, 0.07, nu=2, tovsh=0.003))
         o_r.append(obidok(im, im + "о2", 0.86, 0.95, nu=2, tovsh=0.003))
+        o_r.append(obidok(im, im + "о3", 0.46, 0.51, nu=2, tovsh=0.003))
+        o_r.append(nakladka(im, im + "р", lambda s, u: (0.08 + 0.36 * s, 0.25 + (-0.008 + 0.016 * u)),
+                            8, 3, dod=0.001, tovsh=0.0035))
+        o_r.append(nakladka(im, im + "р2", lambda s, u: (0.53 + 0.31 * s, 0.25 + (-0.008 + 0.016 * u)),
+                            8, 3, dod=0.001, tovsh=0.0035))
         # пластина на тильному боці: вісь від зап'ястя до середнього пальця
         ha = kistka("hand_" + bik)[0]
         hb = kistka("middle_01_" + bik)[0]
@@ -1028,6 +1059,8 @@ def sposib_vazhka():
                             povne=True, zhlad=10, tovsh=0.0045, valyk=0.004,
                             vahy=tverda("calf_" + bik)))
         o_v.append(obidok(im, im + "о", 0.0, 0.06, nu=2))
+        o_v.append(zaklepky(im, im + "з", [(0.12, a / 360) for a in range(30, 360, 40)
+                                           if abs(a - 180) > 25], r=0.004))
         # латунне ребро спереду і роздвоєння вгорі
         o_v.append(nakladka(im, im + "р", lambda s, u: (0.10 + 0.55 * s,
                                                         0.5 + (-2 + 4 * u) / 360), 12, 3,
@@ -1062,7 +1095,11 @@ def sposib_vazhka():
                             tovsh=0.004, valyk=0.0, masht=kintsi, zzovni=True,
                             vahy=lambda p, bik=bik, fa=fa: {"foot_" + bik: 1.0}
                             if p.y > fa.y - 0.10 else {"ball_" + bik: 1.0}))
-        o_v.append(nakladka(im, im + "н", lambda s, u: (0.55 + 0.35 * s,
+        for tl in (0.38, 0.50, 0.62):
+            o_v.append(nakladka(im, im + "л%d" % int(tl * 100), lambda s, u, tl=tl:
+                                (tl + 0.025 * u, (-75 + 150 * s) / 360 % 1.0), 14, 2,
+                                dod=0.001, tovsh=0.0025))
+        o_v.append(nakladka(im, im + "н", lambda s, u: (0.66 + 0.24 * s,
                                                         (-2.5 + 5 * u) / 360), 8, 3,
                             dod=0.001, tovsh=0.003))
     rechi.append(z_iednaty("Одяг-взуття-важка-чоботи", sab))
@@ -1079,7 +1116,7 @@ def sposib_vazhka():
 
     def lyk(th):        # кут від обличчя, 0…180
         return abs(abs(th * 360 - 180) - 180)
-    PRORIZ = (17.0, 25.5, 58.0)                         # φ від, φ до, півширина
+    PRORIZ = (-5.0, 3.5, 58.0)      # φ від, φ до, півширина: очі ≈ 1,62 м (брови 1,64)
 
     def proriz(t, th):
         f = F0 + (F1 - F0) * t
@@ -1104,8 +1141,19 @@ def sposib_vazhka():
         o_h.append(nakladka(SH, "шп%d" % f0, lambda s, u, f0=f0, f1=f1:
                             (tp(f0 + (f1 - f0) * u), ((PRORIZ[2] + 3) * (2 * s - 1)) / 360 % 1.0),
                             30, 2, dod=0.0006, tovsh=0.0025))
-    o_h.append(zaklepky(SH, "шз", [(tp(21), (zn * 66) / 360 % 1.0) for zn in (-1, 1)] +
-                        [(tp(3), (zn * 66) / 360 % 1.0) for zn in (-1, 1)], r=0.0055))
+    o_h.append(zaklepky(SH, "шз", [(tp(12), (zn * 66) / 360 % 1.0) for zn in (-1, 1)] +
+                        [(tp(-14), (zn * 66) / 360 % 1.0) for zn in (-1, 1)], r=0.0055))
+
+    REB = dict(dod=0.001, tovsh=0.0035)
+    o_h.append(nakladka(SH, "шг1", lambda s, u: (tp(PRORIZ[1] + 4 + (86 - PRORIZ[1] - 4) * s),
+                                                (-1.6 + 3.2 * u) / 360 % 1.0), 24, 3, **REB))
+    o_h.append(nakladka(SH, "шг2", lambda s, u: (tp(-34 + 120 * s), 0.5 + (-1.6 + 3.2 * u) / 360),
+                        28, 3, **REB))
+    o_h.append(nakladka(SH, "шз1", lambda s, u: (tp(-40 + (PRORIZ[0] - 4 + 40) * s),
+                                                (-1.4 + 2.8 * u) / 360 % 1.0), 10, 3, **REB))
+    o_h.append(obidok(SH, "шк", tp(40), tp(42.5), nu=2, dod=0.0008, tovsh=0.003))
+    o_h.append(zaklepky(SH, "шзз", [(tp(-30 + 9 * i), (zn * 4.5) / 360 % 1.0)
+                                    for i in range(3) for zn in (-1, 1)], r=0.004))
 
     nazvy = {"тіло": "Одяг-тіло-важка-оздоба", "рукавиці": "Одяг-рукавиці-важка-оздоба",
              "взуття": "Одяг-взуття-важка-оздоба", "голова": "Одяг-голова-важка-оздоба"}

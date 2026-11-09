@@ -77,6 +77,42 @@ for i, w in NOVI.items():
         if k not in grupy:
             grupy[k] = tilo.vertex_groups.new(name=k)
         grupy[k].add([i], x / sm, "REPLACE")
+# шви розгортки: вершини в одній точці — різні вершини; ваги, згладжені по
+# ребрах, по різні боки шва розходились, і в ударі шов відкривався наскрізною
+# щілиною (замовник 09.11). Тут — однакові ваги для всіх вершин точки.
+from mathutils.kdtree import KDTree  # noqa: E402
+kd = KDTree(len(CO))
+for i, c in enumerate(CO):
+    kd.insert(c, i)
+kd.balance()
+vg = {g.index: g.name for g in tilo.vertex_groups}
+POTOCHNI = [{vg[g.group]: g.weight for g in v.groups} for v in me.vertices]
+bachyly = np.zeros(len(CO), bool)
+zrivniano = 0
+for i in range(len(CO)):
+    if bachyly[i]:
+        continue
+    grupa = [j for _, j, _ in kd.find_range(CO[i], 0.0005)]
+    bachyly[grupa] = True
+    if len(grupa) < 2:
+        continue
+    acc = {}
+    for j in grupa:
+        for k, x in POTOCHNI[j].items():
+            acc[k] = acc.get(k, 0.0) + x / len(grupa)
+    top = sorted(acc.items(), key=lambda kv: -kv[1])[:4]
+    sm = sum(x for _, x in top) or 1.0
+    for j in grupa:
+        if POTOCHNI[j] == dict(top):
+            continue
+        for k in POTOCHNI[j]:
+            grupy[k].remove([j])
+        for k, x in top:
+            if k not in grupy:
+                grupy[k] = tilo.vertex_groups.new(name=k)
+            grupy[k].add([j], x / sm, "REPLACE")
+        zrivniano += 1
+log("шви: вершин зрівняно %d" % zrivniano)
 tilo.hide_select = False
 rig.data.pose_position = "POSE"
 bpy.ops.wm.save_as_mainfile(filepath=VYKHID)

@@ -640,6 +640,9 @@ func _proba(args: PackedStringArray) -> void:
 	var ap := _player()
 	if "--рух" in args and ap != null:
 		ap.play(args[args.find("--рух") + 1])
+		if "--час" in args:     # секунди від початку руху (кадри без vsync летять — час не йде)
+			ap.seek(float(args[args.find("--час") + 1]), true)
+			ap.pause()
 	print("[переглядач] модель %s, рухів %d, скінів %d" % [_vybrana["nazva"],
 			0 if ap == null else ap.get_animation_list().size(), _kartynky().size()])
 	var kadriv := 40

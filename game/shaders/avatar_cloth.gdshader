@@ -18,6 +18,7 @@ uniform float own_strength = 0.7;
 uniform sampler2D own_normal : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform bool has_own_normal = false;
 uniform float roughness_v = 0.9;
+uniform float metallic_v = 0.0;        // «метал» у вигляді речі (сталь, латунь)
 
 void fragment() {
 	vec3 c = item_color.rgb;
@@ -31,6 +32,7 @@ void fragment() {
 	}
 	ALBEDO = c;
 	ROUGHNESS = roughness_v;
+	METALLIC = metallic_v;
 	if (has_own_normal) {
 		NORMAL_MAP = texture(own_normal, UV).rgb;
 	}

@@ -326,10 +326,7 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		var piece := str(mesh.name).trim_prefix(PIECE_PREFIX)
 		mesh.visible = shown.has(piece)
 		if mesh.visible:
-			var vyhl: Dictionary = shown[piece]
-			if piece.contains("-підклад-"):
-				vyhl = _under_tone(vyhl)
-			mesh.material_override = _cloth_on(mesh, vyhl)
+			mesh.material_override = _cloth_on(mesh, _part_look(piece, shown[piece]))
 	_hold_gear(look, goods)
 	_hide_under(shown)
 	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
@@ -366,12 +363,30 @@ func _detail_sets() -> Dictionary:
 	return sets
 
 
+## Вигляд деталі за її роллю в імені (сталевий сет, П-281, 09.11.2026):
+## `-підклад-` — стьобанка й кольчуга, `-шкіра-` — пояс і рукавички,
+## `-тканина-` — шарф (колір `тканина` речі, інакше темно-червоний),
+## `-оздоба` — обідки й заклепки (`оздоба` речі, інакше латунь). Решта —
+## пластини: колір, шорсткість і `метал` самої речі.
+static func _part_look(piece: String, look: Dictionary) -> Dictionary:
+	if piece.contains("-підклад-"):
+		return _under_tone(look)
+	if piece.contains("-шкіра-"):
+		return {"колір": str(look.get("шкіра", "#4a2e1c")), "шорсткість": 0.75}
+	if piece.contains("-тканина-"):
+		return {"колір": str(look.get("тканина", "#7a1c22")), "шорсткість": 0.9}
+	if piece.ends_with("-оздоба"):
+		return {"колір": str(look.get("оздоба", "#b48a48")), "шорсткість": 0.35,
+				"метал": 0.85}
+	return look
+
+
 ## Тканина під бронею (`…-підклад-…`) — темніший і тьмяніший тон кольору
 ## речі, без її плитки: пластини сталеві — стьобанка під ними не сталева.
 static func _under_tone(look: Dictionary) -> Dictionary:
 	var c := Color(str(look.get("колір", "#8a7a60")))
 	var grey := (c.r + c.g + c.b) / 3.0
-	c = Color(grey, grey, grey).lerp(c, 0.4).lerp(Color(0.16, 0.13, 0.10), 0.6)
+	c = Color(grey, grey, grey).lerp(c, 0.4).lerp(Color(0.13, 0.11, 0.09), 0.8)
 	return {"колір": "#" + c.to_html(false), "шорсткість": 0.95}
 
 
@@ -381,10 +396,12 @@ static func _under_tone(look: Dictionary) -> Dictionary:
 ## рукавицями; `pilot_odiah.py`), шейдер шкіри відкидає ці місця. Без
 ## кольорів вершин (ельфійки, манекени) — нічого не ховається. Білизна
 ## під сорочкою й штанами теж ховається. Деталі наборів — за кінцем
-## імені (`…-сорочка`, `…-штани`, `…-чоботи`, `…-наручі`); під
+## імені (`…-сорочка`, `…-штани`, `…-чоботи`, `…-поножі`, `…-наручі`,
+## `…-рукавички`); під
 ## пластинами тіло не ховається — крізь проміжки його видно.
 const HIDE_CHANNEL := {"Сорочка": 0, "Штани": 1, "Чоботи": 2, "Рукавиці": 3}
-const HIDE_DETAIL := {"сорочка": 0, "штани": 1, "чоботи": 2, "наручі": 3}
+const HIDE_DETAIL := {"сорочка": 0, "штани": 1, "чоботи": 2, "поножі": 2,
+		"наручі": 3, "рукавички": 3}
 const UNDERWEAR := {"білизна-верх": 0, "білизна-низ": 1}
 
 
@@ -919,6 +936,7 @@ static func _cloth(look: Dictionary) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(str(look.get("колір", "#8a7a60")))
 	m.roughness = float(look.get("шорсткість", 0.9))
+	m.metallic = float(look.get("метал", 0.0))
 	var picture := str(look.get("текстура", ""))
 	if picture != "":
 		if ResourceLoader.exists(picture):
@@ -955,6 +973,7 @@ func _cloth_on(mesh: MeshInstance3D, look: Dictionary) -> Material:
 	m.shader = CLOTH_SHADER
 	m.set_shader_parameter("item_color", Color(str(look.get("колір", "#8a7a60"))))
 	m.set_shader_parameter("roughness_v", float(look.get("шорсткість", 0.9)))
+	m.set_shader_parameter("metallic_v", float(look.get("метал", 0.0)))
 	var picture := str(look.get("текстура", ""))
 	if picture != "" and ResourceLoader.exists(picture):
 		m.set_shader_parameter("item_tex", load(picture))

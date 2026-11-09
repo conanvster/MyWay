@@ -649,6 +649,9 @@ func _proba(args: PackedStringArray) -> void:
 		var c := args[args.find("--ціль") + 1].split(",")
 		_aim = Vector3(float(c[0]), float(c[1]), float(c[2]))
 		_kamera()
+	if "--без-панелей" in args:     # чистий кадр для порівняння (П-281, 09.11)
+		for l: Node in find_children("*", "CanvasLayer", true, false):
+			(l as CanvasLayer).visible = false
 	for i in kadriv:
 		await get_tree().process_frame
 	if "--знімок" in args:

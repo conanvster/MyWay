@@ -23,7 +23,7 @@ from mathutils.bvhtree import BVHTree
 
 A = sys.argv[sys.argv.index("--") + 1:]
 GLB, VYKHID = A[0], A[1]
-GRANEI = int(A[A.index("--граней") + 1]) if "--граней" in A else 60000
+GRANEI = int(A[A.index("--граней") + 1]) if "--граней" in A else 150000
 
 
 def log(*a):
@@ -67,6 +67,10 @@ dc = gen.modifiers.new("спростити", "DECIMATE")
 dc.ratio = min(1.0, GRANEI / max(1, len(gen.data.polygons)))
 bpy.ops.object.modifier_apply(modifier=dc.name)
 gm = gen.data
+# власні нормалі з GLB після спрощення лишались пласкими — обличчя в грі
+# гранчасте (09.11); геть, нормалі — з самої сітки, згладжено
+if gm.has_custom_normals:
+    bpy.ops.mesh.customdata_custom_splitnormals_clear()
 GV = np.array([v.co[:] for v in gm.vertices])
 zr_t = B[:, 2].max() - B[:, 2].min()
 s = zr_t / (GV[:, 2].max() - GV[:, 2].min())
@@ -179,6 +183,29 @@ for p in gm.polygons:
 # тіло MPFB і його сітки — геть
 for o in [o for o in bpy.data.objects if o.type == "MESH" and o != gen]:
     bpy.data.objects.remove(o)
+def zapovnyty(px, ye):
+    """Тло між островами — кольором найближчих островів (піраміда push-pull):
+    розтягування на 24 пікселі не закривало ширших щілин, і спрощена сітка,
+    чиї трикутники перетинають шви, тягнула з них чорні рисочки (09.11)."""
+    if ye.all() or not ye.any():
+        return px
+    w = ye.astype(np.float32)
+    rivni = []
+    a, m = px * w[..., None], w
+    while min(a.shape[:2]) > 1:
+        rivni.append((a, m))
+        h2, w2 = a.shape[0] // 2 * 2, a.shape[1] // 2 * 2
+        a = a[:h2, :w2].reshape(h2 // 2, 2, w2 // 2, 2, -1).sum((1, 3))
+        m = m[:h2, :w2].reshape(h2 // 2, 2, w2 // 2, 2).sum((1, 3))
+    kol = a / np.maximum(m, 1e-6)[..., None]
+    for a, m in reversed(rivni):
+        up = np.repeat(np.repeat(kol, 2, 0), 2, 1)
+        up = np.pad(up, ((0, a.shape[0] - up.shape[0]), (0, a.shape[1] - up.shape[1]), (0, 0)), mode="edge")
+        vl = a / np.maximum(m, 1e-6)[..., None]
+        kol = np.where((m > 0)[..., None], vl, up)
+    return np.where(ye[..., None], px, kol).astype(np.float32)
+
+
 # шви розгортки: між островами текстури генератора чорне тло — при
 # фільтрації в грі воно протікало чорними тріщинами; краї островів — на тло
 for mt in gm.materials:
@@ -188,17 +215,7 @@ for mt in gm.materials:
             w_, h_ = im.size
             px = np.array(im.pixels[:], np.float32).reshape(h_, w_, im.channels)
             ye = px[..., :3].max(2) > 0.02
-            for _ in range(24):
-                sus_ = np.zeros_like(px)
-                cnt = np.zeros((h_, w_), np.float32)
-                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    sh = np.roll(np.roll(px * ye[..., None], dy, 0), dx, 1)
-                    sm = np.roll(np.roll(ye, dy, 0), dx, 1)
-                    sus_ += sh
-                    cnt += sm
-                nove_ = (~ye) & (cnt > 0)
-                px[nove_] = sus_[nove_] / cnt[nove_, None]
-                ye = ye | nove_
+            px = zapovnyty(px, ye)
             im.pixels.foreach_set(px.ravel())
             im.pack()
             log("текстура %s: шви закрито" % im.name)

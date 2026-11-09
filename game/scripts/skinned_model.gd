@@ -924,6 +924,10 @@ func customize(look: Dictionary) -> void:
 			_skin_mat.set_shader_parameter("skin_ref", r2)
 			_skin_mat.set_shader_parameter("skin_tint",
 					Vector3(sc.r, sc.g, sc.b) if sc is Color else r2)
+		# шкіра з намальованим одягом (пілот орка, MV-Adapter, 09.11.2026) —
+		# білизна поверх неї зайва
+		for m: MeshInstance3D in find_children("білизна-*", "MeshInstance3D", true, false):
+			m.visible = not st.ends_with("з-одягом")
 	if _eye_mat != null:
 		var ec: Variant = _look.get("колір_очей")
 		_eye_mat.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)

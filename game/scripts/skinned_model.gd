@@ -809,6 +809,11 @@ func _prepare_look() -> void:
 	if _eye_mat != null:        # людина MPFB: світлі текстури MakeHuman
 		_skin_mat.set_shader_parameter("skin_gain", 0.75)
 		_skin_mat.set_shader_parameter("sss", 0.25)
+		_skin_mat.set_shader_parameter("roughness_v", 0.72)
+	var nrm_path := path.get_basename() + "_нормалі.png"
+	if ResourceLoader.exists(nrm_path):      # рельєф шкіри з проєкції (пілот орка)
+		_skin_mat.set_shader_parameter("normal_tex", load(nrm_path))
+		_skin_mat.set_shader_parameter("has_normal", true)
 	_body_mesh.material_override = _skin_mat
 
 

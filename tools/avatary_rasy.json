@@ -65,5 +65,18 @@
     "брови": "eyebrow008:густі,eyebrow001:прямі",
     "вії": "eyelashes01:природні",
     "шкіри": "1-оливкова=young_caucasian_male@118,132,78;2-темно-зелена=young_caucasian_male@86,102,58;3-сіро-зелена=young_caucasian_male@122,134,104;4-болотна=young_caucasian_male@104,112,62;5-бура=young_caucasian_male@122,104,72"
+  },
+  "орк-пілот": {
+    "тека": "pilot-b-ork-pilot",
+    "чоловік": true,
+    "ікла": true,
+    "макро": "gender=1,age=0.6,muscle=1,weight=0.7,proportions=0.3,height=0.55",
+    "шкіра": "young_caucasian_male",
+    "риси": "l-ear-shape-pointed=1,r-ear-shape-pointed=1,l-ear-scale-incr=0.6,r-ear-scale-incr=0.6,l-ear-rot-backward=0.5,r-ear-rot-backward=0.5,chin-width-incr=1,chin-prominent-incr=0.5,chin-prognathism-incr=0.6,nose-scale-horiz-incr=0.9,nose-flaring-incr=1,nose-point-up=0.5,nose-scale-vert-decr=0.4,mouth-scale-horiz-incr=0.5,eyebrows-trans-down=1,eyebrows-angle-down=0.6,forehead-nubian-incr=0.5,torso-muscle-dorsi-incr=1,torso-muscle-pectoral-incr=1,torso-vshape-incr=1,torso-scale-horiz-incr=1,torso-scale-depth-incr=0.6,measure-shoulder-dist-incr=1,neck-scale-horiz-incr=1,measure-neck-circ-incr=1,neck-scale-vert-decr=0.6,stomach-pregnant-incr=0.25,l-upperarm-muscle-incr=1,r-upperarm-muscle-incr=1,l-upperarm-shoulder-muscle-incr=1,r-upperarm-shoulder-muscle-incr=1,l-lowerarm-muscle-incr=1,r-lowerarm-muscle-incr=1,l-upperarm-scale-horiz-incr=1,r-upperarm-scale-horiz-incr=1,l-upperarm-scale-depth-incr=0.8,r-upperarm-scale-depth-incr=0.8,l-lowerarm-scale-horiz-incr=1,r-lowerarm-scale-horiz-incr=1,l-lowerarm-scale-depth-incr=0.8,r-lowerarm-scale-depth-incr=0.8,l-hand-scale-incr=0.8,r-hand-scale-incr=0.8,l-hand-fingers-diameter-incr=0.8,r-hand-fingers-diameter-incr=0.8,l-upperleg-muscle-incr=0.6,r-upperleg-muscle-incr=0.6,l-lowerleg-muscle-incr=0.5,r-lowerleg-muscle-incr=0.5,l-upperleg-scale-horiz-incr=0.2,r-upperleg-scale-horiz-incr=0.2,l-upperleg-scale-depth-incr=0.2,r-upperleg-scale-depth-incr=0.2,l-lowerleg-scale-horiz-incr=0.4,r-lowerleg-scale-horiz-incr=0.4,l-lowerleg-scale-depth-incr=0.3,r-lowerleg-scale-depth-incr=0.3,measure-upperleg-height-decr=0.5,measure-lowerleg-height-decr=0.6,l-foot-scale-incr=0.6,r-foot-scale-incr=0.6,hip-scale-horiz-incr=0.7,head-scale-horiz-incr=0.2,head-square=0.6,head-fat-incr=0.3,measure-upperarm-circ-incr=1,l-upperarm-scale-vert-decr=0.2,r-upperarm-scale-vert-decr=0.2",
+    "зачіски": "вузол=0.06,0.05,0.05 коси=0.08,0.06,0.05 коротке=0.10,0.07,0.05",
+    "борода": "0.06,0.05,0.05",
+    "брови": "eyebrow008:густі,eyebrow001:прямі",
+    "вії": "eyelashes01:природні",
+    "шкіри": "1-оливкова=young_caucasian_male@118,132,78;2-темно-зелена=young_caucasian_male@86,102,58;3-сіро-зелена=young_caucasian_male@122,134,104;4-болотна=young_caucasian_male@104,112,62;5-бура=young_caucasian_male@122,104,72"
   }
 }

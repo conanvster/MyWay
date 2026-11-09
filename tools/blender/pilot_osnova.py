@@ -104,6 +104,10 @@ def top(i):
 
 def boksery(i):
     c = co[i]
+    # лише таз і стегна: у кремезного орка кисті в A-позі висять на рівні
+    # стегон, і боксери за самою висотою захоплювали пальці (09.11.2026)
+    if w(i, "pelvis") + w(i, "thigh_l") + w(i, "thigh_r") + w(i, "spine_01") < 0.5:
+        return -1.0
     k = zad(c)
     lo = mizh(krok - 0.085, krok - 0.095, k)
     hi = mizh(krok + 0.125, krok + 0.145, k)

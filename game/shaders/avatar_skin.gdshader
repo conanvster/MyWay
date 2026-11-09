@@ -25,6 +25,11 @@ uniform float lips_skin = 0.0;
 // розсіювання (шкіра не пластик).
 uniform float skin_gain = 1.0;
 uniform float sss = 0.0;
+// дрібний рельєф шкіри (вени, шрами, м'язи) — карта нормалей у розгортці
+// (`tools/blender/projektsiia.py`, пілот орка 09.11.2026)
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_disable;
+uniform bool has_normal = false;
+uniform float normal_depth = 1.0;
 // тіло під вдягненою річчю (кольори вершин `під_одяг`, людина MPFB)
 uniform vec4 hide_under = vec4(0.0);                      // 1 — губи беруть тон шкіри (людина MPFB)
 
@@ -58,6 +63,10 @@ void fragment() {
 	c = mix(c, c * 0.18, m.g * liner);
 	ALBEDO = c * mix(1.0, skin_gain, 1.0 - m.r);
 	ROUGHNESS = roughness_v;
+	if (has_normal) {
+		NORMAL_MAP = texture(normal_tex, UV).rgb;
+		NORMAL_MAP_DEPTH = normal_depth;
+	}
 	if (sss > 0.0) {
 		SSS_STRENGTH = sss;
 	}

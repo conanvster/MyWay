@@ -203,13 +203,30 @@ def palci_sitky():
     from mathutils.kdtree import KDTree
     CO = np.array([v.co[:] for v in gm.vertices])
     # шви розгортки розрізають вершини — зшити за збігом координат
-    kl = {}
-    rid = np.zeros(len(CO), int)
-    for i, c in enumerate(np.round(CO / 0.0004).astype(np.int64)):
-        rid[i] = kl.setdefault(tuple(c), len(kl))
-    U = np.zeros((len(kl), 3))
+    # (округлення координат зшивало не все — палець розпадався на дві смуги
+    # і ставав двома «пальцями», ланцюжки кісток здвоювались, 09.11)
+    kdz = KDTree(len(CO))
+    for i, c in enumerate(CO):
+        kdz.insert(c, i)
+    kdz.balance()
+    bat_ = np.arange(len(CO))
+
+    def kor_(x):
+        while bat_[x] != x:
+            bat_[x] = bat_[bat_[x]]
+            x = bat_[x]
+        return x
+
+    for i, c in enumerate(CO):
+        for _, j, _ in kdz.find_range(c, 0.0006):
+            a, b = kor_(i), kor_(j)
+            if a != b:
+                bat_[max(a, b)] = min(a, b)
+    korin = np.array([kor_(i) for i in range(len(CO))])
+    _, rid = np.unique(korin, return_inverse=True)
+    U = np.zeros((rid.max() + 1, 3))
     U[rid] = CO
-    sus = [set() for _ in range(len(kl))]
+    sus = [set() for _ in range(len(U))]
     for e in gm.edges:
         a, b = rid[e.vertices[0]], rid[e.vertices[1]]
         if a != b:
@@ -297,11 +314,28 @@ def palci_sitky():
         kand.sort(reverse=True)
         log("пальці %s: кисть %d, кільце %d, вершин %d, відростків %s, макс відстань %.3f"
             % (bik, len(Hi), len(kil), nova, [round(k[0], 3) for k in kand[:8]], d[Hi].max()))
-        kand = kand[:5]
-        if len(kand) < 5:
+        # без дублів: кінчик і основа — далі 2 см від уже вибраних
+        nalezh = np.array([koren(mitka0[i]) if mitka0[i] >= 0 else -1 for i in range(len(U))])
+        vybr = []
+        for k_ in kand:
+            dovzh, r_, tip, d0 = k_
+            vv_ = Hi[(nalezh[Hi] == r_) & (d[Hi] >= d0)]
+            osn = U[vv_[d[vv_] < d0 + 0.01]].mean(0) if (d[vv_] < d0 + 0.01).any() else U[vv_].mean(0)
+            blyzh = [(np.linalg.norm(U[tip] - U[t2]), np.linalg.norm(osn - o2)) for _, _, t2, _, o2 in vybr]
+            # кінчики різних пальців орка — далі 4 см; ближче 2,5 см — той самий
+            # палець (подвійний шар сітки генератора)
+            dubl = any(a < 0.025 for a, b in blyzh)
+            log("  кандидат %.3f кінчик %s основа %s до вибраних %s%s" % (
+                dovzh, U[tip].round(3), osn.round(3), [(round(a, 3), round(b, 3)) for a, b in blyzh],
+                " — дубль" if dubl else ""))
+            if not dubl:
+                vybr.append((dovzh, r_, tip, d0, osn))
+            if len(vybr) == 5:
+                break
+        kand = [k[:4] for k in vybr]
+        if len(kand) < 4:
             log("пальці %s: знайдено лише %d — без змін" % (bik, len(kand)))
             continue
-        nalezh = np.array([koren(mitka0[i]) if mitka0[i] >= 0 else -1 for i in range(len(U))])
         palci = []
         for dovzh, m_, tip, d0 in kand:
             vv = Hi[(nalezh[Hi] == m_) & (d[Hi] >= d0)]
@@ -316,10 +350,40 @@ def palci_sitky():
             palci.append({"m": m_, "osi": np.array(tochky), "d0": d0, "dt": d[tip], "vv": vv})
         # великий — найближчий основою до великого пальця скелета; решта —
         # за віддаленням основи від великого
-        th = np.array((mw @ eb["thumb_01_" + bik].head)[:])
-        palci.sort(key=lambda p: np.linalg.norm(p["osi"][0] - th))
+        # великий — той, що відгалужується найближче до зап'ястя (найменша
+        # відстань злиття по поверхні); кістка великого скелета як орієнтир
+        # хибила — скелет стояв під рівну кисть MPFB (09.11)
+        # великий — основа найближча до центру зап'ястя в просторі (у скелеті
+        # MPFB так само); і злиття по поверхні, і кістка великого скелета хибили
+        palci.sort(key=lambda p: np.linalg.norm(p["osi"][0] - wr_g))
+        log("пальці %s: основи від зап'ястя %s см" % (bik, [round(100 * np.linalg.norm(p["osi"][0] - wr_g), 1) for p in palci]))
         velykyi = palci[0]
         inshi = sorted(palci[1:], key=lambda p: np.linalg.norm(p["osi"][0] - velykyi["osi"][0]))
+        if len(inshi) == 3:
+            # генератор зліпив два пальці в один: найширший — два ланцюжки
+            # поруч (зсув поперек на третину ширини), вершини — за боком
+            for p in inshi:
+                o = p["osi"]
+                p["shyr"] = np.mean([np.min(np.linalg.norm(o - U[i], axis=1)) for i in p["vv"]])
+            k = int(np.argmax([p["shyr"] for p in inshi]))
+            p = inshi[k]
+            sus_p = inshi[k + 1] if k + 1 < 3 else inshi[k - 1]
+            ax = p["osi"][-1] - p["osi"][0]
+            ax /= np.linalg.norm(ax)
+            lat = sus_p["osi"][0] - p["osi"][0]
+            lat -= ax * (lat @ ax)
+            lat /= np.linalg.norm(lat)
+            if k + 1 >= 3:
+                lat = -lat                      # «назовні» — від сусіда
+            zs = 0.6 * p["shyr"]
+            bik_v = (U[p["vv"]] - p["osi"][0]) @ lat
+            blyzhche = {"osi": p["osi"] - lat * zs, "d0": p["d0"], "dt": p["dt"], "vv": p["vv"][bik_v <= 0]}
+            dali = {"osi": p["osi"] + lat * zs, "d0": p["d0"], "dt": p["dt"], "vv": p["vv"][bik_v > 0]}
+            # порядок від великого: ближчий до сусіда-ліворуч іде першим
+            para = sorted([blyzhche, dali], key=lambda q: np.linalg.norm(q["osi"][0] - velykyi["osi"][0]))
+            inshi = inshi[:k] + para + inshi[k + 1:]
+            log("пальці %s: 4 пальці — %d-й (від великого) злиплий, ширина %.1f см → два ланцюжки"
+                % (bik, k + 1, 200 * p["shyr"]))
         nazvy = dict(zip(PALTSI, [velykyi] + inshi))
         # кістки — уздовж осі пальця (довжина дуги), закрутка — разом із напрямом
         for nz, p in nazvy.items():
@@ -371,6 +435,26 @@ def palci_sitky():
                     w = {kk: x * (1 - k) for kk, x in w.items()}
                     w["%s_01_%s" % (nz, bik)] = w.get("%s_01_%s" % (nz, bik), 0) + k
             W[i] = w
+        # згладжування ваг між пальцями й долонею (слово замовника 09.11:
+        # «згладь ваги між пальцями на обох руках»): 4 проходи — половина
+        # своєї ваги, половина — середнє сусідів по поверхні
+        for _ in range(4):
+            W2 = {}
+            for i, w in W.items():
+                sus_w = [W[j] for j in sus[i] if j in W]
+                if not sus_w:
+                    W2[i] = w
+                    continue
+                acc = {k: 0.5 * x for k, x in w.items()}
+                for sw in sus_w:
+                    for k, x in sw.items():
+                        acc[k] = acc.get(k, 0.0) + 0.5 * x / len(sus_w)
+                W2[i] = acc
+            W = W2
+        for i, w in W.items():
+            top = sorted(w.items(), key=lambda kv: -kv[1])[:4]
+            sm_ = sum(x for _, x in top) or 1.0
+            W[i] = {k: x / sm_ for k, x in top if x / sm_ > 0.01}
         # на вершини сітки (до зшивання)
         zmineno = 0
         for v in range(len(CO)):

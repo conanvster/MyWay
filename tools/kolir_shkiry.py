@@ -20,9 +20,11 @@ vkh = cv2.resize(cv2.imread(vkh_f), (rez.shape[1], rez.shape[0]))
 
 
 def shkira(im):
-    """Шкіра: не сіре тло (насиченість), не темні плавки (яскравість)."""
+    """Шкіра: не сіре тло й не чорні плавки — за насиченістю (обоє сірі).
+    Поріг яскравості відсікав затінену шкіру — у тінях лишались зелені плями
+    (09.11)."""
     hsv = cv2.cvtColor(im, cv2.COLOR_BGR2HSV)
-    return (hsv[..., 1] > 40) & (hsv[..., 2] > 70)
+    return (hsv[..., 1] > 28) & (hsv[..., 2] > 25)
 
 
 lr = cv2.cvtColor(rez, cv2.COLOR_BGR2LAB).astype(np.float32)

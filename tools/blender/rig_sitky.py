@@ -32,6 +32,13 @@ def log(*a):
 
 h = bpy.data.objects["Human"]
 rig = bpy.data.objects["Human.rig"]
+# скелет — під статуру основи: у пілота орка він лишився від типової людини
+# (кисть за 24 см, пальці за 21 см від своїх кісток) — у русі пальці
+# розліталися «гілками» (09.11)
+if "--без-refit" not in A:
+    from bl_ext.blender_org.mpfb.services.humanservice import HumanService
+    HumanService.refit(h)
+    log("скелет підігнано під тіло (MPFB refit)")
 for pb in rig.pose.bones:
     pb.matrix_basis.identity()
 me = h.data
@@ -67,6 +74,15 @@ dc = gen.modifiers.new("спростити", "DECIMATE")
 dc.ratio = min(1.0, GRANEI / max(1, len(gen.data.polygons)))
 bpy.ops.object.modifier_apply(modifier=dc.name)
 gm = gen.data
+# генератор віддає металевість 1 на все тіло (синій канал карти — 255): у грі
+# шкіра — темний метал, а пришиті кисті поруч — сірі (09.11). Шкіра й шкіра
+# пояса — не метал.
+for mt in gm.materials:
+    for n in (mt.node_tree.nodes if mt and mt.node_tree else []):
+        if n.type == "BSDF_PRINCIPLED":
+            for l in list(n.inputs["Metallic"].links):
+                mt.node_tree.links.remove(l)
+            n.inputs["Metallic"].default_value = 0.0
 # власні нормалі з GLB після спрощення лишались пласкими — обличчя в грі
 # гранчасте (09.11); геть, нормалі — з самої сітки, згладжено
 if gm.has_custom_normals:
@@ -178,10 +194,133 @@ for i in range(NG):
         grupy[k].add([i], x, "REPLACE")
 gen.parent = rig
 gen.modifiers.new("Armature", "ARMATURE").object = rig
+
+
+# ── 5. кисті основи (`--кисті-основи <шкіра MPFB.png>`, 09.11.2026) ──
+# Генератор дає замість кисті злиту грудку з розмазаною текстурою, і ваги
+# пальців її рвуть у русі. Тут кисть сітки (вага кисті й пальців > 0,5) —
+# геть, а на її місце — кисть основи MPFB (справжні пальці, свої ваги й
+# розгортка), підігнана за зап'ястям: центр і товщина кільця, тон шкіри.
+def kysti_osnovy(png):
+    import bmesh
+    ruka = lambda k: k.startswith(("hand_", "thumb_", "index_", "middle_", "ring_", "pinky_"))
+    vg_gen = {g.index: g.name for g in gen.vertex_groups}
+    hv = np.array([sum(g.weight for g in v.groups if ruka(vg_gen[g.group])) for v in gm.vertices])
+    side_g = np.array([v.co.x for v in gm.vertices])
+    co_g = np.array([v.co[:] for v in gm.vertices])
+    hb = np.array([sum(g.weight for g in v.groups if ruka(imena[g.group])) for v in me.vertices])
+    co_b = REST.copy()
+    # кільця зап'ястя: напівшлях між передпліччям і кистю
+    # кільця — кінець передпліччя біля зап'ястя: на самій кисті сітки грудка
+    # (товщина виходила ×2,5)
+    lg = np.array([sum(g.weight for g in v.groups if vg_gen[g.group].startswith("lowerarm_"))
+                   for v in gm.vertices])
+    lb = np.array([sum(g.weight for g in v.groups if imena[g.group].startswith("lowerarm_"))
+                   for v in me.vertices])
+    kilce = {}
+    for bik in (1, -1):
+        rg = (hv > 0.02) & (hv < 0.3) & (lg > 0.5) & (side_g * bik > 0)
+        rb = (hb > 0.02) & (hb < 0.3) & (lb > 0.5) & (co_b[:, 0] * bik > 0) & tilo
+        cg, cb = co_g[rg].mean(0), co_b[rb].mean(0)
+        r_g = np.linalg.norm(co_g[rg] - cg, axis=1).mean()
+        r_b = np.linalg.norm(co_b[rb] - cb, axis=1).mean()
+        kilce[bik] = (cg, cb, float(np.clip(r_g / r_b, 1.0, 1.6)))
+        log("кисть %s: зсув %.3f м, товщина ×%.2f" % ("ліва" if bik > 0 else "права",
+                                                       np.linalg.norm(cg - cb), r_g / r_b))
+    # тон: колір сітки на кільці / колір шкіри основи на кільці
+    def kolir_gen_v(idx):
+        uv = gm.uv_layers.active.data
+        img = None
+        for mt in gm.materials:
+            for n in mt.node_tree.nodes:
+                if n.type == "BSDF_PRINCIPLED" and n.inputs["Base Color"].links:
+                    img = n.inputs["Base Color"].links[0].from_node.image
+        w_, h_ = img.size
+        px = np.array(img.pixels[:], np.float32).reshape(h_, w_, img.channels)[..., :3]
+        vy = set(idx)
+        cs = [px[int(uv[l].uv[1] % 1 * (h_ - 1)), int(uv[l].uv[0] % 1 * (w_ - 1))]
+              for p in gm.polygons for l, vi in zip(p.loop_indices, p.vertices) if vi in vy]
+        return np.median(np.array(cs), 0)
+    sk = bpy.data.images.load(png)
+    w_, h_ = sk.size
+    spx = np.array(sk.pixels[:], np.float32).reshape(h_, w_, sk.channels)[..., :3]
+    uvb = me.uv_layers.active.data
+    rb_all = set(np.nonzero((lb > 0.7) & (hb < 0.05) & tilo)[0])
+    cb_ = np.median(np.array([spx[int(uvb[l].uv[1] % 1 * (h_ - 1)), int(uvb[l].uv[0] % 1 * (w_ - 1))]
+                              for p in me.polygons for l, vi in zip(p.loop_indices, p.vertices)
+                              if vi in rb_all]), 0)
+    cg_ = kolir_gen_v(np.nonzero((lg > 0.7) & (hv < 0.05))[0])
+    gain = cg_ / np.maximum(cb_, 1e-3)
+    log("кисті: тон ×", np.round(gain, 2), "сітка", np.round(cg_ * 255), "основа", np.round(cb_ * 255))
+    nova = bpy.data.images.new("кисті-шкіра", w_, h_, alpha=False)
+    nova.pixels.foreach_set(np.concatenate([np.clip(spx * gain, 0, 1),
+                                            np.ones((h_, w_, 1), np.float32)], 2).ravel())
+    nova.pack()
+    # кисть основи — окрема сітка
+    kyst = h.copy()
+    kyst.data = me.copy()
+    kyst.name = kyst.data.name = "Кисті"
+    bpy.context.collection.objects.link(kyst)
+    for md in list(kyst.modifiers):
+        kyst.modifiers.remove(md)
+    bm = bmesh.new()
+    bm.from_mesh(kyst.data)
+    bm.verts.ensure_lookup_table()
+    geth = [bm.verts[i] for i in range(len(bm.verts)) if not (tilo[i] and (hb[i] > 0.02 or (lb[i] > 0.5 and np.linalg.norm(co_b[i] - kilce[1 if co_b[i, 0] > 0 else -1][1]) < 0.07)))]
+    bmesh.ops.delete(bm, geom=geth, context="VERTS")
+    for v in bm.verts:
+        bik = 1 if v.co.x > 0 else -1
+        cg, cb, k = kilce[bik]
+        v.co = Vector(cg + (np.array(v.co[:]) - cb) * k)
+    bm.to_mesh(kyst.data)
+    bm.free()
+    # кістки кисті й пальців — тим самим перетворенням, що й вершини: інакше
+    # збільшені пальці крутились довкола кісток осторонь і розліталися (09.11)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    mwr, mwi = rig.matrix_world, rig.matrix_world.inverted()
+    for eb in rig.data.edit_bones:
+        if not ruka(eb.name):
+            continue
+        bik = 1 if (mwr @ eb.head).x > 0 else -1
+        cg, cb, k = kilce[bik]
+        for attr in ("head", "tail"):
+            w = np.array((mwr @ getattr(eb, attr))[:])
+            setattr(eb, attr, mwi @ Vector(cg + (w - cb) * k))
+    bpy.ops.object.mode_set(mode="OBJECT")
+    kyst.data.materials.clear()
+    mt = bpy.data.materials.new("Кисті")
+    mt.use_nodes = True
+    t = mt.node_tree.nodes.new("ShaderNodeTexImage")
+    t.image = nova
+    bsdf = mt.node_tree.nodes["Principled BSDF"]
+    mt.node_tree.links.new(t.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.7
+    kyst.data.materials.append(mt)
+    for p in kyst.data.polygons:
+        p.use_smooth = True
+    kyst.parent = rig
+    kyst.matrix_parent_inverse.identity()
+    kyst.modifiers.new("Armature", "ARMATURE").object = rig
+    # кисть сітки — геть; кінець передпліччя основи (7 см) лишається в рукаві
+    # сітки — без щілини між рукою й кистю (09.11)
+    bm = bmesh.new()
+    bm.from_mesh(gm)
+    bm.verts.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in np.nonzero(hv > 0.4)[0]], context="VERTS")
+    bm.to_mesh(gm)
+    bm.free()
+    log("кисті основи пришито: вершин %d" % len(kyst.data.vertices))
+    return kyst
+
+
+KYSTI = None
+if "--кисті-основи" in A:
+    KYSTI = kysti_osnovy(A[A.index("--кисті-основи") + 1])
 for p in gm.polygons:
     p.use_smooth = True
 # тіло MPFB і його сітки — геть
-for o in [o for o in bpy.data.objects if o.type == "MESH" and o != gen]:
+for o in [o for o in bpy.data.objects if o.type == "MESH" and o not in (gen, KYSTI)]:
     bpy.data.objects.remove(o)
 def zapovnyty(px, ye):
     """Тло між островами — кольором найближчих островів (піраміда push-pull):

@@ -302,6 +302,7 @@ def palci_sitky():
     bpy.ops.object.mode_set(mode="EDIT")
     eb = rig.data.edit_bones
     mw = rig.matrix_world
+    vdalo = set()
     for bik in ("l", "r"):
         sx = 1 if bik == "l" else -1
         wr = np.array((mw @ eb["hand_" + bik].head)[:])
@@ -310,7 +311,9 @@ def palci_sitky():
         # зап'ястя сітки — найвужчий переріз у межах ±6 см від зап'ястя скелета
         blyz = (U[:, 0] * sx > 0) & (np.linalg.norm(U - wr, axis=1) < 0.2)
         prof = []
-        for zs in np.linspace(-0.06, 0.06, 25):
+        # не глибше 2 см у кисть: у розчепірених кистях найвужчий переріз —
+        # уже пальці (основи орків 09.11 — знаходилось лише 2 пальці)
+        for zs in np.linspace(-0.04, 0.02, 25):
             c0 = wr + os_ * zs
             s_ = blyz & (np.abs((U - c0) @ os_) < 0.006)
             if s_.sum() > 15:
@@ -414,7 +417,9 @@ def palci_sitky():
             blyzh = [(np.linalg.norm(U[tip] - U[t2]), np.linalg.norm(osn - o2)) for _, _, t2, _, o2 in vybr]
             # кінчики різних пальців орка — далі 4 см; ближче 2,5 см — той самий
             # палець (подвійний шар сітки генератора)
-            dubl = any(a < 0.025 for a, b in blyzh)
+            # (лише кінчик < 2,5 см відсіював справжні сусідні пальці в
+            # розчепірених пазурах — кінчики сходяться на 3 см; основи орків 09.11)
+            dubl = any(a < 0.015 or (a < 0.025 and b < 0.015) for a, b in blyzh)
             log("  кандидат %.3f кінчик %s основа %s до вибраних %s%s" % (
                 dovzh, U[tip].round(3), osn.round(3), [(round(a, 3), round(b, 3)) for a, b in blyzh],
                 " — дубль" if dubl else ""))
@@ -552,8 +557,24 @@ def palci_sitky():
             if r_ in W:
                 vagy[v] = W[r_]
                 zmineno += 1
+        vdalo.add(bik)
         log("пальці %s: великий + 4, довжини %s см, вершин кисті %d"
             % (bik, [round(100 * nazvy[n]["dt"] - 100 * nazvy[n]["d0"], 1) for n in PALTSI], zmineno))
+    # одна кисть не вдалась — її пальці дзеркально з другої (тіла майже
+    # симетричні; центрування `skelet_tiunynh.py` потім садить їх у сітку), 09.11
+    if len(vdalo) == 1:
+        dob = vdalo.pop()
+        pog = "r" if dob == "l" else "l"
+        dz = Matrix.Scale(-1, 4, (1, 0, 0))
+        for nz in PALTSI + ("hand",):
+            for j in ((1, 2, 3) if nz != "hand" else (0,)):
+                n1 = "%s_%02d_%s" % (nz, j, dob) if nz != "hand" else "hand_" + dob
+                n2 = n1[:-1] + pog
+                b1, b2 = eb[n1], eb[n2]
+                b2.head = mw.inverted() @ (dz @ (mw @ b1.head))
+                b2.tail = mw.inverted() @ (dz @ (mw @ b1.tail))
+                b2.roll = -b1.roll
+        log("пальці %s: не знайдено — дзеркально з %s" % (pog, dob))
     bpy.ops.object.mode_set(mode="OBJECT")
 
 

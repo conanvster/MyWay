@@ -14,7 +14,9 @@ for para in "$@"; do
   mkdir -p $O/$n
   [ -f $O/$n/pixal.glb ] || $PY -u tools/comfyui/ork_pilot_3d.py "$k" $O/$n pixal | grep -E "готово|Error"
   $B -b $P/v3/pilot.blend -P tools/blender/rig_sitky.py -- $O/$n/pixal.glb $PWD/$O/$n/a.blend --граней 150000 --пальці-сітки 2>&1 | grep -E "риг сітки\] (сітка|пальці [lr]: великий)|Error|Traceback"
-  $B -b $O/$n/a.blend -P tools/blender/perenesty_kistky.py -- $PWD/$P/skelet-vruchnu4.blend $PWD/$O/$n/b.blend 2>&1 | grep -E "перенесення|Error|Traceback"
+  # суглоби з пілота (skelet-vruchnu4) сюди не переносяться: кисті інші,
+  # пальці ставить автоматика за сіткою (rig_sitky --пальці-сітки), 09.11
+  cp $O/$n/a.blend $O/$n/b.blend
   $B -b $O/$n/b.blend -P tools/blender/skelet_tiunynh.py -- $PWD/$O/$n/c.blend 2>&1 | grep -E "тюнінг\] →|Error|Traceback"
   $B -b $O/$n/c.blend -P tools/blender/vagy_z_ruchnoho.py -- $PWD/$O/$n/орк.blend 2>&1 | grep -E "шви|Error|Traceback"
   $B -b $O/$n/орк.blend -P tools/blender/pilot_eksport.py -- $G/орк-$n.glb --рухи $R 2>&1 | grep -E "пілот\]|Error"

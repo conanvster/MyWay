@@ -36,6 +36,20 @@ for e in me.edges:
 NOVI = {}
 for bik in ("l", "r"):
     lanc = [b for b in rig.data.bones if b.name.endswith("_" + bik) and b.name.split("_")[0] in ROD]
+    # запобіжник: кістка поза сіткою (палець не знайдено) — без ваг, інакше
+    # вершини тягнуться до неї шипами (основи орків 09.11)
+    from mathutils.kdtree import KDTree as _KD
+    _kd = _KD(len(CO))
+    for _i, _c in enumerate(CO):
+        _kd.insert(_c, _i)
+    _kd.balance()
+    # лише пальці: середина кістки плеча чи передпліччя в товстій руці лежить
+    # глибше 2 см від поверхні — запобіжник прибирав ваги з усієї руки (09.11)
+    poza = [b.name for b in lanc if b.name.split("_")[0] in ("thumb", "index", "middle", "ring", "pinky")
+            and _kd.find((mw @ ((b.head_local + b.tail_local) / 2)))[2] > 0.02]
+    if poza:
+        log("бік %s: кістки поза сіткою, без ваг: %s" % (bik, poza))
+    lanc = [b for b in lanc if b.name not in poza]
     H = np.array([np.array((mw @ b.head_local)[:]) for b in lanc])
     T = np.array([np.array((mw @ b.tail_local)[:]) for b in lanc])
     imena = [b.name for b in lanc]

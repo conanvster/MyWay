@@ -18,7 +18,12 @@
 імпорту GLB у Godot.
 
     ~/Програми/cv-venv/bin/python tools/pilot_shkiry.py <дані MPFB> \\
-        <маски.png> <маски-очі.png> <вихідний префікс: …/людина-жінка>
+        <маски.png> <маски-очі.png> <вихідний префікс: …/людина-жінка> \\
+        [--шкіри "1-світла=young_caucasian_male;3-смаглява=young_caucasian_male@176,124,90;…"]
+
+`--шкіри` (09.11.2026, усі раси): назва=шкіра MPFB[@тон sRGB] — без нього
+жіночий набір людини. Зелені шкіри орків і бліді ельфів — тим самим
+переведенням тону в Lab.
 """
 import os
 import shutil
@@ -29,6 +34,11 @@ import numpy as np
 
 DANI, MASKY, MASKY_OCHI, PREF = sys.argv[1:5]
 SK = os.path.join(DANI, "skins")
+
+
+def dyfuz(shkira):
+    d = os.path.join(SK, shkira)
+    return os.path.join(d, next(f for f in sorted(os.listdir(d)) if f.endswith(".png")))
 SVITLA = os.path.join(SK, "young_caucasian_female", "young_lightskinned_female_diffuse.png")
 SHKIRY = [
     ("1-світла", SVITLA, None),
@@ -39,6 +49,12 @@ SHKIRY = [
     ("5-темна", os.path.join(SK, "young_african_female",
                              "young_darkskinned_female_diffuse.png"), None),
 ]
+if "--шкіри" in sys.argv:
+    SHKIRY = []
+    for par in sys.argv[sys.argv.index("--шкіри") + 1].split(";"):
+        nazva, _, dz = par.partition("=")
+        dz, _, ton = dz.partition("@")
+        SHKIRY.append((nazva, dyfuz(dz), tuple(int(x) for x in ton.split(",")) if ton else None))
 OCHI = [("blue", "блакитні"), ("bluegreen", "синьо-зелені"), ("brown", "карі"),
         ("brownlight", "світло-карі"), ("deepblue", "темно-сині"), ("green", "зелені"),
         ("grey", "сірі"), ("ice", "крижані"), ("lightblue", "світло-блакитні")]

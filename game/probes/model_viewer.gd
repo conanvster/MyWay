@@ -417,7 +417,7 @@ func _spysok_vyhliadu() -> void:
 			it2.append([n, n])
 		_vybir("Очі — текстура", it2, "текстура_очей")
 	var nabory: Dictionary = o.get("набори", {})
-	for k: String in ["брови", "вії"]:
+	for k: String in ["брови", "вії", "борода"]:
 		if nabory.has(k):
 			var it3: Array = []
 			for n: String in nabory[k]:

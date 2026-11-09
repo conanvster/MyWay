@@ -339,6 +339,7 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 			false):
 		hair.visible = not helmet \
 				and bool(hair.get_meta(HAIR_CHOSEN, true))
+	_apply_part_sets(helmet)
 
 
 ## Набори деталей за типом речі (П-281, крок 4, 08.11.2026 — одяг двома
@@ -526,7 +527,7 @@ func _blocker_sizes() -> Dictionary:
 	var tilo: MeshInstance3D = null
 	var naib := -1
 	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
-		if m.name.begins_with("Волосся") or m.skin == null or m.mesh == null:
+		if not _could_be_body(str(m.name)) or m.skin == null or m.mesh == null:
 			continue
 		var n := 0
 		for s in m.mesh.get_surface_count():
@@ -598,10 +599,26 @@ func _blocker_sizes() -> Dictionary:
 	return out
 
 
+## Тіло — найбільша сітка, але не волосся, білизна чи одяг: боксери
+## чоловіка MPFB (згладжені й стовщені) мають більше вершин, ніж тіло, і
+## шейдер шкіри йшов на них (09.11.2026).
+static func _could_be_body(n: String) -> bool:
+	for p: String in ["Волосся", "Борода", "білизна", "Брови", "Вії", "Ікла", "Одяг"]:
+		if n.begins_with(p):
+			return false
+	return true
+
+
+## Сітки з пасом-карток: зачіски й борода (однаковий матеріал і колір).
+func _hair_meshes() -> Array:
+	return find_children("Волосся-*", "MeshInstance3D", true, false) \
+			+ find_children("Борода-*", "MeshInstance3D", true, false)
+
+
 func _hair_springs() -> void:
 	# Пасма — смужки з прозорою текстурою волосинок: без відсікання прозорого
 	# зачіска виглядала суцільною сірою шторою (12.10.2026).
-	for m: MeshInstance3D in find_children("Волосся*", "MeshInstance3D", true, false):
+	for m: MeshInstance3D in _hair_meshes():
 		for i in m.get_surface_override_material_count():
 			var src := m.get_active_material(i)
 			if src is BaseMaterial3D:
@@ -689,6 +706,8 @@ func look_options() -> Dictionary:
 		if not vs.is_empty():
 			nabory[k] = vs.map(func(m: MeshInstance3D) -> String:
 				return str(m.name).trim_prefix(PART_SETS[k]))
+			if k == "борода":
+				(nabory[k] as Array).append(NO_PART)
 	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null,
 			"шкіри": _variant_files("шкіра"), "очі_текстури": _variant_files("очі"),
 			"набори": nabory}
@@ -697,7 +716,20 @@ func look_options() -> Dictionary:
 ## Набори окремих сіток, з яких видно одну (людина MPFB, П-281): брови й
 ## вії — у кожного варіанта MPFB своя сітка й розгортка. Сітки
 ## `Брови-<n>-<назва>`, `Вії-<n>-<назва>`; типово видно першу за номером.
-const PART_SETS := {"брови": "Брови-", "вії": "Вії-"}
+## Борода (09.11.2026, чоловіки всіх рас): `Борода-<n>-<назва>`, колір —
+## як у волосся, у меню є «немає»; під шоломом не видно.
+const PART_SETS := {"брови": "Брови-", "вії": "Вії-", "борода": "Борода-"}
+const NO_PART := "немає"
+
+
+func _apply_part_sets(helmet := false) -> void:
+	for k: String in PART_SETS:
+		var want := str(_look.get(k, ""))
+		var vs := _part_set(k)
+		for i in vs.size():
+			var m: MeshInstance3D = vs[i]
+			m.visible = (str(m.name) == PART_SETS[k] + want if want != "" else i == 0) \
+					and not (helmet and k == "борода")
 
 
 func _part_set(kind: String) -> Array:
@@ -735,7 +767,7 @@ func _variant_texture(kind: String, variant: String) -> Texture2D:
 func _prepare_look() -> void:
 	var best := 0
 	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
-		if str(m.name).begins_with("Волосся") or m.mesh == null:
+		if not _could_be_body(str(m.name)) or m.mesh == null:
 			continue
 		var n := m.mesh.get_surface_count()
 		var v := 0
@@ -774,6 +806,9 @@ func _prepare_look() -> void:
 	# людина MPFB: губи — та сама шкіра, темнішають разом із нею (у
 	# ельфійок губи намальовані окремо — лишаються як є)
 	_skin_mat.set_shader_parameter("lips_skin", 1.0 if _eye_mat != null else 0.0)
+	if _eye_mat != null:        # людина MPFB: світлі текстури MakeHuman
+		_skin_mat.set_shader_parameter("skin_gain", 0.75)
+		_skin_mat.set_shader_parameter("sss", 0.25)
 	_body_mesh.material_override = _skin_mat
 
 
@@ -847,14 +882,9 @@ func customize(look: Dictionary) -> void:
 		for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 			m.visible = str(m.name) == "Волосся-" + style
 			m.set_meta(HAIR_CHOSEN, m.visible)
-	for k: String in PART_SETS:
-		var want := str(_look.get(k, ""))
-		var vs := _part_set(k)
-		for i in vs.size():
-			var m: MeshInstance3D = vs[i]
-			m.visible = str(m.name) == PART_SETS[k] + want if want != "" else i == 0
+	_apply_part_sets()
 	var hc: Variant = _look.get("колір_волосся")
-	for m: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+	for m: MeshInstance3D in _hair_meshes():
 		var mat := m.get_surface_override_material(0)
 		if mat is BaseMaterial3D:
 			(mat as BaseMaterial3D).albedo_color = hc if hc is Color \

@@ -806,6 +806,40 @@ def horb(x, shyr):
     return float(np.exp(-(x / shyr) ** 2))
 
 
+# Орієнтири висоти (09.11.2026, усі раси): числа нижче підібрано на
+# людині-жінці (щиколотка, коліно, таз, шия, голова, тім'я); інший зріст —
+# кусково-лінійно між тими самими кістками. Z — з еталонної висоти в цю
+# модель, ZR — назад (умови «вище пояса» тощо лишаються в еталонних числах).
+_ETALON = [0.073, 0.495, 0.926, 1.477, 1.596, 1.74]
+
+
+def _tsi_oriientyry():
+    b = rig.data.bones
+    return [b["calf_l"].tail_local.z, b["calf_l"].head_local.z, b["pelvis"].head_local.z,
+            b["neck_01"].head_local.z, b["head"].head_local.z, b["head"].tail_local.z]
+
+
+def _interp(z, xs, ys):
+    if z <= xs[0]:
+        return ys[0] * z / xs[0]
+    if z >= xs[-1]:
+        return ys[-1] + (z - xs[-1]) * (ys[-1] - ys[-2]) / (xs[-1] - xs[-2])
+    return float(np.interp(z, xs, ys))
+
+
+def Z(z):
+    return _interp(z, _ETALON, _tsi_oriientyry())
+
+
+def ZR(z):
+    return _interp(z, _tsi_oriientyry(), _ETALON)
+
+
+def X(x):
+    """Ширина плечей проти еталона (ключиця 0,166 м)."""
+    return x * rig.data.bones["clavicle_l"].tail_local.x / 0.166
+
+
 def sposib_vazhka():
     """Важка броня, сталевий сет (грейд C) за референсом
     `art/пілот-б-2026-11-07/одяг/v3/r/сталевий-референс.jpg` (значки гри).
@@ -819,12 +853,12 @@ def sposib_vazhka():
     sorochka = shmatok_tila(
         "Одяг-тіло-важка-підклад-сорочка",
         TULUB | {"upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r"},
-        lambda p: p.z >= 0.88 and (p.z <= 1.45 or abs(p.x) > 0.10),
-        lambda p: 0.017 if abs(p.x) < 0.28 else 0.022, zhladyty=20)
+        lambda p: ZR(p.z) >= 0.88 and (ZR(p.z) <= 1.45 or abs(p.x) > X(0.10)),
+        lambda p: 0.017 if abs(p.x) < X(0.28) else 0.022, zhladyty=20)
     vazhy_vid_tila(sorochka, rozmyty=1)
 
     def shyr(p):        # штани: вузько в поясі, найширше під коліном, заправлені
-        z = p.z
+        z = ZR(p.z)
         if z > 0.65:
             return 0.014 + 0.016 * (0.92 - min(z, 0.92)) / 0.27
         if z > 0.55:
@@ -832,7 +866,7 @@ def sposib_vazhka():
         return 0.008 + 0.022 * max(0.0, (z - 0.45) / 0.10)
     shtany = shmatok_tila("Одяг-тіло-важка-підклад-штани",
                           {"pelvis", "spine_01", "thigh_l", "thigh_r", "calf_l", "calf_r"},
-                          lambda p: 0.30 <= p.z <= 0.99, shyr, zhladyty=3)
+                          lambda p: 0.30 <= ZR(p.z) <= 0.99, shyr, zhladyty=3)
     vazhy_vid_tila(shtany, rozmyty=1)
     rechi += [sorochka, shtany]
     # кольчужний комір-стійка на шиї
@@ -850,6 +884,9 @@ def sposib_vazhka():
     vis = Vector((0, -0.01, 0))
 
     def tulub(zb, zt, th0=0.0, th1=360.0, proima=0.0):
+        proima = proima * (Z(zt) - Z(zb)) / (zt - zb)
+        zb, zt = Z(zb), Z(zt)
+
         def f(t, th):
             k = np.radians(th0 + (th1 - th0) * th)
             verkh = zt - proima * np.sin(k) ** 2       # нижче на боках
@@ -863,7 +900,7 @@ def sposib_vazhka():
     nahrudnyk = obolonka(NG, tulub(1.13, 1.40, proima=0.12), 16, 72, TULUB,
                          lambda t, th: 0.026 + 0.007 * horb(dkut(th), 7) * (0.4 + 0.6 * t),
                          povne=True, zhlad=14, tovsh=0.005, valyk=0.004,
-                         vahy=lambda p: {"spine_03": 1.0} if p.z > 1.20 else
+                         vahy=lambda p: {"spine_03": 1.0} if ZR(p.z) > 1.20 else
                          {"spine_03": 0.6, "spine_02": 0.4})
     rechi.append(nahrudnyk)
     o_t = ozdoba["тіло"]
@@ -1105,7 +1142,7 @@ def sposib_vazhka():
     rechi.append(z_iednaty("Одяг-взуття-важка-чоботи", sab))
 
     # ── шолом: закритий, проріз для очей, хвіст над потилицею ──
-    C = Vector((0, -0.025, 1.625))
+    C = Vector((0, rig.data.bones["head"].head_local.y + 0.016, Z(1.625)))
     F0, F1 = -42.0, 88.0
 
     def sfera(t, th):
@@ -1131,7 +1168,7 @@ def sposib_vazhka():
         zabralo = 0.006 * horb(lyk(th), 40) * float(f < PRORIZ[1] + 4)
         return 0.028 + hvist + hreb + zabralo
     SH = "Одяг-голова-важка-шолом"
-    sholom = obolonka(SH, sfera, 30, 72, 1.50, zz_sh, povne=True, zhlad=10,
+    sholom = obolonka(SH, sfera, 30, 72, Z(1.50), zz_sh, povne=True, zhlad=10,
                       tovsh=0.005, valyk=0.004, vahy=tverda("head"), dirka=proriz, zzovni=True)
     rechi.append(sholom)
     o_h = ozdoba["голова"]

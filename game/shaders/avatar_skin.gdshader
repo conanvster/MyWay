@@ -20,6 +20,11 @@ uniform vec3 lips_color = vec3(0.70, 0.35, 0.35);
 uniform float lips_mix = 0.0;
 uniform float roughness_v = 0.6;
 uniform float lips_skin = 0.0;
+// людина MPFB (09.11.2026): текстури MakeHuman світлі (≈208,162,135 sRGB) —
+// під сонцем гри шкіра виходила білою; приглушення й м'яке підповерхневе
+// розсіювання (шкіра не пластик).
+uniform float skin_gain = 1.0;
+uniform float sss = 0.0;
 // тіло під вдягненою річчю (кольори вершин `під_одяг`, людина MPFB)
 uniform vec4 hide_under = vec4(0.0);                      // 1 — губи беруть тон шкіри (людина MPFB)
 
@@ -51,6 +56,9 @@ void fragment() {
 	c = mix(c, lin(lips_color) * clamp(0.55 + 0.6 * lum / max(ref_lum, 0.05), 0.3, 1.3), m.b * lips_mix);
 	// підводка
 	c = mix(c, c * 0.18, m.g * liner);
-	ALBEDO = c;
+	ALBEDO = c * mix(1.0, skin_gain, 1.0 - m.r);
 	ROUGHNESS = roughness_v;
+	if (sss > 0.0) {
+		SSS_STRENGTH = sss;
+	}
 }

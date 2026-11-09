@@ -13,8 +13,15 @@ Superhero (`game/models/player`): спершу гола основа в біли
     blender -b -P tools/blender/pilot_b.py -- <тека> --зачіска - --без-рендеру
     blender -b <тека>/pilot.blend -P tools/blender/pilot_osnova.py -- <тека>
         → <тека>/основа.blend (далі pilot_eksport.py — рухи й GLB)
+        [--чоловік] [--ікла]
+
+09.11.2026, усі раси (слово замовника: «модель топлес з усіма
+налаштуваннями»): `--чоловік` — без верху, низ — короткі боксери до
+середини стегна; `--ікла` — орки: два нижні ікла з-за губи (окрема сітка
+«Ікла», вага — голова).
 """
 import functools
+import math
 import os
 import sys
 
@@ -25,6 +32,8 @@ from mathutils import Vector
 print = functools.partial(print, flush=True)
 ARGS = sys.argv[sys.argv.index("--") + 1:]
 KUDY = os.path.abspath(ARGS[0])
+CHOLOVIK = "--чоловік" in ARGS
+IKLA = "--ікла" in ARGS
 
 h = bpy.data.objects["Human"]
 rig = bpy.data.objects["Human.rig"]
@@ -91,6 +100,14 @@ def top(i):
     hi = mizh(nip_z + 0.05 - vyriz, nip_z + 0.025, k)
     lo = mizh(nip_z - 0.075, nip_z - 0.045, k)
     return min(c.z - lo, hi - c.z, (0.4 - ruka(i)) * 0.1)
+
+
+def boksery(i):
+    c = co[i]
+    k = zad(c)
+    lo = mizh(krok - 0.085, krok - 0.095, k)
+    hi = mizh(krok + 0.125, krok + 0.145, k)
+    return min(c.z - lo, hi - c.z)
 
 
 def trusy(i):
@@ -186,7 +203,64 @@ def zrobyty(name, test, vidstup, tovshch, kolir):
     return o
 
 
-zrobyty("білизна-верх", top, 0.0035, 0.0025, (0.055, 0.055, 0.06))
-zrobyty("білизна-низ", trusy, 0.0025, 0.0025, (0.055, 0.055, 0.06))
+if CHOLOVIK:
+    zrobyty("білизна-низ", boksery, 0.0035, 0.0025, (0.055, 0.055, 0.06))
+else:
+    zrobyty("білизна-верх", top, 0.0035, 0.0025, (0.055, 0.055, 0.06))
+    zrobyty("білизна-низ", trusy, 0.0025, 0.0025, (0.055, 0.055, 0.06))
+
+
+def ikla():
+    """Два нижні ікла біля кутиків рота: від-під нижньої губи вгору,
+    трохи назовні й уперед, злегка вигнуті."""
+    gr = gi.get("lips")
+    guby = [co[v.index] for v in me.vertices
+            if gr is not None and any(g.group == gr and g.weight > 0.5 for g in v.groups)]
+    if not guby:
+        print("[основа] ‼ групи губ немає — ікла не ставлю")
+        return
+    x_k = max(abs(c.x) for c in guby)
+    z_n = min(c.z for c in guby)
+    y_p = min(c.y for c in guby)
+    bm = bmesh.new()
+    for zn in (-1, 1):
+        baza = Vector((zn * x_k * 0.72, y_p + 0.010, z_n - 0.004))
+        os_ = Vector((zn * 0.25, -0.30, 1.0)).normalized()
+        sehm, kil = 6, 10
+        kiltsia = []
+        for i in range(sehm + 1):
+            t = i / sehm
+            r = 0.0052 * (1 - t) ** 0.8 + 0.0004
+            tsentr = baza + os_ * (0.026 * t) + Vector((zn * 0.003, -0.004, 0)) * t * t
+            u = os_.cross(Vector((1, 0, 0))).normalized()
+            v = os_.cross(u).normalized()
+            kiltsia.append([bm.verts.new(tsentr + (u * math.cos(a) + v * math.sin(a)) * r)
+                            for a in [2 * math.pi * j / kil for j in range(kil)]])
+        for a_, b_ in zip(kiltsia, kiltsia[1:]):
+            for j in range(kil):
+                bm.faces.new((a_[j], a_[(j + 1) % kil], b_[(j + 1) % kil], b_[j]))
+        bm.faces.new(list(reversed(kiltsia[0])))
+        bm.faces.new(kiltsia[-1])
+    nova = bpy.data.meshes.new("Ікла")
+    bm.to_mesh(nova)
+    bm.free()
+    m = bpy.data.materials.new("Ікла")
+    m.use_nodes = True
+    b = m.node_tree.nodes["Principled BSDF"]
+    b.inputs["Base Color"].default_value = (0.78, 0.72, 0.58, 1)
+    b.inputs["Roughness"].default_value = 0.4
+    nova.materials.append(m)
+    for p in nova.polygons:
+        p.use_smooth = True
+    o = bpy.data.objects.new("Ікла", nova)
+    bpy.context.scene.collection.objects.link(o)
+    o.parent = rig
+    o.vertex_groups.new(name="head").add(list(range(len(nova.vertices))), 1.0, "REPLACE")
+    o.modifiers.new("Armature", "ARMATURE").object = rig
+    print("[основа] ікла: кутики рота x ±%.3f, низ губи z %.3f" % (x_k, z_n))
+
+
+if IKLA:
+    ikla()
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(KUDY, "основа.blend"))
 print("[основа] →", os.path.join(KUDY, "основа.blend"))

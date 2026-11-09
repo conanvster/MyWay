@@ -90,7 +90,7 @@ zachisky = []
 for a in ARGS[2:]:
     shliakh, _, kolir = a.partition("=")
     with bpy.data.libraries.load(os.path.abspath(shliakh)) as (src, dst):
-        dst.objects = [n for n in src.objects if n.startswith("Волосся")]
+        dst.objects = [n for n in src.objects if n.startswith(("Волосся", "Борода"))]
     for vol in dst.objects:
         bpy.context.scene.collection.objects.link(vol)
         zachisky.append((vol, tuple(float(x) for x in kolir.split(",")) if kolir else None))

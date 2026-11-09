@@ -17,6 +17,14 @@
               спереду на плечах і грудях, вуха — крізь волосся;
   коси      — орчиха (приклад замовника — орчиха в обладунку): усе
               зачесане назад до потилиці, ззаду три коси.
+  коротке   — чоловіча коротка стрижка (09.11.2026, усі раси): пасма
+              5–8 см, зачесані назад і вбік, впритул до голови;
+  вузол     — орк (кадр вікі): усе зібране у вузол на маківці, з вузла
+              короткий хвіст донизу;
+  борода    — не зачіска, а борода з вусами окремою сіткою «Борода-…»:
+              корені на щелепі, підборідді й над губою, пасма 2–5 см.
+Висоти кінчиків — для голови на висоті 1,739 м (людина-жінка); інші раси —
+пропорційно своєму зросту.
 
 Спільне:
   1. корені — на сфері черепа (підбір по маківці), лінія росту волосся
@@ -77,6 +85,9 @@ STYLI = {
     "каре": dict(kintsi=1.53, hv_a=(0.001, 0.003), hv_t=(7.0, 9.0), rozkyd=0.02),
     "пряме": dict(kintsi=1.12, hv_a=(0.0, 0.002), hv_t=(14.0, 18.0), rozkyd=0.012),
     "коси": dict(kintsi=1.10, hv_a=(0.0, 0.002), hv_t=(12.0, 18.0), rozkyd=0.01),
+    "коротке": dict(kintsi=1.55, hv_a=(0.0, 0.001), hv_t=(8.0, 10.0), rozkyd=0.02),
+    "вузол": dict(kintsi=1.25, hv_a=(0.0, 0.002), hv_t=(12.0, 18.0), rozkyd=0.01),
+    "борода": dict(kintsi=1.40, hv_a=(0.0, 0.001), hv_t=(8.0, 10.0), rozkyd=0.03),
 }
 S = STYLI[STYL]
 
@@ -107,7 +118,9 @@ c4 = np.linalg.lstsq(A, (verkh ** 2).sum(1), rcond=None)[0]
 C = Vector(c4[:3])
 R = float(math.sqrt(c4[3] + (c4[:3] ** 2).sum()))
 # центр голови по висоті очей (для правила «нижче очей — позаду вух»)
-Z_OCHI = ztop - 0.12
+ZTOP_REF = 1.739
+MASHTAB = ztop / ZTOP_REF
+Z_OCHI = ztop - 0.12 * MASHTAB
 print("[пасма] стиль %s; череп: центр %s, R %.3f, маківка %.3f"
       % (STYL, tuple(round(v, 3) for v in C), R, ztop))
 # Вуха — геть із зіткнень: великі вуха орчихи відштовхували пасма вбік
@@ -153,7 +166,7 @@ def koreni(n, shary=SHARY):
     out, sproby = [], 0
     while len(out) < n and sproby < n * 60:
         sproby += 1
-        th = math.acos(random.uniform(-0.45, 1.0))
+        th = math.acos(random.uniform(-0.95, 0.0) if BORODA else random.uniform(-0.45, 1.0))
         ph = random.uniform(0, 2 * math.pi)
         d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
         if not korin_dozvolenyi(d):
@@ -166,7 +179,8 @@ def koreni(n, shary=SHARY):
     return out
 
 
-def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=False):
+def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=False,
+         prylyp=False):
     """Пасмо від p0: напрям — суміш пам'яті й поля `pole_f(p, i)`; хвиля
     поперек; відштовхування від тіла; нижче очей — позаду вух (крім
     `vpered`: бічні пасма стилю «пряме» лягають на плечі й груди)."""
@@ -184,6 +198,16 @@ def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=Fa
         if not vpered and q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
             q.y = C.y - PERED * 0.012
         q = vidshtovhnuty(q, zazor)
+        if prylyp:
+            # коротке й борода: уздовж шкіри, впритул (не стирчить у повітря)
+            loc, nrm, _, _ = tree.find_nearest(q, 0.1)
+            if loc is not None:
+                d_t = d - nrm * d.dot(nrm)
+                if d_t.length > 0.2:
+                    q = loc + nrm * zazor + d_t.normalized() * KROK * 0.15
+                    q = vidshtovhnuty(q, zazor)
+                else:
+                    break                    # під підборіддям — далі нікуди
         # хвиля поперек напряму, у площині «вбік»
         poperek = d.cross(Vector((0, 0, 1)))
         if poperek.length < 0.2:
@@ -289,8 +313,58 @@ def kosa(B, kinets, n_pasom):
 pasma = []
 bez_puchkiv = set()      # коси: своє плетіння, у пучки не збирати
 kreslennia = []          # додаткові сітки: резинка
-kintsi = S["kintsi"]
-vsi = koreni(PASOM)
+kintsi = ztop - (ZTOP_REF - S["kintsi"]) * MASHTAB
+BORODA = STYL == "борода"
+
+
+def korin_borody(d):
+    """Борода: щелепа, підборіддя, щоки нижче вилиць і вуса над губою;
+    рот і губи — вільні."""
+    vpered = d.y * PERED
+    if vpered < -0.15 or d.z > -0.30:
+        return False
+    rot = vpered > 0.55 and abs(d.x) < 0.30 and -0.62 < d.z < -0.42
+    return not rot
+
+
+def koreni_borody(n):
+    """Корені бороди — на шкірі обличчя за кінчиком носа: від-під носа
+    (вуса) до-під підборіддя, щоки до вух; губи вільні. Промінь від
+    центру черепа сюди не годиться — ззовні влучав у груди й плечі."""
+    tv = [(v.co.copy(), v.normal.copy()) for v in bm_t.verts]
+    global NIS
+    nis = NIS = min((c for c, _ in tv if abs(c.x) < 0.012 and Z_OCHI - 0.09 < c.z < Z_OCHI),
+                    key=lambda c: c.y)
+    print("[пасма] кінчик носа z %.3f y %.3f" % (nis.z, nis.y))
+    out = []
+
+    def mozhna(c):
+        dz = nis.z - c.z
+        if c.y > C.y + 0.01 or abs(c.x) > R * 0.98:
+            return False
+        if dz < 0.014 or dz > 0.105:
+            return False
+        if dz > 0.095 and c.y > nis.y + 0.07:      # під підборіддям — лише спереду
+            return False
+        if abs(c.x) < 0.030 and 0.026 < dz < 0.056 and c.y < nis.y + 0.045:
+            return False                            # губи
+        if dz < 0.026 and abs(c.x) > 0.032:
+            return False                            # вуса — лише над губою
+        if abs(c.x) > 0.03 and dz < 0.03 and abs(c.x) > 0.045:
+            return False                            # щоки над кутиками рота
+        return True
+    # під щелепою (нормаль донизу) — ні: пасма йшли по шиї
+    dozv = [(c, nr) for c, nr in tv if mozhna(c) and nr.z > -0.35]
+    print("[пасма] вершин під бороду: %d" % len(dozv))
+    for i in range(n):
+        c, nr = random.choice(dozv)
+        jit = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))) * 0.002
+        shar = 0.0015
+        out.append((c + jit + nr * shar, nr, shar, nr))
+    return out
+
+
+vsi = koreni_borody(PASOM) if BORODA else koreni(PASOM)
 if STYL in ("розпущене", "каре"):
     for p, n, z, d in vsi:
         pasma.append(rist(p, n * 0.3 + pole_vnyz()(p, 0), z, pole_vnyz(),
@@ -315,6 +389,40 @@ elif STYL == "коси":
         bez_puchkiv.update(range(len(pasma), len(pasma) + 150))
         pasma += kosa(T + n_t * 0.004 + Vector((dx, 0, -0.01 * abs(dx) / 0.034)),
                       kintsi + random.uniform(-0.03, 0.03), 150)
+    kreslennia.append(("резинка", T, n_t))
+elif STYL == "коротке":
+    for p, n, z, d in vsi:
+        if d.z < -0.12:
+            continue                                # потилиця — до рівня вух
+        dovzh = random.randint(2, 4)
+        pole = (lambda q, i: (NAZAD * 0.8 + VNYZ * 0.35).normalized()) \
+            if d.y * PERED > -0.3 else pole_vnyz(prodil=False)
+        pasma.append(rist(p, n * 0.25 + pole(p, 0), z * 0.6, pole, -10.0, maks=dovzh, hv=0.0,
+                          prylyp=True))
+elif BORODA:
+    def pole_borody(p, i):
+        return (VNYZ + Vector((0, PERED * 0.15, 0))).normalized()
+    for p, n, z, d in vsi:
+        if NIS.z - p.z < 0.028:             # вуса: коротко, від середини вбік і вниз
+            bik_ = Vector((1 if p.x > 0 else -1, 0, 0))
+            pole = (lambda b_: lambda q, i: (VNYZ * 0.6 + b_ * 0.7).normalized())(bik_)
+            pasma.append(rist(p, n * 0.3 + pole(p, 0), 0.0025, pole, -10.0, maks=1,
+                              hv=0.0, vpered=True))
+            continue
+        pasma.append(rist(p, n * 0.15 + pole_borody(p, 0), 0.0035, pole_borody,
+                          p.z - random.uniform(0.012, 0.022),     # не нижче щелепи
+                          maks=3, hv=0.0, vpered=True, prylyp=True))
+elif STYL == "вузол":
+    T, n_t = tochka_potylytsi(0.75)
+    T = T + n_t * 0.006
+    for p, n, z, d in vsi:
+        pasma.append(rist(p, (T - p).normalized(), z, pole_do(T), -10.0,
+                          maks=int((T - p).length / KROK) + 2, hv=0.0))
+    for j in range(260):
+        ang = random.uniform(0, 2 * math.pi)
+        r = math.sqrt(random.random())
+        pasma.append(khvist(T, n_t, (r * math.cos(ang), r * math.sin(ang)),
+                            kintsi + random.uniform(-0.04, 0.04), 0.002, rad0=0.018, rad1=0.03))
     kreslennia.append(("резинка", T, n_t))
 elif STYL == "зачесане":
     for p, n, z, d in vsi:
@@ -346,19 +454,27 @@ elif STYL in ("напівхвіст", "коса"):
     kreslennia.append(("резинка", T, n_t))
 # «Шапка»: короткі пасма впритул до шкіри, у напрямку стилю — голова
 # вкрита суцільно, крізь картки не світить лисина.
-for p, n, z, d in koreni(PASOM // 2, shary=(0.0025,)):
-    if STYL in ("напівхвіст", "коса", "зачесане", "коси"):
+for p, n, z, d in ([] if BORODA else koreni(PASOM // 2, shary=(0.0025,))):
+    if STYL == "вузол":
+        pole = pole_do(tochka_potylytsi(0.75)[0])
+    elif STYL == "коротке":
+        pole = (lambda q, i: (NAZAD * 0.8 + VNYZ * 0.35).normalized()) \
+            if d.y * PERED > -0.3 else pole_vnyz(prodil=False)
+    elif STYL in ("напівхвіст", "коса", "зачесане", "коси"):
         T_ = (tochka_potylytsi(0.25)[0] if STYL != "коси" else tochka_potylytsi(-0.1)[0]) \
             if STYL != "зачесане" else C + NAZAD * R
         pole = pole_do(T_) if STYL != "зачесане" else pole_nazad()
     else:
         pole = pole_vnyz()
-    pasma.append(rist(p, pole(p, 0), 0.0025, pole, -10.0, maks=7, hv=0.0))
+    if STYL == "коротке" and d.z < -0.12:
+        continue
+    pasma.append(rist(p, pole(p, 0), 0.0025, pole, -10.0, maks=3 if STYL == "коротке" else 7,
+                      hv=0.0))
 
 # ── 1б. Пучки (--природне) ──────────────────────────────────────────────
 # Справжнє волосся лягає пучками: сусідні пасма до кінчиків тягнуться до
 # спільного «провідника», корені лишаються де були. 3 % вибиваються.
-if PRYRODNE:
+if PRYRODNE and sum(len(p_) >= 10 for p_ in pasma) >= 20:   # короткі стрижки — без пучків
     from mathutils.kdtree import KDTree
     dovgi = [i for i, p_ in enumerate(pasma)
              if len(p_) >= 10 and i not in bez_puchkiv]
@@ -392,7 +508,8 @@ if PRYRODNE:
     print("[пасма] пучків %d, зібрано пасом %d" % (len(providni), zibrano))
 
 # ── 2. Картки ───────────────────────────────────────────────────────────
-me = bpy.data.meshes.new("Волосся-" + STYL)
+IMIA = "Борода-повна" if BORODA else "Волосся-" + STYL
+me = bpy.data.meshes.new(IMIA)
 bm = bmesh.new()
 uv_l = bm.loops.layers.uv.new("UVMap")
 for pts in pasma:
@@ -402,6 +519,10 @@ for pts in pasma:
     if len(pts) < 3:
         continue
     shyr = random.uniform(0.009, 0.017) if PRYRODNE else random.uniform(0.012, 0.022)
+    if STYL == "коротке":
+        shyr *= 0.5                                 # короткі картки вужчі
+    elif STYL == "борода":
+        shyr *= 0.8
     u0 = random.choice((0.0, 0.25, 0.5, 0.75))
     ryad = []
     for i, p in enumerate(pts):
@@ -444,7 +565,7 @@ for imia, T, n_t in kreslennia:
                 lp[uv_l].uv = (0.99, 0.99)
 bm.to_mesh(me)
 bm.free()
-vol = bpy.data.objects.new("Волосся-" + STYL, me)
+vol = bpy.data.objects.new(IMIA, me)
 bpy.context.scene.collection.objects.link(vol)
 print("[пасма] карток %d, граней %d" % (len(pasma), len(me.polygons)))
 

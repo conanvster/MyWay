@@ -621,7 +621,17 @@ func _hair_springs() -> void:
 	for m: MeshInstance3D in _hair_meshes():
 		for i in m.get_surface_override_material_count():
 			var src := m.get_active_material(i)
-			if src is BaseMaterial3D:
+			# людина MPFB: шейдер волосся — світло вздовж волосини (П-285)
+			if src is BaseMaterial3D and _eye_mat != null \
+					and (src as BaseMaterial3D).albedo_texture != null:
+				var hm := ShaderMaterial.new()
+				hm.shader = HAIR_SHADER
+				hm.set_shader_parameter("albedo_tex", (src as BaseMaterial3D).albedo_texture)
+				var bc: Color = (src as BaseMaterial3D).albedo_color
+				hm.set_shader_parameter("hair_color", bc)
+				hm.set_meta("base_albedo", bc)
+				m.set_surface_override_material(i, hm)
+			elif src is BaseMaterial3D:
 				var mat: BaseMaterial3D = src.duplicate()
 				# свій колір зачіски з файла (пілот MPFB) — до нього вертається
 				# `customize`, коли колір у меню не вибрано
@@ -677,6 +687,7 @@ func _hair_springs() -> void:
 const SKIN_SHADER := preload("res://shaders/avatar_skin.gdshader")
 const EYE_SHADER := preload("res://shaders/avatar_eye.gdshader")
 const CORNEA_SHADER := preload("res://shaders/avatar_cornea.gdshader")
+const HAIR_SHADER := preload("res://shaders/avatar_hair.gdshader")
 const PORES := "res://shaders/pory_normal.png"
 var _body_mesh: MeshInstance3D
 var _skin_mat: ShaderMaterial
@@ -915,14 +926,28 @@ func customize(look: Dictionary) -> void:
 		if mat is BaseMaterial3D:
 			(mat as BaseMaterial3D).albedo_color = hc if hc is Color \
 					else mat.get_meta("base_albedo", Color.WHITE)
+		elif mat is ShaderMaterial:
+			(mat as ShaderMaterial).set_shader_parameter("hair_color",
+					hc if hc is Color else mat.get_meta("base_albedo", Color.WHITE))
 	if _skin_mat != null:
 		var ref: Vector3 = _skin_mat.get_shader_parameter("skin_ref")
 		var sc: Variant = _look.get("колір_шкіри")
 		_skin_mat.set_shader_parameter("skin_tint",
 				Vector3(sc.r, sc.g, sc.b) if sc is Color else ref)
-		_skin_mat.set_shader_parameter("hair_mix", 1.0 if hc is Color else 0.0)
-		if hc is Color:
-			_skin_mat.set_shader_parameter("hair_color", Vector3(hc.r, hc.g, hc.b))
+		# людина MPFB: скальп під зачіскою завжди в тон волосся — і коли колір
+		# у меню не вибрано (свій колір зачіски з файла); інакше в проділі
+		# світить руда шкіра голови (П-285)
+		var sc_hair: Variant = hc
+		if not (hc is Color) and _eye_mat != null:
+			for hm: MeshInstance3D in _hair_meshes():
+				var mm := hm.get_surface_override_material(0)
+				if hm.visible and str(hm.name).begins_with("Волосся-") and mm != null \
+						and mm.has_meta("base_albedo"):
+					sc_hair = mm.get_meta("base_albedo")
+					break
+		_skin_mat.set_shader_parameter("hair_mix", 1.0 if sc_hair is Color else 0.0)
+		if sc_hair is Color:
+			_skin_mat.set_shader_parameter("hair_color", Vector3(sc_hair.r, sc_hair.g, sc_hair.b))
 		var ec: Variant = _look.get("колір_очей")
 		_skin_mat.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)
 		if ec is Color:

@@ -66,6 +66,11 @@ PASOM = arg("--пасом", int, 1300)
 # в пучки до кінчиків, кілька вибиваються, картки вужчі, текстура
 # 1024×2048 з тонкими волосинками різного тону й м'якими кінчиками.
 PRYRODNE = "--природне" in ARGS
+# `--якість` (П-285, 11.11.2026): картки нового зразка — вузькі (6–11 мм), гладка крива
+# з кроком 2 см, нормалі «від голови» (сусідні картки світяться однаково — без латок),
+# текстура з 8 смуг різної густоти БЕЗ суцільної підкладки (крізь картку видно шар під нею),
+# друга розгортка: U — номер картки (тон і зсув відблиску), V — корінь→кінчик.
+YAKIST = "--якість" in ARGS
 random.seed(arg("--зерно", int, 7))
 KOLIR = (0.93, 0.92, 0.90)          # нейтральний: колір — множником у грі
 KROK = 0.015
@@ -512,7 +517,79 @@ IMIA = "Борода-повна" if BORODA else "Волосся-" + STYL
 me = bpy.data.meshes.new(IMIA)
 bm = bmesh.new()
 uv_l = bm.loops.layers.uv.new("UVMap")
-for pts in pasma:
+normali = {}          # вершина bmesh -> нормаль «від голови» (--якість)
+uv2_l = bm.loops.layers.uv.new("UV2") if YAKIST else None
+SMUHY = ((0, 0.20), (1, 0.20), (2, 0.16), (3, 0.14), (4, 0.11), (5, 0.09), (6, 0.07), (7, 0.03))
+
+
+def hladka(pts, krok=0.02):
+    """Крива Катмулла–Рома крізь точки пасма, рівний крок."""
+    P = [pts[0]] + list(pts) + [pts[-1]]
+    out = []
+    for i in range(1, len(P) - 2):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[i + 1], P[i + 2]
+        n = max(1, int(round((p2 - p1).length / krok)))
+        for k in range(n):
+            t = k / n
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                              + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    out.append(pts[-1].copy())
+    return out
+
+
+for nomer, pts in enumerate(pasma):
+    if YAKIST:
+        if len(pts) < 3:
+            continue
+        pts = hladka(pts)
+        shyr = random.uniform(0.006, 0.011)
+        if STYL == "коротке":
+            shyr *= 0.6
+        elif STYL == "борода":
+            shyr *= 0.7
+        r_ = random.random()
+        kol = 0
+        for kol, chastka in SMUHY:
+            r_ -= chastka
+            if r_ <= 0:
+                break
+        u0, du = kol / 8.0, 1.0 / 8.0
+        if random.random() < 0.5:           # дзеркально — менше повторів малюнка
+            u0, du = u0 + du, -du
+        nid = random.random()
+        ryad = []
+        dovzh = sum((b_ - a_).length for a_, b_ in zip(pts, pts[1:]))
+        proideno = 0.0
+        for i, p in enumerate(pts):
+            if i:
+                proideno += (p - pts[i - 1]).length
+            t = proideno / max(dovzh, 1e-6)
+            tang = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+            nazovni = (p - Vector((C.x, C.y, p.z)))
+            if nazovni.length < 0.01:
+                nazovni = NAZAD.copy()
+            nazovni.normalize()
+            bok = tang.cross(nazovni)
+            if bok.length < 0.1:
+                bok = Vector((1, 0, 0))
+            bok.normalize()
+            w = shyr * (1.0 - 0.35 * t * t)
+            va, vb = bm.verts.new(p - bok * w / 2), bm.verts.new(p + bok * w / 2)
+            # нормаль: від осі голови, трохи вгору біля кореня, без складової вздовж волосини
+            nn = nazovni + Vector((0, 0, 0.25 * (1.0 - t)))
+            nn = (nn - tang * nn.dot(tang))
+            nn = nn.normalized() if nn.length > 1e-4 else nazovni
+            normali[va] = nn
+            normali[vb] = nn
+            ryad.append((va, vb, t))
+        for (a0, b0, t0), (a1, b1, t1) in zip(ryad, ryad[1:]):
+            f = bm.faces.new((a0, b0, b1, a1))
+            f.smooth = True
+            for lp, (u, v), tt in zip(f.loops, ((u0, 1 - t0), (u0 + du, 1 - t0),
+                                                (u0 + du, 1 - t1), (u0, 1 - t1)), (t0, t0, t1, t1)):
+                lp[uv_l].uv = (u, v)
+                lp[uv2_l].uv = (nid, 1 - tt)
+        continue
     if PRYRODNE and len(pts) > 6:
         # кожна друга точка (3 см на ланку): вигин той самий, граней удвічі менше
         pts = pts[::2] + ([pts[-1]] if (len(pts) - 1) % 2 else [])
@@ -563,14 +640,54 @@ for imia, T, n_t in kreslennia:
             f.material_index = 1
             for lp in f.loops:
                 lp[uv_l].uv = (0.99, 0.99)
+if YAKIST:
+    bm.verts.index_update()
+    nlist = [tuple(normali.get(v, v.normal)) for v in bm.verts]
 bm.to_mesh(me)
 bm.free()
+if YAKIST:
+    me.normals_split_custom_set_from_vertices(nlist)
 vol = bpy.data.objects.new(IMIA, me)
 bpy.context.scene.collection.objects.link(vol)
 print("[пасма] карток %d, граней %d" % (len(pasma), len(me.polygons)))
 
 # ── 3. Текстура волосинок: 4 смуги-пучки, нейтрально-світла ─────────────
-if PRYRODNE:
+if YAKIST:
+    # 2048×2048, 8 смуг: густі → рідкі → окремі волосини. Суцільної підкладки немає:
+    # між волосинами прозоро, густоту дає кількість шарів карток. Тон нейтральний.
+    W, H = 2048, 2048
+    img = np.zeros((H, W, 4), dtype=np.float32)
+    rng = np.random.default_rng(11)
+    yy = np.arange(H, dtype=np.float32)
+    sw = W // 8
+    for s_i, (n_vol, rozkyd) in enumerate(((70, 0.42), (70, 0.42), (52, 0.42), (52, 0.44),
+                                           (36, 0.44), (36, 0.46), (16, 0.46), (7, 0.46))):
+        x0 = s_i * sw
+        for _ in range(n_vol):
+            # густіше посередині смуги, до країв рідшає — край картки не видно
+            x = x0 + sw / 2 + float(np.clip(rng.normal(0, 0.5), -1, 1)) * sw * rozkyd
+            dovzh = rng.uniform(0.62, 1.0) if s_i < 6 else rng.uniform(0.45, 1.0)
+            jas = float(np.clip(rng.normal(0.80, 0.17), 0.35, 1.15))
+            tovsh = rng.uniform(1.6, 3.0)
+            faza, amp = rng.uniform(0, 6.28), rng.uniform(1.0, 5.0) * (1.0 if s_i < 6 else 2.5)
+            n = int(H * dovzh)
+            t = yy[:n] / H
+            xs = x + np.sin(yy[:n] * rng.uniform(0.0015, 0.005) + faza) * amp * (0.3 + t)
+            kinets = np.clip((dovzh - t) / 0.06, 0, 1)
+            for dx in range(-3, 4):
+                xi = np.floor(xs).astype(int) + dx
+                ok = (xi >= x0 + 1) & (xi < x0 + sw - 1)
+                a_ = np.clip(1.25 - np.abs(xi + 0.5 - xs) / (tovsh * 0.5 * (0.5 + 0.5 * kinets)), 0, 1) * kinets
+                rows = (H - 1 - yy[:n].astype(int))[ok]
+                cols = xi[ok]
+                a_ = a_[ok]
+                bil = a_ > img[rows, cols, 3]
+                img[rows[bil], cols[bil], :3] = np.array(KOLIR) * jas
+                img[rows[bil], cols[bil], 3] = a_[bil]
+    # колір під прозорим — тон волосся (інакше міпи тягнуть чорне по краях)
+    img[..., :3] = np.where(img[..., 3:4] > 0.02, img[..., :3], np.array(KOLIR) * 0.7)
+    img[-8:, -8:] = (0.12, 0.11, 0.10, 1.0)
+elif PRYRODNE:
     # 1024×2048: у смузі ~170 волосинок завширшки 1–2,5 пкс, тон кожної свій
     # (світліші й темніші — глибина без кольору: колір дає гра), кінчики
     # звужуються й тоншають, корінь темніший, легкий вигин.

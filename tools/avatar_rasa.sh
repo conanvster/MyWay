@@ -6,10 +6,13 @@
 #
 #   tools/avatar_rasa.sh <тип> [крок…]
 #   кроки: osnova volossia rysy eksport shkiry odiah (без кроків — усі)
+#   змінні (П-285): ART — тека проміжного, TEKA — тека моделі в грі,
+#   VOL="--якість" — картки волосся нового зразка, PASOM — кількість пасом
 #
 # Проміжне — art/аватари-2026-11-09/<тип>/ (лише диск), моделі —
 # game/models/own/avatary/<тека>/<тип>.glb і <тип>-одяг-важка.glb.
 set -e
+VOL=${VOL:-}
 cd "$(dirname "$0")/.."
 t=$1
 shift
@@ -18,11 +21,11 @@ B=${BLENDER:-$HOME/Програми/blender-5.2.2-linux-x64/blender}
 PY=${CVPY:-$HOME/Програми/cv-venv/bin/python}
 D=$HOME/.config/blender/5.2/extensions/.user/blender_org/mpfb/data
 cfg() { python3 -c "import json,sys;v=json.load(open('tools/avatary_rasy.json'))[sys.argv[1]].get(sys.argv[2],'');print(('1' if v else '') if isinstance(v,bool) else v)" "$t" "$1"; }
-A=art/аватари-2026-11-09/$t
+A=${ART:-art/аватари-2026-11-09}/$t
 O=$A/основа
 V=$A/волосся
 RY=$A/риси
-G=game/models/own/avatary/$(cfg тека)
+G=game/models/own/avatary/${TEKA:-$(cfg тека)}
 mkdir -p "$O" "$V" "$RY" "$G"
 RUHY=A_TPose,Idle_Loop,Walk_Loop,Sprint_Loop,Sword_Attack,Crouch_Fwd,Sitting_Idle,Jump_Start
 log() { echo "[$t] $*"; }
@@ -47,13 +50,13 @@ volossia)
   for par in $(cfg зачіски); do
     st=${par%%=*}
     $B -b --factory-startup -P tools/blender/volossia_pasma.py -- "$V/тіло.blend" "$V/волосся-$st.blend" \
-      --стиль "$st" --природне --пасом 2200 2>&1 | grep -E "\[пасма\] (стиль|пучків)|Error|Traceback"
+      --стиль "$st" --природне --пасом ${PASOM:-2200} $VOL 2>&1 | grep -E "\[пасма\] (стиль|пучків)|Error|Traceback"
     zbir+=("$V/волосся-$st.blend=${par#*=}")
   done
   bk=$(cfg борода)
   if [ -n "$bk" ]; then
     $B -b --factory-startup -P tools/blender/volossia_pasma.py -- "$V/тіло.blend" "$V/борода.blend" \
-      --стиль борода --природне --пасом 5000 2>&1 | grep -E "\[пасма\] стиль|Error|Traceback"
+      --стиль борода --природне --пасом 5000 $VOL 2>&1 | grep -E "\[пасма\] стиль|Error|Traceback"
     zbir+=("$V/борода.blend=$bk")
   fi
   $B -b "$O/основа.blend" -P tools/blender/pilot_volossia.py -- зібрати "$V/зачіски.blend" "${zbir[@]}" \

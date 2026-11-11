@@ -137,47 +137,60 @@ log("AO %.2f…%.2f · тонке > 0,5: %d вершин · опуклість 5
 
 # ── у розгортку ─────────────────────────────────────────────────────────────
 uvl = bm.loops.layers.uv.active
-img = np.zeros((SIZE, SIZE, 3), np.float32)
-mask = np.zeros((SIZE, SIZE), np.uint8)
 bmesh.ops.triangulate(bm, faces=bm.faces[:])
 bm.faces.ensure_lookup_table()
-for f in bm.faces:
-    pts = np.array([[l[uvl].uv.x * SIZE, (1.0 - l[uvl].uv.y) * SIZE] for l in f.loops], np.float32)
-    idx = [l.vert.index for l in f.loops]
-    x0, y0 = np.floor(pts.min(0)).astype(int) - 1
-    x1, y1 = np.ceil(pts.max(0)).astype(int) + 1
-    x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, SIZE - 1), min(y1, SIZE - 1)
-    if x1 <= x0 or y1 <= y0:
-        continue
-    xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
-    a, b, c = pts
-    den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
-    if abs(den) < 1e-9:
-        continue
-    w0 = ((b[1] - c[1]) * (xs - c[0]) + (c[0] - b[0]) * (ys - c[1])) / den
-    w1 = ((c[1] - a[1]) * (xs - c[0]) + (a[0] - c[0]) * (ys - c[1])) / den
-    w2 = 1 - w0 - w1
-    ins = (w0 >= -0.02) & (w1 >= -0.02) & (w2 >= -0.02)
-    if not ins.any():
-        continue
-    for ch, arr in enumerate((ao, thin, conv_n)):
-        val = w0 * arr[idx[0]] + w1 * arr[idx[1]] + w2 * arr[idx[2]]
-        sub = img[y0:y1 + 1, x0:x1 + 1, ch]
-        sub[ins] = val[ins]
-    mask[y0:y1 + 1, x0:x1 + 1][ins] = 255
 
-# поля островів — розтягнути назовні, щоб на швах і в міпах не лізло тло
-for _ in range(12):
-    dil = cv2.dilate(img, np.ones((3, 3), np.uint8))
-    mdil = cv2.dilate(mask, np.ones((3, 3), np.uint8))
-    nove = (mdil > 0) & (mask == 0)
-    img[nove] = dil[nove]
-    mask = mdil
-img[mask == 0] = (1.0, 0.0, 0.5)
-img = cv2.GaussianBlur(img, (0, 0), SIZE / 1024.0)
-out = (np.clip(img, 0, 1) * 255).astype(np.uint8)
-zapys(BASE + "_карти.png", out[:, :, ::-1])       # cv2 — BGR
-log("→", BASE + "_карти.png")
+
+def u_rozhortku(mat_i, kudy):
+    """mat_i — лише грані цього матеріалу (None — усі): модель зі скульпту має окремі
+    текстури голови й тіла в тому самому просторі розгортки."""
+    img = np.zeros((SIZE, SIZE, 3), np.float32)
+    mask = np.zeros((SIZE, SIZE), np.uint8)
+    for f in bm.faces:
+        if mat_i is not None and f.material_index != mat_i:
+            continue
+        pts = np.array([[l[uvl].uv.x * SIZE, (1.0 - l[uvl].uv.y) * SIZE] for l in f.loops], np.float32)
+        idx = [l.vert.index for l in f.loops]
+        x0, y0 = np.floor(pts.min(0)).astype(int) - 1
+        x1, y1 = np.ceil(pts.max(0)).astype(int) + 1
+        x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, SIZE - 1), min(y1, SIZE - 1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        a, b, c = pts
+        den = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(den) < 1e-9:
+            continue
+        w0 = ((b[1] - c[1]) * (xs - c[0]) + (c[0] - b[0]) * (ys - c[1])) / den
+        w1 = ((c[1] - a[1]) * (xs - c[0]) + (a[0] - c[0]) * (ys - c[1])) / den
+        w2 = 1 - w0 - w1
+        ins = (w0 >= -0.02) & (w1 >= -0.02) & (w2 >= -0.02)
+        if not ins.any():
+            continue
+        for ch, arr in enumerate((ao, thin, conv_n)):
+            val = w0 * arr[idx[0]] + w1 * arr[idx[1]] + w2 * arr[idx[2]]
+            sub = img[y0:y1 + 1, x0:x1 + 1, ch]
+            sub[ins] = val[ins]
+        mask[y0:y1 + 1, x0:x1 + 1][ins] = 255
+    # поля островів — розтягнути назовні, щоб на швах і в міпах не лізло тло
+    for _ in range(12):
+        dil = cv2.dilate(img, np.ones((3, 3), np.uint8))
+        mdil = cv2.dilate(mask, np.ones((3, 3), np.uint8))
+        nove = (mdil > 0) & (mask == 0)
+        img[nove] = dil[nove]
+        mask = mdil
+    img[mask == 0] = (1.0, 0.0, 0.5)
+    img = cv2.GaussianBlur(img, (0, 0), SIZE / 1024.0)
+    out = (np.clip(img, 0, 1) * 255).astype(np.uint8)
+    zapys(kudy, out[:, :, ::-1])       # cv2 — BGR
+    log("→", kudy)
+
+
+if len(me.materials) > 1:
+    for i_, m_ in enumerate(me.materials):
+        u_rozhortku(i_, BASE + "_карти-" + m_.name + ".png")
+    sys.exit(0)
+u_rozhortku(None, BASE + "_карти.png")
 
 # ── рельєф із малюнка текстури шкіри ────────────────────────────────────────
 alb = None

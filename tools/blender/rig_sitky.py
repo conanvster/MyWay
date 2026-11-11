@@ -922,7 +922,9 @@ for o in [o for o in bpy.data.objects if o.type == "MESH" and o != gen and o not
     bpy.data.objects.remove(o)
 # шви розгортки: між островами текстури генератора чорне тло — при
 # фільтрації в грі воно протікало чорними тріщинами; краї островів — на тло
-for mt in gm.materials:
+# `--без-швів` (11.11.2026): текстури вже з заповненим тлом (ork_zbirka.py) — тут чорні
+# плавки вважались тлом і затирались шкірою
+for mt in ([] if "--без-швів" in A else gm.materials):
     for n in (mt.node_tree.nodes if mt and mt.node_tree else []):
         if n.type == "TEX_IMAGE" and n.image is not None:
             im = n.image

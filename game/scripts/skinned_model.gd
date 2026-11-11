@@ -815,6 +815,8 @@ func _prepare_look() -> void:
 			(vs[i] as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_prepare_eyes()
 	var masks_path := path.get_basename() + "_маски.png"
+	if _body_mesh != null and not ResourceLoader.exists(masks_path):
+		_prepare_sculpt_skin()
 	if _body_mesh == null or not ResourceLoader.exists(masks_path):
 		return
 	var src := _body_mesh.get_active_material(0)
@@ -858,6 +860,37 @@ func _prepare_look() -> void:
 			_skin_mat.set_shader_parameter("pores_tex", load(PORES))
 			_skin_mat.set_shader_parameter("has_pores", true)
 	_body_mesh.material_override = _skin_mat
+
+
+## Модель зі скульпту (П-285, `tools/blender/ork_zbirka.py`): матеріали «шкіра-…» мають
+## свої запечені колір і нормалі; їм — той самий шейдер шкіри (розсіювання, пори,
+## блиск за опуклістю) з картами `<модель>_карти-<матеріал>.png`.
+var _sculpt_mats: Array[ShaderMaterial] = []
+
+
+func _prepare_sculpt_skin() -> void:
+	for i in _body_mesh.mesh.get_surface_count():
+		var src := _body_mesh.mesh.surface_get_material(i) as BaseMaterial3D
+		if src == null or not str(src.resource_name).begins_with("шкіра") or src.albedo_texture == null:
+			continue
+		var m := ShaderMaterial.new()
+		m.shader = SKIN_SHADER
+		m.set_shader_parameter("albedo_tex", src.albedo_texture)
+		m.set_shader_parameter("sss", 0.12)
+		m.set_shader_parameter("roughness_v", 0.66)
+		m.set_shader_parameter("specular_v", 0.35)
+		if src.normal_texture != null:
+			m.set_shader_parameter("normal_tex", src.normal_texture)
+			m.set_shader_parameter("has_normal", true)
+		var maps_path := path.get_basename() + "_карти-" + str(src.resource_name) + ".png"
+		if ResourceLoader.exists(maps_path):
+			m.set_shader_parameter("maps_tex", load(maps_path))
+			m.set_shader_parameter("has_maps", true)
+		if ResourceLoader.exists(PORES):
+			m.set_shader_parameter("pores_tex", load(PORES))
+			m.set_shader_parameter("has_pores", true)
+		_body_mesh.set_surface_override_material(i, m)
+		_sculpt_mats.append(m)
 
 
 ## Очі MPFB — окрема сітка («high-poly»/«low-poly») зі своєю текстурою:

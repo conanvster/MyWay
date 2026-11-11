@@ -209,6 +209,12 @@ func _holova() -> Vector3:
 		if (n.ends_with("high-poly") or n.ends_with("low-poly")) and m.mesh != null:
 			var c := m.global_transform * m.get_aabb().get_center()
 			return Vector3(c.x, c.y - 0.055, c.z)
+	# модель генератора без окремих очей — від кістки голови (основа черепа) до рівня очей
+	var sk: Skeleton3D = _model.find_child("Skeleton3D", true, false)
+	if sk != null and sk.find_bone("head") >= 0:
+		var t := sk.global_transform * sk.get_bone_global_pose(sk.find_bone("head"))
+		var k := _zrist / 1.75
+		return t.origin + t.basis.y.normalized() * 0.07 * k + Vector3.RIGHT.cross(t.basis.y).normalized() * 0.09 * k
 	return Vector3(0, _zrist * 0.915, 0)
 
 

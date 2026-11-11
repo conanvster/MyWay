@@ -172,6 +172,7 @@ func _zibraty(args: PackedStringArray) -> void:
 	_model = SkinnedModel.new()
 	_model.path = p
 	_model.height = _zrist
+	_model.hair_shader = "--шейдер-волосся" in args      # дослідний, типово вимкнено
 	var s: Node = (load(p) as PackedScene).instantiate()
 	var ap: AnimationPlayer = s.find_child("AnimationPlayer", true, false)
 	if ap == null or ap.get_animation_list().is_empty():

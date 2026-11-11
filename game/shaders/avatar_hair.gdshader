@@ -12,7 +12,7 @@ uniform vec3 hair_color : source_color = vec3(0.36, 0.21, 0.12);
 uniform float scissor = 0.4;
 uniform float root_dark = 0.55;       // корені темніші (тінь від сусідніх пасом)
 uniform float strand_var = 0.22;      // різниця тону між волосинами
-uniform float gloss1 = 0.10;          // біла смуга
+uniform float gloss1 = 0.16;          // біла смуга
 uniform float gloss2 = 0.55;          // кольорова смуга
 uniform float shift1 = 0.06;
 uniform float shift2 = -0.14;
@@ -39,7 +39,11 @@ void fragment() {
 	c *= 1.0 + strand_var * (id - 0.5) * 2.0;
 	c *= mix(root_dark, 1.0, smoothstep(0.0, 0.3, UV.y));
 	ALBEDO = c;
-	ROUGHNESS = 0.6;
+	// Відбиття оточення вимкнено: картки на маківці стоять до камери під гострим кутом,
+	// і френелівське відбиття неба давало на темному волоссі сиву пляму (11.11.2026).
+	// Увесь відблиск волосся — свій, у light().
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.0;
 	strand_t = normalize(BINORMAL);
 	strand_id = id;
 	ALPHA = t.a;
@@ -61,11 +65,12 @@ void light() {
 	// м'яке огинання: щоб тильний бік зачіски не світився, як лицьовий
 	float nl = dot(NORMAL, LIGHT) * 0.5 + 0.5;
 	float ogyn = mix(1.0 - wrap, 1.0, nl);
-	DIFFUSE_LIGHT += ATTENUATION * LIGHT_COLOR * (0.2 + 0.5 * vzdovzh) * ogyn / PI;
+	DIFFUSE_LIGHT += ATTENUATION * LIGHT_COLOR * (0.13 + 0.34 * vzdovzh) * ogyn / PI;
 	vec3 h = normalize(LIGHT + VIEW);
-	float zs = (strand_id - 0.5) * 0.12;
+	float zs = (strand_id - 0.5) * 0.28;      // смуга розсипається на окремі пасма
 	vec3 t1 = normalize(t + NORMAL * (shift1 + zs));
 	vec3 t2 = normalize(t + NORMAL * (shift2 + zs));
-	vec3 vidbl = vec3(gloss1) * smuha(t1, h, 110.0) + ALBEDO * (gloss2 * 1.6) * smuha(t2, h, 38.0);
+	float temne = clamp(dot(ALBEDO, vec3(0.333)) * 6.0, 0.12, 1.0);
+	vec3 vidbl = vec3(gloss1 * temne) * smuha(t1, h, 220.0) + ALBEDO * (gloss2 * 4.5) * smuha(t2, h, 24.0);
 	SPECULAR_LIGHT += ATTENUATION * LIGHT_COLOR * vidbl * ogyn;
 }

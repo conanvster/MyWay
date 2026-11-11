@@ -51,7 +51,10 @@ MAKRO = {"gender": 0.0, "age": 0.5, "muscle": 0.5, "weight": 0.42,
 for pair in opt("--макро", "").split(","):
     if "=" in pair:
         k, v = pair.split("=")
-        MAKRO[k] = float(v)
+        if k in MAKRO["race"]:          # caucasian / african / asian — частки раси MakeHuman
+            MAKRO["race"][k] = float(v)
+        else:
+            MAKRO[k] = float(v)
 ZACHISKA = opt("--зачіска", "long01")
 BROVY = opt("--брови", "eyebrow010")
 SHKIRA = opt("--шкіра", "young_caucasian_female")

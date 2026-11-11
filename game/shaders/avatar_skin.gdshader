@@ -83,7 +83,10 @@ void fragment() {
 	float rough = roughness_v - 0.17 * clamp(conv, 0.0, 1.0) + 0.10 * clamp(-conv, 0.0, 1.0);
 	rough = mix(rough, 0.34, m.b * lips_wet);
 	ROUGHNESS = clamp(rough, 0.28, 0.95);
-	SPECULAR = specular_v * mix(0.55, 1.0, k.r);
+	// скальп під зачіскою — матовий: блиск шкіри крізь рідкі картки читався сивою плямою
+	float skalp = smoothstep(0.3, 0.85, m.a) * hair_mix;
+	ROUGHNESS = mix(ROUGHNESS, 0.95, skalp);
+	SPECULAR = specular_v * mix(0.55, 1.0, k.r) * (1.0 - 0.85 * skalp);
 	if (has_maps) {
 		AO = k.r;
 		AO_LIGHT_AFFECT = 0.3;

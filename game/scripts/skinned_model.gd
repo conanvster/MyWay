@@ -623,7 +623,13 @@ func _hair_springs() -> void:
 		for i in m.get_surface_override_material_count():
 			var src := m.get_active_material(i)
 			# людина MPFB: шейдер волосся — світло вздовж волосини (П-285)
-			if src is BaseMaterial3D and _eye_mat != null \
+			# (очі ще не підготовлені — `_prepare_look` іде після пружин, тож
+			# ознака людини MPFB тут — файл маски очей поруч із моделлю)
+			# УВАГА (11.11.2026): типово ВИМКНЕНО. Шейдер ще не налаштований — дає пересвічене
+			# волосся; вигляд, схвалений замовником, — стандартний матеріал нижче з новими
+			# картками. Вмикати лише для налаштування: `hair_shader = true` до `build()`.
+			if hair_shader and src is BaseMaterial3D \
+					and ResourceLoader.exists(path.get_basename() + "_маски-очі.png") \
 					and (src as BaseMaterial3D).albedo_texture != null:
 				var hm := ShaderMaterial.new()
 				hm.shader = HAIR_SHADER
@@ -641,6 +647,11 @@ func _hair_springs() -> void:
 				mat.alpha_scissor_threshold = 0.45
 				mat.alpha_antialiasing_mode = BaseMaterial3D.ALPHA_ANTIALIASING_ALPHA_TO_COVERAGE
 				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+				# людина MPFB: менше дзеркального блиску — на чорному волоссі відбиття
+				# неба під гострим кутом читалось сивою плямою на маківці (11.11.2026)
+				if ResourceLoader.exists(path.get_basename() + "_маски-очі.png"):
+					mat.metallic_specular = 0.22
+					mat.roughness = 0.7
 				m.set_surface_override_material(i, mat)
 	var sim := SpringBoneSimulator3D.new()
 	sim.name = "Волосся-пружини"
@@ -1328,6 +1339,7 @@ func has_move(name: String) -> bool:
 const BLINK_KEY := "Кліп"
 const BLINK_TIME := 0.17
 var face_alive := true
+var hair_shader := false            ## дослідний `avatar_hair.gdshader` (не налаштований)
 var _blink_keys: Array = []          ## [[сітка, номер ключа], …]
 var _blink_wait := 1.5
 var _blink_t := -1.0

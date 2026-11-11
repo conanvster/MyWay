@@ -200,7 +200,20 @@ def rist(p0, d0, zazor, pole_f, kinets, maks=140, hv=None, zminy=None, vpered=Fa
         tsil = pole_f(p, i)
         d = (d * 0.55 + tsil * 0.45 + bik).normalized()
         q = p + d * KROK
-        if not vpered and q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
+        if YAKIST and not vpered and q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
+            # --якість: пасмо від чола й скронь спадає ЗБОКУ обличчя перед вухом (не
+            # перекидається різко за вухо — це давало смугу карток упоперек скроні);
+            # на саме обличчя не заходить: не ближче до середини за край вилиці й не
+            # далі вперед за 3 см від осі голови; зсув — плавно, по половині за крок
+            xmin = R * 0.86
+            dx = q.x - C.x
+            if abs(dx) < xmin:
+                bik_ = 1.0 if (dx if abs(dx) > 1e-4 else (p.x - C.x)) >= 0 else -1.0
+                q.x += (C.x + bik_ * xmin - q.x) * 0.5
+            vper = (q.y - C.y) * PERED
+            if vper > 0.03:
+                q.y += (C.y + PERED * 0.03 - q.y) * 0.5
+        elif not vpered and q.z < Z_OCHI + 0.01 and (q.y - C.y) * PERED > -0.012:
             q.y = C.y - PERED * 0.012
         q = vidshtovhnuty(q, zazor)
         if prylyp:
@@ -476,6 +489,33 @@ for p, n, z, d in ([] if BORODA else koreni(PASOM // 2, shary=(0.0025,))):
     pasma.append(rist(p, pole(p, 0), 0.0025, pole, -10.0, maks=3 if STYL == "коротке" else 7,
                       hv=0.0))
 
+# ── 1а. Пушок на лінії росту (--якість) ─────────────────────────────────
+# Жорстка межа «є волосся / немає» читається як перука. Нижче лінії росту (чоло,
+# скроні, потилиця) — рідкі короткі волосини 1,5–4,5 см у бік зачіски.
+pushok = set()
+if YAKIST and not BORODA and STYL != "коротке":
+    dodano, sproby = 0, 0
+    while dodano < PASOM // 5 and sproby < PASOM * 40:
+        sproby += 1
+        th = math.acos(random.uniform(-0.55, 0.75))
+        ph = random.uniform(0, 2 * math.pi)
+        d = Vector((math.sin(th) * math.cos(ph), math.sin(th) * math.sin(ph), math.cos(th)))
+        if korin_dozvolenyi(d):
+            continue
+        # смуга ~1 см нижче лінії росту: той самий напрям, піднятий на 7°, уже дозволений
+        d2 = (d + Vector((0, 0, 0.13))).normalized()
+        if not korin_dozvolenyi(d2):
+            continue
+        p, nrm = na_shkiri(d)
+        if p is None:
+            continue
+        pole = pole_vnyz() if STYL in ("розпущене", "каре", "пряме") else pole_nazad()
+        pushok.add(len(pasma))
+        pasma.append(rist(p + nrm * 0.002, nrm * 0.5 + pole(p, 0), 0.002, pole, -10.0,
+                          maks=random.randint(1, 3), hv=0.0))
+        dodano += 1
+    print("[пасма] пушок на лінії росту: %d" % dodano)
+
 # ── 1б. Пучки (--природне) ──────────────────────────────────────────────
 # Справжнє волосся лягає пучками: сусідні пасма до кінчиків тягнуться до
 # спільного «провідника», корені лишаються де були. 3 % вибиваються.
@@ -537,12 +577,36 @@ def hladka(pts, krok=0.02):
     return out
 
 
+def ridshe(pts, kut=14.0, maks=0.07):
+    """Викинути точки, де крива майже пряма: лишаються повороти > `kut`° і крок ≤ `maks` м."""
+    if len(pts) < 4:
+        return pts
+    out = [pts[0]]
+    d_ost = (pts[1] - pts[0]).normalized()
+    for i in range(1, len(pts) - 1):
+        d_n = pts[i + 1] - pts[i]
+        if d_n.length < 1e-6:
+            continue
+        d_n = d_n.normalized()
+        if math.degrees(d_ost.angle(d_n, 0.0)) > kut or (pts[i] - out[-1]).length > maks:
+            out.append(pts[i])
+            d_ost = d_n
+    out.append(pts[-1])
+    return out
+
+
 for nomer, pts in enumerate(pasma):
     if YAKIST:
         if len(pts) < 3:
             continue
-        pts = hladka(pts)
+        pts = ridshe(hladka(pts))
         shyr = random.uniform(0.006, 0.011)
+        # підйом над сусідами (маківка не «шолом»): уся картка на 0–3 мм назовні,
+        # кожна 25-та «вибивається» — до 12 мм на кінчику
+        pidiom = random.uniform(0.0, 0.003)
+        vybylas = random.uniform(0.004, 0.012) if random.random() < 0.04 else 0.0
+        if nomer in pushok:
+            shyr *= 0.75
         if STYL == "коротке":
             shyr *= 0.6
         elif STYL == "борода":
@@ -553,6 +617,8 @@ for nomer, pts in enumerate(pasma):
             r_ -= chastka
             if r_ <= 0:
                 break
+        if nomer in pushok or vybylas > 0:
+            kol = random.choice((6, 7))            # окремі волосини
         u0, du = kol / 8.0, 1.0 / 8.0
         if random.random() < 0.5:           # дзеркально — менше повторів малюнка
             u0, du = u0 + du, -du
@@ -574,6 +640,7 @@ for nomer, pts in enumerate(pasma):
                 bok = Vector((1, 0, 0))
             bok.normalize()
             w = shyr * (1.0 - 0.35 * t * t)
+            p = p + nazovni * (pidiom * min(1.0, t * 8.0) + vybylas * t * t)
             va, vb = bm.verts.new(p - bok * w / 2), bm.verts.new(p + bok * w / 2)
             # нормаль: від осі голови, трохи вгору біля кореня, без складової вздовж волосини
             nn = nazovni + Vector((0, 0, 0.25 * (1.0 - t)))

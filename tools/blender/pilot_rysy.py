@@ -92,6 +92,9 @@ TSILI = {
     "Вуха-короткі": {"%s-ear-scale-vert-decr": 1.0, "%s-ear-lobe-decr": 0.5},
     "Вуха-підняті": {"%s-ear-trans-up": 0.8, "%s-ear-rot-backward": 0.5,
                      "%s-ear-wing-incr": 0.5},
+    # кліпання (П-285, 11.11.2026): вираз MakeHuman «очі заплющені». Назва без дефіса —
+    # `SkinnedModel.customize` її не чіпає; вмикає й вимикає `_face_alive`.
+    "Кліп": {"eye-left-closure": 1.0, "eye-right-closure": 1.0},
 }
 
 

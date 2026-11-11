@@ -23,6 +23,7 @@ extends Node
 ##   --кадри <тека>         ще й кожен кадр окремим файлом
 ##   --лише портрет,зріст   — лише названі кадри (швидка проба)
 ##   --без-волосся         сховати зачіску (оцінити обличчя й шкіру)
+##   --кліп 1 / --погляд 0.02,0   застиглий вираз для перевірки (без живого руху)
 ##   --жити                 не виходити після аркуша (дивитись руками)
 
 const AVATARY := "res://models/own/avatary/"
@@ -79,6 +80,14 @@ func _ready() -> void:
 	if "--без-волосся" in args:
 		for m: MeshInstance3D in _model.find_children("Волосся*", "MeshInstance3D", true, false):
 			m.visible = false
+	# перевірка руху обличчя: `--кліп 1` — очі заплющені, `--погляд x,y` — зсув погляду
+	if "--кліп" in args or "--погляд" in args:
+		_model.face_alive = false
+		if "--кліп" in args:
+			_model.set_blink(float(_arg(args, "--кліп", "1")))
+		if "--погляд" in args and _model._eye_mat != null:
+			var g := _arg(args, "--погляд", "0,0").split(",")
+			_model._eye_mat.set_shader_parameter("gaze", Vector2(float(g[0]), float(g[1])))
 	await _arkush(args)
 	if not "--жити" in args:
 		get_tree().quit()

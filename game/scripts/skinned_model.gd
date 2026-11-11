@@ -196,6 +196,7 @@ func build() -> void:
 	if _skeleton != null and not _hair_chains().is_empty():
 		_hair_springs()
 	_prepare_look()
+	_find_blink()
 	if not held.is_empty():
 		_hold(held)
 	if _player != null:
@@ -1320,7 +1321,66 @@ func has_move(name: String) -> bool:
 			true) != ""
 
 
+## «Живе» обличчя (П-285, 11.11.2026): кліпання раз на 2,5–6 с (іноді подвійне)
+## і дрібні рухи очей. Кліпання — форм-ключ «Кліп» (вираз MakeHuman) на тілі,
+## віях і бровах; погляд — зсув малюнка ока в шейдері (окремих кісток очей у
+## скелеті немає). Мертвим і в шоломі без прорізу — вимкнути: `face_alive`.
+const BLINK_KEY := "Кліп"
+const BLINK_TIME := 0.17
+var face_alive := true
+var _blink_keys: Array = []          ## [[сітка, номер ключа], …]
+var _blink_wait := 1.5
+var _blink_t := -1.0
+var _blink_again := false
+var _gaze := Vector2.ZERO
+var _gaze_to := Vector2.ZERO
+var _gaze_wait := 0.8
+
+
+func _find_blink() -> void:
+	_blink_keys.clear()
+	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		var at := m.find_blend_shape_by_name(BLINK_KEY)
+		if at >= 0:
+			_blink_keys.append([m, at])
+
+
+func set_blink(v: float) -> void:
+	for k: Array in _blink_keys:
+		(k[0] as MeshInstance3D).set_blend_shape_value(k[1], v)
+
+
+func _face_alive(delta: float) -> void:
+	if not _blink_keys.is_empty():
+		if _blink_t >= 0.0:
+			_blink_t += delta
+			var f := _blink_t / BLINK_TIME
+			# швидко вниз (40 % часу), повільніше вгору
+			set_blink(clampf(f / 0.4, 0.0, 1.0) if f < 0.4 else clampf(1.0 - (f - 0.4) / 0.6, 0.0, 1.0))
+			if f >= 1.0:
+				_blink_t = -1.0
+				set_blink(0.0)
+				_blink_wait = 0.12 if _blink_again else randf_range(2.5, 6.0)
+				_blink_again = false
+		else:
+			_blink_wait -= delta
+			if _blink_wait <= 0.0:
+				_blink_t = 0.0
+				_blink_again = _blink_wait > -1.0 and randf() < 0.15 and not _blink_again
+	if _eye_mat != null:
+		_gaze_wait -= delta
+		if _gaze_wait <= 0.0:
+			# здебільшого прямо, іноді вбік; угору-вниз — менше
+			_gaze_to = Vector2.ZERO if randf() < 0.45 \
+					else Vector2(randf_range(-0.022, 0.022), randf_range(-0.008, 0.01))
+			_gaze_wait = randf_range(0.6, 2.4)
+		_gaze = _gaze.lerp(_gaze_to, minf(1.0, delta * 22.0))
+		_eye_mat.set_shader_parameter("gaze", _gaze)
+
+
 func _process(delta: float) -> void:
+	if face_alive:
+		_face_alive(delta)
 	_swing_left = maxf(0.0, _swing_left - delta)
 	if _player == null and _skeleton != null:
 		var rate := clampf(_speed, 0.0, 6.0) * 2.2 if _speed > 0.35 \

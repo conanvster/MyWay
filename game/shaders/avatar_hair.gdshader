@@ -12,7 +12,7 @@ uniform vec3 hair_color : source_color = vec3(0.36, 0.21, 0.12);
 uniform float scissor = 0.4;
 uniform float root_dark = 0.55;       // корені темніші (тінь від сусідніх пасом)
 uniform float strand_var = 0.22;      // різниця тону між волосинами
-uniform float gloss1 = 0.16;          // біла смуга
+uniform float gloss1 = 0.10;          // біла смуга
 uniform float gloss2 = 0.55;          // кольорова смуга
 uniform float shift1 = 0.06;
 uniform float shift2 = -0.14;
@@ -61,11 +61,11 @@ void light() {
 	// м'яке огинання: щоб тильний бік зачіски не світився, як лицьовий
 	float nl = dot(NORMAL, LIGHT) * 0.5 + 0.5;
 	float ogyn = mix(1.0 - wrap, 1.0, nl);
-	DIFFUSE_LIGHT += ATTENUATION * LIGHT_COLOR * (0.3 + 0.7 * vzdovzh) * ogyn / PI;
+	DIFFUSE_LIGHT += ATTENUATION * LIGHT_COLOR * (0.2 + 0.5 * vzdovzh) * ogyn / PI;
 	vec3 h = normalize(LIGHT + VIEW);
 	float zs = (strand_id - 0.5) * 0.12;
 	vec3 t1 = normalize(t + NORMAL * (shift1 + zs));
 	vec3 t2 = normalize(t + NORMAL * (shift2 + zs));
-	vec3 vidbl = vec3(gloss1) * smuha(t1, h, 110.0) + ALBEDO * (gloss2 * 3.0) * smuha(t2, h, 26.0);
+	vec3 vidbl = vec3(gloss1) * smuha(t1, h, 110.0) + ALBEDO * (gloss2 * 1.6) * smuha(t2, h, 38.0);
 	SPECULAR_LIGHT += ATTENUATION * LIGHT_COLOR * vidbl * ogyn;
 }

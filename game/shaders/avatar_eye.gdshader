@@ -19,6 +19,11 @@ uniform float iris_r = 0.113;
 uniform float limbus = 0.6;            // темний край райдужки
 uniform float lid_shadow = 0.5;        // тінь верхньої повіки на яблуці
 uniform float iris_depth = 0.035;      // «заглиблення» райдужки під рогівкою
+// погляд: зсув малюнка яблука в розгортці (x — убік, y — угору), у частках
+// розгортки; осі кожного ока в розгортці свої (`axes_*`: u = g·xy, v = g·zw)
+uniform vec2 gaze = vec2(0.0);
+uniform vec4 axes_a = vec4(1.0, 0.0, 0.0, -1.0);
+uniform vec4 axes_b = vec4(1.0, 0.0, 0.0, -1.0);
 
 vec3 lin(vec3 v) {
 	return pow(max(v, vec3(0.0)), vec3(2.2));
@@ -26,7 +31,10 @@ vec3 lin(vec3 v) {
 
 void fragment() {
 	vec2 uv = UV;
-	vec2 cen = distance(uv, iris_a) < distance(uv, iris_b) ? iris_a : iris_b;
+	bool oko_a = distance(uv, iris_a) < distance(uv, iris_b);
+	vec2 cen = oko_a ? iris_a : iris_b;
+	vec4 ax = oko_a ? axes_a : axes_b;
+	uv -= vec2(dot(gaze, ax.xy), dot(gaze, ax.zw));
 	float d = distance(uv, cen) / iris_r;
 	// райдужка лежить глибше за рогівку: малюнок зсувається проти погляду
 	if (d < 1.0) {

@@ -68,7 +68,7 @@ void fragment() {
 	vec3 shkira = c * (lin(skin_tint) / max(ref_l, vec3(0.002)));
 	c = mix(c, shkira, 1.0 - inshe);
 	// скальп під зачіскою — колір волосся з тінню текстури
-	c = mix(c, lin(hair_color) * clamp(0.45 + 0.7 * lum / max(ref_lum, 0.05), 0.2, 1.3), m.a * hair_mix);
+	c = mix(c, lin(hair_color) * clamp(0.45 + 0.7 * lum / max(ref_lum, 0.05), 0.2, 1.3), smoothstep(0.3, 0.85, m.a) * hair_mix);
 	// райдужка
 	c = mix(c, lin(eye_color) * clamp(0.35 + 1.4 * lum, 0.2, 1.6), m.r * eye_mix);
 	// губи
@@ -105,9 +105,10 @@ void fragment() {
 	if (sss > 0.0) {
 		SSS_STRENGTH = sss * mix(1.0, 1.5, k.g);
 		if (has_maps && backlight > 0.0) {
-			SSS_TRANSMITTANCE_COLOR = vec4(scatter_color, clamp(k.g * backlight, 0.0, 1.0));
+			// стримано: на повну силу вухо проти контрового світла ставало білим
+			SSS_TRANSMITTANCE_COLOR = vec4(scatter_color, clamp(k.g * backlight * 0.45, 0.0, 1.0));
 			SSS_TRANSMITTANCE_DEPTH = 0.06;
-			SSS_TRANSMITTANCE_BOOST = 0.35 * k.g;
+			SSS_TRANSMITTANCE_BOOST = 0.08 * k.g;
 		}
 	}
 }

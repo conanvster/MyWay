@@ -23,6 +23,9 @@
 #                     «вид+рух»; хто ще на фігурці з примітивів —
 #                     стій→іди→бий по колу, як у --парад; тут же (без
 #                     kind у мобах) — орк і 6 тварин Farm Animals Pack
+#   ./run.sh --стенд   СТЕНД ОЦІНКИ АВАТАРА: аркуш «вікі | портрет | профіль |
+#                     зріст | ігрова | у русі» на простому тлі (ключі —
+#                     у шапці probes/avatar_stand.gd); лише Vulkan
 #   ./run.sh --моделі  ПЕРЕГЛЯДАЧ МОДЕЛЕЙ: ліворуч усі моделі (аватари,
 #                     власні монстри, гуманоїди) з пошуком, праворуч рухи
 #                     кнопками й скін: як у грі / без скіна (глина) /
@@ -123,6 +126,7 @@ case "${1:-}" in
     --рухи-людини) exec godot --path "$proj" --script res://probes/human_moves.gd -- "${@:2}" ;;
     --рухи-монстрів) exec godot --path "$proj" --script res://probes/monster_moves.gd ;;
     --моделі) exec godot --path "$proj" "${vsync[@]}" res://scenes/model_viewer.tscn ;;
+    --стенд) exec godot --path "$proj" --disable-vsync res://scenes/avatar_stand.tscn -- "${@:2}" ;;
     --звірі-скан) exec godot --path "$proj" --script res://probes/scan_beasts.gd -- "${@:2}" ;;
     --нові-моделі) exec godot --path "$proj" --script res://probes/new_models.gd ;;
     # Сценою, а не --script: інакше немає автозавантажень, і проба тихо

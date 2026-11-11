@@ -32,6 +32,20 @@ uniform bool has_normal = false;
 uniform float normal_depth = 1.0;
 // тіло під вдягненою річчю (кольори вершин `під_одяг`, людина MPFB)
 uniform vec4 hide_under = vec4(0.0);                      // 1 — губи беруть тон шкіри (людина MPFB)
+// Карти шкіри (П-285, 11.11.2026; `tools/blender/shkira_karty.py`): R — затінення
+// в заглибинах, G — «тонке» (вуха, крила носа, пальці — світло йде наскрізь),
+// B — опуклість (0,5 — рівно; чоло, ніс, вилиці блищать, заглибини матові).
+uniform sampler2D maps_tex : hint_default_white, filter_linear_mipmap, repeat_disable;
+uniform bool has_maps = false;
+// пори — плиткова карта нормалей, одна на гру; здалеку згасає (не мерехтить)
+uniform sampler2D pores_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_pores = false;
+uniform float pores_scale = 190.0;
+uniform float pores_depth = 0.2;
+uniform float specular_v = 0.42;
+uniform float lips_wet = 0.55;                     // губи гладші за шкіру
+uniform vec3 scatter_color : source_color = vec3(0.86, 0.20, 0.12);
+uniform float backlight = 1.0;                     // просвічування тонкого проти світла
 
 // Кольори з палітри й середній тон текстури — у sRGB (як у меню), а
 // текстура тут уже лінійна. Без переведення вибраний колір виходив
@@ -61,13 +75,39 @@ void fragment() {
 	c = mix(c, lin(lips_color) * clamp(0.55 + 0.6 * lum / max(ref_lum, 0.05), 0.3, 1.3), m.b * lips_mix);
 	// підводка
 	c = mix(c, c * 0.18, m.g * liner);
+	vec3 k = has_maps ? texture(maps_tex, UV).rgb : vec3(1.0, 0.0, 0.5);
+	float conv = (k.b - 0.5) * 2.0;
+	// у заглибинах і тонких місцях шкіра червоніша (кров ближче)
+	c = mix(c, c * vec3(1.06, 0.90, 0.86), clamp((1.0 - k.r) * 0.6 + k.g * 0.25, 0.0, 0.6));
 	ALBEDO = c * mix(1.0, skin_gain, 1.0 - m.r);
-	ROUGHNESS = roughness_v;
+	float rough = roughness_v - 0.17 * clamp(conv, 0.0, 1.0) + 0.10 * clamp(-conv, 0.0, 1.0);
+	rough = mix(rough, 0.34, m.b * lips_wet);
+	ROUGHNESS = clamp(rough, 0.28, 0.95);
+	SPECULAR = specular_v * mix(0.55, 1.0, k.r);
+	if (has_maps) {
+		AO = k.r;
+		AO_LIGHT_AFFECT = 0.3;
+	}
+	vec3 n = vec3(0.0, 0.0, 1.0);
 	if (has_normal) {
-		NORMAL_MAP = texture(normal_tex, UV).rgb;
-		NORMAL_MAP_DEPTH = normal_depth;
+		n = texture(normal_tex, UV).rgb * 2.0 - 1.0;
+		n.xy *= normal_depth;
+	}
+	if (has_pores) {
+		float blyzko = 1.0 - smoothstep(1.0, 3.5, -VERTEX.z);
+		vec3 pr = texture(pores_tex, UV * pores_scale).rgb * 2.0 - 1.0;
+		n.xy += pr.xy * pores_depth * blyzko * (1.0 - m.b);
+	}
+	if (has_normal || has_pores) {
+		NORMAL_MAP = normalize(n) * 0.5 + 0.5;
+		NORMAL_MAP_DEPTH = 1.0;
 	}
 	if (sss > 0.0) {
-		SSS_STRENGTH = sss;
+		SSS_STRENGTH = sss * mix(1.0, 1.5, k.g);
+		if (has_maps && backlight > 0.0) {
+			SSS_TRANSMITTANCE_COLOR = vec4(scatter_color, clamp(k.g * backlight, 0.0, 1.0));
+			SSS_TRANSMITTANCE_DEPTH = 0.06;
+			SSS_TRANSMITTANCE_BOOST = 0.35 * k.g;
+		}
 	}
 }

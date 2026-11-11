@@ -676,6 +676,8 @@ func _hair_springs() -> void:
 ##   дефіса в імені ключа або «звичайні»).
 const SKIN_SHADER := preload("res://shaders/avatar_skin.gdshader")
 const EYE_SHADER := preload("res://shaders/avatar_eye.gdshader")
+const CORNEA_SHADER := preload("res://shaders/avatar_cornea.gdshader")
+const PORES := "res://shaders/pory_normal.png"
 var _body_mesh: MeshInstance3D
 var _skin_mat: ShaderMaterial
 var _look: Dictionary = {}
@@ -814,6 +816,20 @@ func _prepare_look() -> void:
 	if ResourceLoader.exists(nrm_path):      # рельєф шкіри з проєкції (пілот орка)
 		_skin_mat.set_shader_parameter("normal_tex", load(nrm_path))
 		_skin_mat.set_shader_parameter("has_normal", true)
+		if ResourceLoader.exists(path.get_basename() + "_карти.png"):
+			# рельєф із малюнка шкіри MakeHuman — м'яко: щетина скальпа й стики
+			# JPEG у повну силу дають «апельсинову шкірку»
+			_skin_mat.set_shader_parameter("normal_depth", 0.45)
+	# карти шкіри й пори (П-285): затінення, тонке, опуклість — якщо запечені
+	var maps_path := path.get_basename() + "_карти.png"
+	if ResourceLoader.exists(maps_path):
+		_skin_mat.set_shader_parameter("maps_tex", load(maps_path))
+		_skin_mat.set_shader_parameter("has_maps", true)
+		_skin_mat.set_shader_parameter("sss", 0.35)
+		_skin_mat.set_shader_parameter("roughness_v", 0.62)
+		if ResourceLoader.exists(PORES):
+			_skin_mat.set_shader_parameter("pores_tex", load(PORES))
+			_skin_mat.set_shader_parameter("has_pores", true)
 	_body_mesh.material_override = _skin_mat
 
 
@@ -840,7 +856,12 @@ func _prepare_eyes() -> void:
 		_eye_mat.shader = EYE_SHADER
 		_eye_mat.set_shader_parameter("albedo_tex", src.albedo_texture)
 		_eye_mat.set_shader_parameter("masks_tex", load(masks_path))
-		_eye_mat.set_shader_parameter("roughness_v", 0.12)
+		_eye_mat.set_shader_parameter("roughness_v", 0.3)
+		# рогівка — другий прохід: лише відблиск (П-285)
+		var cornea := ShaderMaterial.new()
+		cornea.shader = CORNEA_SHADER
+		cornea.set_shader_parameter("albedo_tex", src.albedo_texture)
+		_eye_mat.next_pass = cornea
 		m.material_override = _eye_mat
 		return
 

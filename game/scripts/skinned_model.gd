@@ -843,6 +843,10 @@ func _prepare_look() -> void:
 			# рельєф із малюнка шкіри MakeHuman — м'яко: щетина скальпа й стики
 			# JPEG у повну силу дають «апельсинову шкірку»
 			_skin_mat.set_shader_parameter("normal_depth", 0.45)
+	var relief_path := path.get_basename() + "_рельєф.png"
+	if ResourceLoader.exists(relief_path):   # рельєф м'язів зі скульпту (обгорнуті раси)
+		_skin_mat.set_shader_parameter("relief_tex", load(relief_path))
+		_skin_mat.set_shader_parameter("has_relief", true)
 	# карти шкіри й пори (П-285): затінення, тонке, опуклість — якщо запечені
 	var maps_path := path.get_basename() + "_карти.png"
 	if ResourceLoader.exists(maps_path):
@@ -1351,6 +1355,11 @@ var _gaze_wait := 0.8
 
 func _find_blink() -> void:
 	_blink_keys.clear()
+	# обличчя зі скульпту (орк, `obhortannia.py --обличчя-скульпту`): очі намальовані —
+	# не кліпає й не водить поглядом
+	if ResourceLoader.exists(path.get_basename() + "_шкіра-0-скульпт.png"):
+		face_alive = false
+		return
 	for m: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
 		var at := m.find_blend_shape_by_name(BLINK_KEY)
 		if at >= 0:

@@ -42,6 +42,11 @@ uniform sampler2D pores_tex : hint_normal, filter_linear_mipmap_anisotropic, rep
 uniform bool has_pores = false;
 uniform float pores_scale = 190.0;
 uniform float pores_depth = 0.2;
+// рельєф м'язів зі скульпту (обгорнуті раси, `tools/blender/obhortannia.py --рельєф`):
+// RGB — нормаль, A — де він дійсний (тулуб, руки, ноги; не голова, кисті й стопи)
+uniform sampler2D relief_tex : hint_default_white, filter_linear_mipmap, repeat_disable;
+uniform bool has_relief = false;
+uniform float relief_depth = 1.0;
 uniform float specular_v = 0.42;
 uniform float lips_wet = 0.55;                     // губи гладші за шкіру
 uniform vec3 scatter_color : source_color = vec3(0.86, 0.20, 0.12);
@@ -96,12 +101,16 @@ void fragment() {
 		n = texture(normal_tex, UV).rgb * 2.0 - 1.0;
 		n.xy *= normal_depth;
 	}
+	if (has_relief) {
+		vec4 rl = texture(relief_tex, UV);
+		n.xy += (rl.xy * 2.0 - 1.0) * relief_depth * rl.a;
+	}
 	if (has_pores) {
 		float blyzko = 1.0 - smoothstep(1.0, 3.5, -VERTEX.z);
 		vec3 pr = texture(pores_tex, UV * pores_scale).rgb * 2.0 - 1.0;
 		n.xy += pr.xy * pores_depth * blyzko * (1.0 - m.b);
 	}
-	if (has_normal || has_pores) {
+	if (has_normal || has_pores || has_relief) {
 		NORMAL_MAP = normalize(n) * 0.5 + 0.5;
 		NORMAL_MAP_DEPTH = 1.0;
 	}

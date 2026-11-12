@@ -36,6 +36,25 @@ INSTR = {
         "pointed ears and olive green skin exactly the same, with sharp skin pores and "
         "wrinkles. Plain light grey studio background, soft even shadowless frontal light, "
         "the whole head with both ears and the neck in frame, photorealistic, sharp focus."),
+    # орчиха (12.11.2026, слово замовника: «зроби так само орчиху»); волосся — окремими сітками,
+    # тож скульпт лисий; білизна — як у чоловіка, плюс проста смуга на грудях
+    "тіло-ж": (
+        "Turn this orc woman into a clean base body reference for 3D modeling. Keep the strict "
+        "symmetric T-pose, front view, arms straight out to the sides at shoulder height, palms "
+        "down, fingers spread apart, legs straight and slightly apart. Remove the bracers, belts, "
+        "pouches, loincloth and boots: bare athletic muscular body, barefoot, wearing only plain "
+        "tight black briefs and a plain tight black bandeau top. Shave her head completely bald, "
+        "remove all hair. Keep her face, pointed ears, olive green skin, muscular arms, abs and "
+        "strong build exactly the same. Plain light grey studio background without any grid, "
+        "soft even shadowless light, whole body from head to feet in frame, photorealistic."),
+    "голова-ж": (
+        "Close-up head and neck reference of this same orc woman for 3D modeling, strict front "
+        "view, head upright and level, looking straight at the camera, mouth closed. Shave her "
+        "head completely bald, remove all hair: bare scalp, bare neck and bare shoulders, no "
+        "clothes, no jewelry. Keep her face, stern brow, eyes, nose, lips, pointed ears and olive "
+        "green skin exactly the same, with sharp skin pores and fine wrinkles. Plain light grey "
+        "studio background, soft even shadowless frontal light, the whole head with both ears "
+        "and the neck in frame, photorealistic, sharp focus."),
 }
 
 

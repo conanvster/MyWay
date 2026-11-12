@@ -73,6 +73,16 @@ gen.parent = None
 bpy.context.view_layer.objects.active = gen
 gen.select_set(True)
 bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+if "--зварити" in A:
+    # імпорт glTF ділить вершини по швах розгортки; зі своїми вагами по різні
+    # боки шва зворотний скінінг розводив їх — щілини на плечах і спині
+    # (12.11.2026). Розгортка живе на кутах граней, тож зварювання її не чіпає.
+    _n0 = len(gen.data.vertices)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.remove_doubles(threshold=1e-5)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print("[риг сітки] зварено по швах: вершин %d → %d" % (_n0, len(gen.data.vertices)), flush=True)
 dc = gen.modifiers.new("спростити", "DECIMATE")
 dc.ratio = min(1.0, GRANEI / max(1, len(gen.data.polygons)))
 bpy.ops.object.modifier_apply(modifier=dc.name)
@@ -231,6 +241,173 @@ for e in gm.edges:
     a, b = e.vertices
     sus[a].append(b)
     sus[b].append(a)
+# шви розгортки: імпорт glTF ділить вершини по швах, і граф сітки розпадався
+# на острови — згладжування ваг не переходило шов (тонкі щілини в русі,
+# 12.11.2026). Вершини в одній точці — сусіди.
+from mathutils.kdtree import KDTree as _KDs  # noqa: E402
+_kds = _KDs(NG)
+for i in range(NG):
+    _kds.insert(GV[i], i)
+_kds.balance()
+_shv = 0
+for i in range(NG):
+    for _, j, _ in _kds.find_range(GV[i], 1e-5):
+        if j != i:
+            sus[i].append(j)
+            _shv += 1
+log("шви: зв'язків між вершинами однієї точки %d" % _shv)
+
+
+# ── 3а. руки вздовж тіла (12.11.2026) ─────────────────────────────────
+# Орк з нуля: руки скульпту опущені, кисті біля стегон — найближча точка
+# основи для пальців і зап'ястя була стегном, і в русі їх тягнуло до ніг
+# (слово замовника: «пальці рук підтягнуті до стегна»). Рука сітки нижче
+# пахви — окремий шматок графа: шукаємо найвищий зріз, під яким сітка
+# розпадається на тулуб із ногами й дві руки; у руках — лише кістки своєї
+# руки, поза ними (нижче зрізу) — жодних кісток рук.
+def ruky_okremo():
+    RUKA = ("clavicle", "upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
+    zmin, zmax = GV[:, 2].min(), GV[:, 2].max()
+    for zc in np.arange(zmin + 0.80 * (zmax - zmin), zmin + 0.45 * (zmax - zmin), -0.01):
+        nyzh = GV[:, 2] < zc
+        mitka = np.full(NG, -1)
+        shm = []
+        for i0 in np.nonzero(nyzh)[0]:
+            if mitka[i0] >= 0:
+                continue
+            mitka[i0] = len(shm)
+            stos, chl = [i0], [i0]
+            while stos:
+                for j in sus[stos.pop()]:
+                    if nyzh[j] and mitka[j] < 0:
+                        mitka[j] = len(shm)
+                        stos.append(j)
+                        chl.append(j)
+            shm.append(np.array(chl))
+        vel = sorted([c for c in shm if len(c) > 400], key=len, reverse=True)
+        if len(vel) < 3:
+            continue
+        tulub = vel[0]
+        ruky = {}
+        for c in vel[1:]:
+            x = GV[c, 0].mean()
+            # рука — збоку від тулуба й сягає зрізу
+            if GV[c, 2].max() > zc - 0.03 and abs(x) > 0.1:
+                ruky.setdefault("l" if x > 0 else "r", c)
+        if len(ruky) == 2:
+            break
+    else:
+        log("руки окремо: зрізу не знайдено — ваги як були")
+        return
+    RUKY.update(ruky)
+    log("руки окремо: зріз %.2f м, вершин рук %d і %d" % (zc, len(ruky["l"]), len(ruky["r"])))
+    svoia = lambda k, sfx: k.endswith("_" + sfx) and k.split("_")[0] in RUKA
+    bud_ruka = lambda k: k[-2:] in ("_l", "_r") and k.split("_")[0] in RUKA[1:]
+    for i in tulub:
+        vagy[i] = {k: x for k, x in vagy[i].items() if not bud_ruka(k)} or vagy[i]
+    for sfx, c in ruky.items():
+        porozhni = []
+        for i in c:
+            vagy[i] = {k: x for k, x in vagy[i].items() if svoia(k, sfx)}
+            if sum(vagy[i].values()) < 0.3:
+                porozhni.append(i)
+        log("  рука %s: вершин без своїх ваг %d" % (sfx, len(porozhni)))
+        ye = np.ones(NG, bool)
+        ye[porozhni] = False
+        cset = set(c.tolist())
+        while porozhni:
+            dali, novi = [], {}
+            for i in porozhni:
+                acc = {}
+                for j in sus[i]:
+                    if ye[j] and j in cset:
+                        for k, x in vagy[j].items():
+                            acc[k] = acc.get(k, 0.0) + x
+                if acc:
+                    novi[i] = acc
+                else:
+                    dali.append(i)
+            if not novi:
+                break
+            for i, acc in novi.items():
+                vagy[i] = acc
+                ye[i] = True
+            porozhni = dali
+        for i in c:
+            sm = sum(vagy[i].values())
+            if sm > 0:
+                vagy[i] = {k: x / sm for k, x in vagy[i].items()}
+
+
+def plechi_j_shyia():
+    """Трапеції й шия (12.11.2026, слово замовника: «перехід між шиєю та
+    плечима треба вирівняти»). У широкоплечого скульпту найближча точка основи
+    для трапецій — її плече й рука, для шиї — голова: з піднятими руками
+    трапеції ставали коміром, а шия поверталась разом із головою.
+    1) вага кісток руки поза самою рукою згасає до середини тіла (від суглоба
+       плеча +2 см — повна, −12 см — нуль), решта йде ключиці;
+    2) вага голови — лише в сітки голови (матеріал «шкіра-голова»), у тіла
+       вона йде шиї; 3) довкола стику ваги згладжено (8 проходів, 7 см)."""
+    RUKA = ("upperarm", "lowerarm", "hand", "thumb", "index", "middle", "ring", "pinky")
+    v_rutsi = np.zeros(NG, bool)
+    for c in RUKY.values():
+        v_rutsi[c] = True
+    xs = {sfx: abs(holova("upperarm_" + sfx)[0]) for sfx in "lr"}
+    n = 0
+    # лише для скульпту з опущеними руками (знайдено зріз «руки окремо»): у Т-позі ваги плеча
+    # з основи правильні, а пригашення лишало дельту «погоном» на ключиці (орчиха, 12.11.2026)
+    opushcheni = bool(RUKY) and all(GV[c, 2].max() - GV[c, 2].min() > 0.3 for c in RUKY.values())
+    log("плечі: руки %s" % ("опущені — вагу руки на трапеціях пригашено" if opushcheni else "у Т-позі — ваги плеча як в основи"))
+    for i in (range(NG) if opushcheni else ()):
+        if v_rutsi[i]:
+            continue
+        w = vagy[i]
+        for k in [k for k in w if k[-2:] in ("_l", "_r") and k.split("_")[0] in RUKA]:
+            sfx = k[-1]
+            f = min(1.0, max(0.0, (GV[i, 0] * (1 if sfx == "l" else -1) - (xs[sfx] - 0.12)) / 0.14))
+            f = f * f * (3 - 2 * f)
+            if f < 1.0:
+                w["clavicle_" + sfx] = w.get("clavicle_" + sfx, 0.0) + w[k] * (1 - f)
+                w[k] *= f
+                n += 1
+    log("плечі: вершин із пригашеною вагою руки %d" % n)
+    hol_m = [j for j, mt in enumerate(gm.materials) if mt and mt.name.startswith("шкіра-голова")]
+    if not hol_m:
+        return
+    hol = np.zeros(NG, bool)
+    for pl in gm.polygons:
+        if pl.material_index in hol_m:
+            hol[list(pl.vertices)] = True
+    n = 0
+    for i in np.nonzero(~hol)[0]:
+        h_ = vagy[i].pop("head", 0.0)
+        if h_ > 0:
+            vagy[i]["neck_01"] = vagy[i].get("neck_01", 0.0) + h_
+            n += 1
+    styk = [i for i in np.nonzero(hol)[0] if any(not hol[j] for j in sus[i])]
+    kd = _KDs(len(styk))
+    for q, i in enumerate(styk):
+        kd.insert(GV[i], q)
+    kd.balance()
+    zona = [i for i in range(NG) if kd.find(GV[i])[2] < 0.07]
+    for _ in range(8):
+        nove = {}
+        for i in zona:
+            acc = {k: 0.5 * x for k, x in vagy[i].items()}
+            ss = sus[i]
+            for j in ss:
+                for k, x in vagy[j].items():
+                    acc[k] = acc.get(k, 0.0) + 0.5 * x / len(ss)
+            nove[i] = acc
+        for i, acc in nove.items():
+            vagy[i] = acc
+    log("шия: вагу голови знято з %d вершин тіла, стик %d вершин, зона згладжування %d" % (n, len(styk), len(zona)))
+
+
+RUKY = {}
+if "--руки-окремо" in A:
+    ruky_okremo()
+    plechi_j_shyia()
 for _ in range(2):
     nove = []
     for i in range(NG):

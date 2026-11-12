@@ -363,11 +363,17 @@ o.name = "Тіло"
 aktyv(o)
 # різак-оболонка ширший за шию детальної голови — довкола шиї лишається щілина ~6 мм.
 # Закрити: смугу шиї роздути на 6 мм, перелити вокселями, здути назад (лише смуга)
+# (12.11.2026, слово замовника: «перехід між шиєю та плечима треба вирівняти»: край вирізу
+# під голову лишався рваним уступом-«коміром» на трапеціях. Смуга ширша — до 30 см від центру
+# голови й 9 см нижче площини, за вухами — до 6 см вище; закриття 15 мм замість 6, згладжування
+# 40 проходів; краї смуги згасають плавно, інакше на її межі лишався рубець-«намисто».)
 def vaga_smuhy(co):
     d = (co - SH_P).dot(SH_N)
-    if (co - HOL_C).length > 0.23:
+    r = (co - HOL_C).length
+    if r > 0.30:
         return 0.0
-    return max(0.0, min(1.0, (d + 0.06) / 0.02, (0.035 - d) / 0.02))
+    hi = 0.035 if co.y < -0.02 else 0.06   # спереду — не чіпати щелепу; за вухами — вище
+    return max(0.0, min(1.0, (d + 0.09) / 0.04, (hi - d) / 0.02, (0.30 - r) / 0.06))
 
 
 def rozduty(o_, na):
@@ -385,15 +391,16 @@ def rozduty(o_, na):
     o_.vertex_groups.remove(o_.vertex_groups["смуга"])
 
 
+ZAKR = arg("--закриття", float, 0.015)
 if "--без-закриття" not in A:
-    rozduty(o, 0.006)
+    rozduty(o, ZAKR)
     voksel(o, VOKSEL)
     najbilsha(o)
-    rozduty(o, -0.006)
+    rozduty(o, -ZAKR)
 bm = bmesh.new()
 bm.from_mesh(o.data)
-smuha = [v for v in bm.verts if vaga_smuhy(v.co) > 0.5]
-for _ in range(arg("--стик", int, 12)):
+smuha = [v for v in bm.verts if vaga_smuhy(v.co) > 0.3]
+for _ in range(arg("--стик", int, 40)):
     bmesh.ops.smooth_vert(bm, verts=smuha, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
 bm.to_mesh(o.data)
 bm.free()
@@ -608,7 +615,7 @@ def maska_uv(mat_i, r, lyshe_smuha=False):
         if lyshe_smuha:
             c = sum((me.vertices[i].co for i in p.vertices), Vector()) / len(p.vertices)
             d = (c - SH_P).dot(SH_N)
-            if not (-0.16 < d < 0.05 and (c - HOL_C).length < 0.34):
+            if not (-0.16 < d < 0.05 and (c - HOL_C).length < arg("--промахи-радіус", float, 0.34)):
                 continue
         pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in p.loop_indices], np.int32)
         cv2.fillPoly(m, [pts], 255)
@@ -622,19 +629,24 @@ def dopysaty(im, mat, vyd):
     px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
     mi = 0 if mat == mt else 1
     ye = maska_uv(mi, r)
-    if vyd == "колір":
-        zle = maska_uv(mi, r, True) & (px[..., :3].max(2) < (0.09 if mi else 0.17))
-        zle = cv2.dilate(zle.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    if vyd == "колір" and not (mi == 0 and "--без-промахів-тіла" in A):
+        zle = maska_uv(mi, r, True) & (px[..., :3].max(2) < arg("--промах-поріг", float, 0.09 if mi else 0.17))
+        zle = cv2.dilate(zle.astype(np.uint8), np.ones((ROZSHYR, ROZSHYR), np.uint8)) > 0
         POHANI[mat.name] = zle
     zle = POHANI.get(mat.name)
     if zle is not None:
         ye = ye & ~zle
         log("%s %s: промахів на стику шиї — %d точок" % (mat.name, vyd, int(zle.sum())))
     px[..., :3] = rozklasty(px[..., :3], ye)
+    if zle is not None and "--латка-гладка" in A:
+        # великі латки пірамідою виходять «квадратиками» (залишки лямок топа на шиї орчихи)
+        rozm = cv2.GaussianBlur(px[..., :3], (0, 0), 14)
+        px[..., :3][zle] = rozm[zle]
     px[..., 3] = 1.0
     im.pixels.foreach_set(px.ravel())
 
 
+ROZSHYR = 13 if "--латка-гладка" in A else 5
 POHANI = {}
 karty = {}
 for vyd, typ in (("колір", "DIFFUSE"), ("нормалі", "NORMAL")):
@@ -653,6 +665,68 @@ for vyd, typ in (("колір", "DIFFUSE"), ("нормалі", "NORMAL")):
         im.file_format = "PNG"
         im.save()
         log("→", im.filepath_raw)
+if "--вирівняти-тон" in A:
+    # орчиха (12.11.2026): скульпт голови з великого плану вийшов блідішим за тіло — обличчя
+    # бежеве на оливковому тілі. Тон голови — множником по каналах до тону тіла на шиї:
+    # медіана кольору граней голови під площиною шиї проти граней тіла одразу нижче.
+    uvd = me.uv_layers.active.data
+    zrazky = {0: [], 1: []}
+    pxs = {}
+    for mi_, mat in ((0, mt), (1, mh)):
+        im = karty[(mat.name, "колір")]
+        r = im.size[0]
+        pxs[mi_] = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    for p_ in me.polygons:
+        c = sum((me.vertices[i].co for i in p_.vertices), Vector()) / len(p_.vertices)
+        d = (c - SH_P).dot(SH_N)
+        if (c - HOL_C).length > 0.25:
+            continue
+        if not ((-0.03 < d < 0.0) if p_.material_index == 1 else (-0.08 < d < -0.03)):
+            continue
+        uv = sum((uvd[l].uv for l in p_.loop_indices), Vector((0, 0))) / len(p_.loop_indices)
+        px = pxs[p_.material_index]
+        r = px.shape[0]
+        k_ = px[min(r - 1, int(uv.y * r)), min(r - 1, int(uv.x * r)), :3]
+        if k_.max() > 0.08:
+            zrazky[p_.material_index].append(k_)
+    # обличчя вище площини шиї — свій множник (генератор дав обличчя ще блідішим за шию):
+    # вага 0 на площині → 1 за 6 см над нею, растром по гранях і розмита
+    import cv2
+    px = pxs[1]
+    r = px.shape[0]
+    W = np.zeros((r, r), np.float32)
+    oblychchia = []
+    for p_ in me.polygons:
+        if p_.material_index != 1:
+            continue
+        c = sum((me.vertices[i].co for i in p_.vertices), Vector()) / len(p_.vertices)
+        # лише перед голови: потилиця й тім'я в скульпті вже в тон тіла, бліде саме обличчя
+        w_ = max(0.0, min(1.0, (c - SH_P).dot(SH_N) / 0.06)) * max(0.0, min(1.0, (-0.02 - c.y) / 0.06))
+        pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in p_.loop_indices], np.int32)
+        cv2.fillPoly(W, [pts], float(w_))
+        if w_ >= 1.0:
+            uv = sum((uvd[l].uv for l in p_.loop_indices), Vector((0, 0))) / len(p_.loop_indices)
+            k_ = px[min(r - 1, int(uv.y * r)), min(r - 1, int(uv.x * r)), :3]
+            if k_.max() > 0.15:
+                oblychchia.append(k_)
+    if len(zrazky[0]) > 50 and len(zrazky[1]) > 50 and len(oblychchia) > 500:
+        tilo_k = np.median(zrazky[0], 0)
+        # обличчя — до тону всього тіла (шкіра без чорної білизни), а не лише смуги під шиєю:
+        # смуга зеленіша за плечі й груди, і обличчя виходило м'ятним на оливковому тілі
+        pt = pxs[0][::8, ::8, :3][maska_uv(0, pxs[0].shape[0])[::8, ::8]]
+        pt = pt[pt.max(1) > 0.12]
+        tilo_vse = np.median(pt, 0)
+        m_shyi = np.clip(tilo_k / np.maximum(np.median(zrazky[1], 0), 1e-4), 0.5, 2.0)
+        m_obl = np.clip(tilo_vse / np.maximum(np.median(oblychchia, 0), 1e-4), 0.4, 2.0)
+        log("тон голови: множник шиї %s, обличчя %s (зразків тіла %d, шиї %d, обличчя %d)"
+            % (m_shyi.round(3), m_obl.round(3), len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
+        W = cv2.GaussianBlur(cv2.dilate(W, np.ones((9, 9), np.uint8)), (0, 0), 6)[..., None]
+        im = karty[(mh.name, "колір")]
+        px[..., :3] = np.clip(px[..., :3] * (m_shyi * (1 - W) + m_obl * W), 0, 1)
+        im.pixels.foreach_set(px.ravel())
+        im.save()
+    else:
+        log("тон голови: замало зразків (%d, %d, %d) — без змін" % (len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
 for s in dzh:
     bpy.data.objects.remove(s)
 for mat in (mt, mh):

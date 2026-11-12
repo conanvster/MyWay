@@ -72,6 +72,10 @@ Z_NIS = float(ser[i_nis, 2])
 pid = ser[(ser[:, 2] < Z_NIS - 0.02) & (ser[:, 1] < C.y - 0.5 * R)]
 # у орка найдалі вперед не ніс, а губи з іклами: знайдена точка — рівень рота
 Z_ROT = Z_NIS
+ZHINKA = arg("--стать", str, "ч") == "ж"
+if ZHINKA:
+    # орчиха без великих ікол: найдалі вперед — ніс, рот на 4,5 см нижче
+    Z_ROT = Z_NIS - 0.045
 Z_PIDB = Z_ROT - 0.05
 vukha = PH[np.abs(PH[:, 0]) > 0.86 * np.abs(PH[:, 0]).max()]
 Z_VUKHO = float(vukha[:, 2].mean())
@@ -87,7 +91,8 @@ def kuty(p):
 
 
 # лінія росту волосся: (θ, найнижче φ). Чоло з «мисом» посередині й залисинами на скронях
-LINIIA = arg("--лінія", str, "0:45,22:53,50:40,78:22,100:12,125:-6,180:-24")
+LINIIA = arg("--лінія", str, "0:30,25:31,50:25,78:14,100:4,125:-10,180:-28" if ZHINKA
+             else "0:45,22:53,50:40,78:22,100:12,125:-6,180:-24")
 LINIIA = [tuple(float(x) for x in t.split(":")) for t in LINIIA.split(",")]
 
 
@@ -281,7 +286,8 @@ class Sitka:
         self.normali = {}
         self.vagy = {}                 # вершина → частка «грудей» (решта — голова)
 
-    def kartka(self, pts, shyr, okremi=False, vybylas=0.0, husti=False):
+    def kartka(self, pts, shyr, okremi=False, vybylas=0.0, husti=False, hrudy=None):
+        """`hrudy(p)` → 0…1: частка кістки грудей у вершині (довге волосся нижче плечей)."""
         pts = ridshe(hladka(pts))
         if len(pts) < 3:
             return
@@ -317,6 +323,8 @@ class Sitka:
             nn = naz - tang * naz.dot(tang)
             nn = nn.normalized() if nn.length > 1e-4 else naz
             self.normali[va] = self.normali[vb] = nn
+            if hrudy is not None:
+                self.vagy[va] = self.vagy[vb] = 0.3 + 0.4 * hrudy(p)
             ryad.append((va, vb, t))
         for (a0, b0, t0), (a1, b1, t1) in zip(ryad, ryad[1:]):
             f = self.bm.faces.new((a0, b0, b1, a1))
@@ -576,6 +584,41 @@ def boroda(s, n=arg("--борода", int, 2400)):
     s.pidklad(v_boroda, uv_vnyz, porih=0.75)
 
 
+def dovhe(s, n=arg("--довгих", int, 800)):
+    """Довге пряме волосся (орчиха, 12.11.2026): зачесане назад по черепу й вільно вниз по
+    спині до лопаток; із скронь — пасма спереду плечей на груди. Нижче плечей тримається грудей."""
+    z_pl = C.z - 0.20
+
+    def hrudy(p):
+        return max(0.0, min(1.0, (z_pl - p.z) / 0.10))
+
+    def pole_spyna(p, t):
+        if t < 0.14:
+            return pole_nazad(p, t)
+        return Vector((0.04 * math.copysign(min(1.0, abs(p.x) / 0.1), p.x), 0.10, -1.0))
+
+    def pole_pered(p, t):
+        return Vector((0.10 * math.copysign(1.0, p.x), -0.04 - 0.10 * min(1.0, t * 3), -1.0))
+
+    def skronia(p):
+        th, ph = kuty(p)
+        return v_skalp(p) if 58 < th < 88 and ph < 38 else 0.0
+
+    def potylytsia(p):
+        th, ph = kuty(p)
+        return v_skalp(p) if th > 80 else 0.0
+
+    for sh, (h0, chastka) in enumerate(((0.002, 0.4), (0.006, 0.33), (0.011, 0.27))):
+        for p0, n0 in koreni(potylytsia, int(n * chastka)):
+            pts = rist(p0, n0, pole_spyna, random.uniform(0.48, 0.66), lambda t, h0=h0: h0 + 0.012 * t,
+                       krok=0.02, vilno=0.14)
+            s.kartka(pts, random.uniform(0.012, 0.02), husti=sh < 2, hrudy=hrudy)
+        for p0, n0 in koreni(skronia, int(n * 0.24 * chastka)):
+            pts = rist(p0, n0, pole_pered, random.uniform(0.40, 0.56), lambda t, h0=h0: h0 + 0.010 * t,
+                       krok=0.02, vilno=0.05)
+            s.kartka(pts, random.uniform(0.010, 0.016), husti=sh < 2, hrudy=hrudy)
+
+
 def irokez(s, n=900):
     def smuha(p):
         return v_skalp(p) * max(0.0, 1.0 - abs(p.x) / 0.03)
@@ -599,9 +642,15 @@ s.obiekt("Волосся-зачесане", MATY)
 s = Sitka()
 irokez(s)
 s.obiekt("Волосся-ірокез", MATY)
-s = Sitka()
-boroda(s)
-s.obiekt("Борода-повна", MATY)
+if ZHINKA:
+    s = Sitka()
+    zachesane(s, dovzh=(0.10, 0.18))
+    dovhe(s)
+    s.obiekt("Волосся-довге", MATY)
+else:
+    s = Sitka()
+    boroda(s)
+    s.obiekt("Борода-повна", MATY)
 bm.free()
 rig.data.pose_position = "POSE"
 bpy.ops.wm.save_as_mainfile(filepath=VYHID)

@@ -195,6 +195,17 @@ func build() -> void:
 		_attach_hair_files()
 	if _skeleton != null and not _hair_chains().is_empty():
 		_hair_springs()
+	elif _skeleton != null:
+		# зачіски без пружних кісток (орк з нуля): матеріали з файла як є, але
+		# свої на кожну поверхню — щоб `customize` міг їх фарбувати (12.11.2026:
+		# «колір зачіски не міняється»)
+		for m: MeshInstance3D in _hair_meshes():
+			for i in m.get_surface_override_material_count():
+				var src := m.get_active_material(i)
+				if src is BaseMaterial3D:
+					var mat: BaseMaterial3D = src.duplicate()
+					mat.set_meta("base_albedo", src.albedo_color)
+					m.set_surface_override_material(i, mat)
 	_prepare_look()
 	_find_blink()
 	if not held.is_empty():
@@ -971,13 +982,16 @@ func customize(look: Dictionary) -> void:
 	_apply_part_sets()
 	var hc: Variant = _look.get("колір_волосся")
 	for m: MeshInstance3D in _hair_meshes():
-		var mat := m.get_surface_override_material(0)
-		if mat is BaseMaterial3D:
-			(mat as BaseMaterial3D).albedo_color = hc if hc is Color \
-					else mat.get_meta("base_albedo", Color.WHITE)
-		elif mat is ShaderMaterial:
-			(mat as ShaderMaterial).set_shader_parameter("hair_color",
-					hc if hc is Color else mat.get_meta("base_albedo", Color.WHITE))
+		# усі поверхні: зачіска орка — пасма-картки й джгути кіс двома матеріалами
+		# (фарбувалась лише перша, 12.11.2026)
+		for si in m.get_surface_override_material_count():
+			var mat := m.get_surface_override_material(si)
+			if mat is BaseMaterial3D:
+				(mat as BaseMaterial3D).albedo_color = hc if hc is Color \
+						else mat.get_meta("base_albedo", Color.WHITE)
+			elif mat is ShaderMaterial:
+				(mat as ShaderMaterial).set_shader_parameter("hair_color",
+						hc if hc is Color else mat.get_meta("base_albedo", Color.WHITE))
 	if _skin_mat != null:
 		var ref: Vector3 = _skin_mat.get_shader_parameter("skin_ref")
 		var sc: Variant = _look.get("колір_шкіри")

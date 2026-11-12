@@ -105,6 +105,8 @@ const PIECES := {
 	"голова": ["Шолом"],
 }
 const PIECE_PREFIX := "Одяг-"
+## Матеріал деталей одягу зі скульпту: несе свою текстуру, річ його не фарбує.
+const SCULPT_CLOTH := "скульпт-одяг"
 ## Що тримається в руках, а не вдягається (11.10.2026): комірка ->
 ## кістка кисті. Лук — у лівій, як його тримають; решта зброї — у правій.
 const HELD := {"зброя": "hand_r", "щит": "hand_l"}
@@ -1114,6 +1116,11 @@ func _cloth_on(mesh: MeshInstance3D, look: Dictionary) -> Material:
 			nrm = (src as BaseMaterial3D).normal_texture
 	if own == null and nrm == null:
 		return _cloth(look)
+	# Деталі зі скульпту вдягненого (12.11.2026, `tools/blender/odiah_zi_skulptu.py`): на одній
+	# сітці шкіра, залізо й хутро різних кольорів — вони в її текстурі. Річ таку деталь не
+	# перефарбовує: матеріал лишається свій.
+	if src.resource_name.begins_with(SCULPT_CLOTH):
+		return src
 	var key := "%s|%s" % [mesh.get_instance_id(), str(look)]
 	if mesh.has_meta("cloth_key") and mesh.get_meta("cloth_key") == key:
 		return mesh.material_override

@@ -66,6 +66,20 @@ INSTR = {
         "the face, scalp, neck and shoulders, with sharp skin pores. Plain light grey studio "
         "background, soft even shadowless frontal light, the whole head with both ears and the "
         "neck in frame, photorealistic, sharp focus."),
+    # сет одягу (12.11.2026, слово замовника: «зроби сет одягу — почни з сету важкої броні для
+    # орка», кадр вікі орк-чоловік-v3): перша картинка — наш лисий орк у білизні, друга (--друга) —
+    # кадр вікі як зразок обладунку. Поза й тіло ті самі → скульпт вдягненого лягає на скульпт
+    # голого, одяг — різниця.
+    "сет-важкий-орк": (
+        "Dress the bald orc from the first image in the heavy armor of the orc from the second "
+        "image: two large layered dark steel pauldrons with thick fur trim, crossed brown leather "
+        "chest straps with a buckle, studded leather and iron bracers with fur trim on both "
+        "forearms, wide layered brown leather belts with iron buckles, a dark leather loincloth "
+        "with studded hanging plates in front and at the sides, tall dark leather boots with fur "
+        "tops. Bare chest and belly stay visible. No cloak, no cape, no helmet, no weapon. Keep "
+        "the pose, arms, hands, legs, body proportions, bald head, face, skin and camera of the "
+        "first image exactly the same. Plain light grey studio background, soft even shadowless "
+        "light, whole body from head to feet in frame, photorealistic."),
     # ельфійки (12.11.2026, слово замовника: «зроби ельфійок», кадри вікі ельф-жінка-v1..v3):
     # одне тіло (з v1) і три обличчя; висока тендітна (пам'ятка про пропорції ельфійки)
     "тіло-ельф-ж": (
@@ -100,6 +114,7 @@ def main():
     instr = arg("--інстр", str, INSTR.get(vyd))
     sidy = [int(a) for a in sys.argv[4:] if a.isdigit()] or [5101]
     kadr = m.stage(vhid)
+    druha = m.stage(arg("--друга", str, "")) if "--друга" in sys.argv else None
     for sd in sidy:
         kudy = "%s-s%d.png" % (pref, sd)
         if os.path.exists(kudy):
@@ -107,8 +122,11 @@ def main():
         g = b2.graf_qwen(kadr, kadr, instr, sd, "ork_znulia")
         g["1"]["inputs"]["unet_name"] = "qwen-image-edit-2511-Q4_K_M.gguf"
         g["2"]["inputs"]["lora_name"] = "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-bf16.safetensors"
-        for n in ("9", "10"):
-            g[n]["inputs"].pop("image2", None)
+        if druha:                           # друга картинка — зразок (одяг із кадру вікі)
+            g["8"]["inputs"]["image"] = druha
+        else:
+            for n in ("9", "10"):
+                g[n]["inputs"].pop("image2", None)
         g["7"]["inputs"]["resolution_steps"] = 1
         g["7"]["inputs"]["megapixels"] = arg("--мп", float, 1.0)
         done = m.run(g)

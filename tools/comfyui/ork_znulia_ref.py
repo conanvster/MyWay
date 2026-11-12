@@ -55,6 +55,17 @@ INSTR = {
         "green skin exactly the same, with sharp skin pores and fine wrinkles. Plain light grey "
         "studio background, soft even shadowless frontal light, the whole head with both ears "
         "and the neck in frame, photorealistic, sharp focus."),
+    # ще два обличчя орчихи для вибору аватара (12.11.2026, «більш суворіші», кадри вікі v3 і v1)
+    "голова-ж-сувора": (
+        "Close-up head and neck reference of this same orc woman for 3D modeling, strict front "
+        "view, head upright and level, looking straight at the camera, mouth closed, harsh stern "
+        "menacing expression of a seasoned warrior. Shave her head completely bald, remove all "
+        "hair and braids: bare scalp, bare neck and bare shoulders, no armor, no clothes, no "
+        "jewelry. Keep her face exactly the same: heavy furrowed brow, deep-set eyes, broad nose, "
+        "strong jaw, frowning lips, long pointed ears. Even olive green skin of the same tone on "
+        "the face, scalp, neck and shoulders, with sharp skin pores. Plain light grey studio "
+        "background, soft even shadowless frontal light, the whole head with both ears and the "
+        "neck in frame, photorealistic, sharp focus."),
 }
 
 

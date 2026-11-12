@@ -264,6 +264,10 @@ def najbilsha(o):
                     st.append(u)
         shmatky.append(ost)
     shmatky.sort(key=len, reverse=True)
+    for sh in shmatky[1:3]:
+        if len(sh) > 2000:                 # великий відкинутий шматок — це не порожнина, а втрата
+            zz = [v.co.z for v in sh]
+            log("%s: УВАГА, відкинуто шматок %d вершин, z %.3f…%.3f" % (o.name, len(sh), min(zz), max(zz)))
     for sh in shmatky[1:]:
         bmesh.ops.delete(bm, geom=sh, context="VERTS")
     bm.to_mesh(o.data)
@@ -300,6 +304,14 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
     hol = vvesty(HOLOVA, "обєм-голова")
     voksel(hol, 0.0025)                    # у сирому масштабі: стінка ~6 мм, після зменшення — 1,5
     najbilsha(hol)
+    # погруддя Pixal3D — порожня оболонка зі стінкою 2,5 мм (після зменшення ~1 мм, тонше за
+    # воксель): спільний ремеш може розкришити голову на тисячі уламків (орчиха-3, 12.11.2026).
+    # --стінка-голови d: потовщити стінку на d з кожного боку (у сирому масштабі) до спільного
+    # ремешу, а після нього здути зовнішню поверхню голови назад на d·s.
+    STINKA = arg("--стінка-голови", float, 0.0)
+    if STINKA:
+        hol.data.update()
+        zapysaty(hol, tochky(hol) + STINKA * np.array([v.normal[:] for v in hol.data.vertices]))
     zapysaty(hol, float(z["s"]) * (tochky(hol) @ z["R"].T) + z["t"])
     # голову тіла прибрати опуклою оболонкою детальної голови (трохи роздутою), а не площиною:
     # площина зрізала й трапеції за шиєю — лишався рівний уступ-«комір»
@@ -327,7 +339,7 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
     bpy.ops.object.modifier_apply(modifier=mb.name)
     bpy.data.objects.remove(rizak)
     najbilsha(tilo)
-    vidrizaty(hol, SH_P - SH_N * 0.035, SH_N, False)
+    vidrizaty(hol, SH_P - SH_N * arg("--зріз-голови", float, 0.035), SH_N, False)
     najbilsha(hol)
     aktyv(tilo)
     hol.select_set(True)
@@ -335,6 +347,12 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
     tilo.name = "обєм"
     voksel(tilo, VOKSEL)
     najbilsha(tilo)
+    if STINKA:
+        tilo.data.update()
+        P_ = tochky(tilo)
+        dp = (P_ - np.array(SH_P)) @ np.array(SH_N)
+        w_ = np.clip(dp / 0.02, 0, 1)[:, None]
+        zapysaty(tilo, P_ - w_ * STINKA * float(z["s"]) * np.array([v.normal[:] for v in tilo.data.vertices]))
     # стик: згладити смугу біля площини шиї (не обличчя: лише нижче площини + 1 см над нею)
     bm = bmesh.new()
     bm.from_mesh(tilo.data)
@@ -721,8 +739,43 @@ if "--вирівняти-тон" in A:
         log("тон голови: множник шиї %s, обличчя %s (зразків тіла %d, шиї %d, обличчя %d)"
             % (m_shyi.round(3), m_obl.round(3), len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
         W = cv2.GaussianBlur(cv2.dilate(W, np.ones((9, 9), np.uint8)), (0, 0), 6)[..., None]
-        im = karty[(mh.name, "колір")]
-        px[..., :3] = np.clip(px[..., :3] * (m_shyi * (1 - W) + m_obl * W), 0, 1)
+        if "--тон-плавний" in A:
+            # слово замовника 12.11: «тон обличчя та тіла не співпадають». Один множник на все
+            # обличчя лишав бліду середину й зелені краї: генератор освітлив обличчя плямою.
+            # Тож рівняється низькочастотний тон: розмитий колір голови → тон тіла (на шиї — тон
+            # смуги тіла під шиєю, вище — всього тіла), дрібні деталі (зморшки, брови, губи) лишаються.
+            # тон міряється лише по шкірі: губи (червоне) й брови, очі (темне) у розмиття не йдуть —
+            # інакше довкола рота лишалась зеленкувата пляма, а губи блідли
+            k3 = px[..., :3]
+            mk = ((maska_uv(1, r) > 0) & (k3.max(2) > 0.2) & (k3[..., 0] < k3[..., 1] * 1.3)).astype(np.float32)
+            sg = r * arg("--тон-розмиття", float, 0.02)
+            rozm = cv2.GaussianBlur(px[..., :3] * mk[..., None], (0, 0), sg) / np.maximum(
+                cv2.GaussianBlur(mk, (0, 0), sg)[..., None], 1e-3)
+            Wv = np.zeros((r, r), np.float32)
+            for p_ in me.polygons:
+                if p_.material_index != 1:
+                    continue
+                c = sum((me.vertices[i].co for i in p_.vertices), Vector()) / len(p_.vertices)
+                pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in p_.loop_indices], np.int32)
+                cv2.fillPoly(Wv, [pts], float(max(0.0, min(1.0, (c - SH_P).dot(SH_N) / 0.06))))
+            Wv = cv2.GaussianBlur(cv2.dilate(Wv, np.ones((9, 9), np.uint8)), (0, 0), 6)[..., None]
+            cil = tilo_k * (1 - Wv) + tilo_vse * Wv
+            syla = arg("--тон-сила", float, 0.85)
+            mn = np.clip(cil / np.maximum(rozm, 1e-3), 0.4, 2.5)
+            px[..., :3] = np.clip(px[..., :3] * (1 + (mn - 1) * syla), 0, 1)
+            # другий, дрібний прохід (--тон-плями): зеленкуваті й темні плями завбільшки з щоку,
+            # які перший прохід не бере (орчиха-2: довкола рота; орчиха-3: на шиї й вилицях)
+            sg2 = r * arg("--тон-плями", float, 0.0)
+            if sg2:
+                k3 = px[..., :3]
+                mk = ((maska_uv(1, r) > 0) & (k3.max(2) > 0.2) & (k3[..., 0] < k3[..., 1] * 1.3)).astype(np.float32)
+                rozm = cv2.GaussianBlur(k3 * mk[..., None], (0, 0), sg2) / np.maximum(
+                    cv2.GaussianBlur(mk, (0, 0), sg2)[..., None], 1e-3)
+                mn = np.clip(cil / np.maximum(rozm, 1e-3), 0.6, 1.6)
+                px[..., :3] = np.clip(k3 * (1 + (mn - 1) * 0.7), 0, 1)
+            log("тон голови плавний: ціль шиї %s, тіла %s, сила %.2f" % (tilo_k.round(3), tilo_vse.round(3), syla))
+        else:
+            px[..., :3] = np.clip(px[..., :3] * (m_shyi * (1 - W) + m_obl * W), 0, 1)
         im.pixels.foreach_set(px.ravel())
         im.save()
     else:

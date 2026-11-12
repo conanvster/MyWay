@@ -683,6 +683,170 @@ for vyd, typ in (("колір", "DIFFUSE"), ("нормалі", "NORMAL")):
         im.file_format = "PNG"
         im.save()
         log("→", im.filepath_raw)
+if "--чистити-шкіру" in A:
+    # слово замовника 12.11.2026 (ельфійка): «підчисти шкіру на внутрішній стороні рук та ніг та тіла
+    # та шиї». Руки скульпту опущені до стегон: чорне від білизни запеклося на передпліччі, по
+    # внутрішньому боці стегон і тулуба — темні смуги, на шиї — латки. Чорне лишається тільки там,
+    # де воно білизна: великий темний шматок на тулубі (не на руці) у поясі висоти, де темного багато.
+    # Решта темного замальовується шкірою, а плями середнього розміру вирівнюються.
+    import cv2
+    uvd = me.uv_layers.active.data
+    im = karty[(mt.name, "колір")]
+    r = im.size[0]
+    px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    k3 = px[..., :3]
+    uvm = maska_uv(0, r) > 0
+    sv = k3.max(2)
+    med = float(np.median(sv[uvm & (sv > 0.25)]))
+    temne_px = sv < 0.45 * med
+    nv = len(me.vertices)
+    V = np.array([v.co[:] for v in me.vertices])
+    # руки: найвищий зріз, під яким сітка ділиться на тулуб і дві бічні гілки
+    rebra = np.array([e.vertices[:] for e in me.edges])
+    ruka = np.zeros(nv, bool)
+    for zr in np.arange(0.82 * ZRIST, 0.45 * ZRIST, -0.01):
+        bat = np.arange(nv)
+
+        def kor(i):
+            while bat[i] != i:
+                bat[i] = bat[bat[i]]
+                i = bat[i]
+            return i
+        for a_, b_ in rebra:
+            if V[a_, 2] < zr and V[b_, 2] < zr:
+                ra, rb = kor(a_), kor(b_)
+                if ra != rb:
+                    bat[ra] = rb
+        kk = np.array([kor(i) for i in range(nv)])
+        kk[V[:, 2] >= zr] = -1
+        ids, cnt = np.unique(kk[kk >= 0], return_counts=True)
+        vel = [i for i, c_ in zip(ids, cnt) if c_ > 300]
+        bichni = [i for i in vel if abs(V[kk == i, 0].mean()) > 0.1 and V[kk == i, 2].max() > zr - 0.03]
+        if len(vel) >= 3 and len(bichni) == 2:
+            for i in bichni:
+                ruka |= kk == i
+            log("чистити шкіру: руки окремо нижче z=%.2f, вершин рук %d" % (zr, int(ruka.sum())))
+            break
+    # темні грані тіла (за текселем у центрі грані) і частка темного по висоті на тулубі
+    pol = [p_ for p_ in me.polygons if p_.material_index == 0]
+    tc = np.array([sum((V[i] for i in p_.vertices), np.zeros(3)) / len(p_.vertices) for p_ in pol])
+    tuv = np.array([sum((np.array(uvd[l].uv[:]) for l in p_.loop_indices), np.zeros(2)) / len(p_.loop_indices) for p_ in pol])
+    tem = temne_px[np.clip((tuv[:, 1] * r).astype(int), 0, r - 1), np.clip((tuv[:, 0] * r).astype(int), 0, r - 1)]
+    na_rutsi = np.array([all(ruka[i] for i in p_.vertices) for p_ in pol])
+    kosh = np.clip((tc[:, 2] / 0.01).astype(int), 0, 400)
+    usi = np.bincount(kosh[~na_rutsi], minlength=401).astype(float)
+    chastka = np.bincount(kosh[~na_rutsi & tem], minlength=401) / np.maximum(usi, 1)
+    poias = chastka > arg("--білизна-частка", float, 0.2)
+    # зв'язні шматки темних граней тулуба в поясах білизни
+    idx = {p_.index: j for j, p_ in enumerate(pol)}
+    kand = tem & ~na_rutsi & poias[kosh]
+    po_rebru = {}
+    for j, p_ in enumerate(pol):
+        if kand[j]:
+            for ek in p_.edge_keys:
+                po_rebru.setdefault(ek, []).append(j)
+    sus_ = {}
+    for js in po_rebru.values():
+        if len(js) == 2:
+            sus_.setdefault(js[0], []).append(js[1])
+            sus_.setdefault(js[1], []).append(js[0])
+    bilyzna = np.zeros(len(pol), bool)
+    bachyv = set()
+    for j0 in np.nonzero(kand)[0]:
+        if j0 in bachyv:
+            continue
+        sh, st = [], [j0]
+        bachyv.add(j0)
+        while st:
+            j = st.pop()
+            sh.append(j)
+            for u in sus_.get(j, ()):
+                if u not in bachyv:
+                    bachyv.add(u)
+                    st.append(u)
+        if sum(pol[j].area for j in sh) > 0.01:        # > 100 см² — білизна, а не слід
+            bilyzna[sh] = True
+    Mb = np.zeros((r, r), np.uint8)
+    for j in np.nonzero(bilyzna)[0]:
+        pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in pol[j].loop_indices], np.int32)
+        cv2.fillPoly(Mb, [pts], 255)
+    # діри в білизні (світла пляма посеред топа): замкнені острівці всередині темного — зафарбувати
+    zamk = cv2.morphologyEx(Mb, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    zovni = zamk.copy()
+    cv2.floodFill(zovni, np.zeros((r + 2, r + 2), np.uint8), (0, 0), 128)
+    for kut_ in ((r - 1, 0), (0, r - 1), (r - 1, r - 1)):
+        if zovni[kut_[1], kut_[0]] == 0:
+            cv2.floodFill(zovni, np.zeros((r + 2, r + 2), np.uint8), kut_, 128)
+    diry = (zovni == 0) & uvm
+    if diry.any() and Mb.any():
+        kb = np.median(k3[(Mb > 0) & temne_px], 0)
+        wd = cv2.GaussianBlur(diry.astype(np.float32), (0, 0), 1.5)[..., None]
+        k3[:] = k3 * (1 - wd) + kb * wd
+        temne_px = temne_px | diry
+        Mb[diry] = 255
+        log("чистити шкіру: дір у білизні зафарбовано %d точок" % int(diry.sum()))
+    # пояси висоти, де тулуб переважно темний (смуга топа, верх трусів): світлі грані там — діра
+    sucilni = chastka > arg("--білизна-суцільна", float, 0.62)
+    Md = np.zeros((r, r), np.uint8)
+    # лише біля середини тіла: збоку на цій висоті — плечі опущених рук, їх чіпати не можна
+    for j in np.nonzero(~tem & ~na_rutsi & sucilni[kosh] & (np.abs(tc[:, 0]) < 0.07))[0]:
+        pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in pol[j].loop_indices], np.int32)
+        cv2.fillPoly(Md, [pts], 255)
+    if Md.any() and Mb.any():
+        kb = np.median(k3[(Mb > 0) & temne_px], 0)
+        Md = cv2.dilate(Md, np.ones((5, 5), np.uint8))
+        wd = cv2.GaussianBlur((Md > 0).astype(np.float32), (0, 0), 1.5)[..., None]
+        k3[:] = k3 * (1 - wd) + kb * wd
+        temne_px = temne_px | (Md > 0)
+        Mb[Md > 0] = 255
+        log("чистити шкіру: світлих граней у суцільних поясах білизни зафарбовано %d точок" % int((Md > 0).sum()))
+    Mb = cv2.dilate(Mb, np.ones((7, 7), np.uint8)) > 0     # край білизни не чіпати
+    brud = cv2.dilate((temne_px & uvm & ~Mb).astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
+    brud &= ~Mb
+    shkira = (uvm & ~brud & ~Mb & ~temne_px).astype(np.float32)
+    sg = r * 0.012
+    zalyv = cv2.GaussianBlur(k3 * shkira[..., None], (0, 0), sg) / np.maximum(
+        cv2.GaussianBlur(shkira, (0, 0), sg)[..., None], 1e-3)
+    # там, де шкіри поруч немає (великий слід), — ширше розмиття
+    sg_ = r * 0.05
+    zalyv2 = cv2.GaussianBlur(k3 * shkira[..., None], (0, 0), sg_) / np.maximum(
+        cv2.GaussianBlur(shkira, (0, 0), sg_)[..., None], 1e-3)
+    blyzko = np.clip(cv2.GaussianBlur(shkira, (0, 0), sg) / 0.15, 0, 1)[..., None]
+    zalyv = zalyv * blyzko + zalyv2 * (1 - blyzko)
+    wb = cv2.GaussianBlur(brud.astype(np.float32), (0, 0), 2.5)[..., None]
+    k3[:] = k3 * (1 - wb) + zalyv * wb
+    # плями середнього розміру (латки, смуги): дрібний тон → до широкого тону, лише шкіра
+    shk = (uvm & ~Mb).astype(np.float32)
+    dr = cv2.GaussianBlur(k3 * shk[..., None], (0, 0), r * 0.006) / np.maximum(cv2.GaussianBlur(shk, (0, 0), r * 0.006)[..., None], 1e-3)
+    sh_ = cv2.GaussianBlur(k3 * shk[..., None], (0, 0), r * 0.04) / np.maximum(cv2.GaussianBlur(shk, (0, 0), r * 0.04)[..., None], 1e-3)
+    mn = np.clip(sh_ / np.maximum(dr, 1e-3), 0.6, 1.6)
+    k3[:] = np.where(shk[..., None] > 0, np.clip(k3 * (1 + (mn - 1) * 0.75), 0, 1), k3)
+    # «комір»: смуга тіла біля шиї після лікування промахів блідіша за плечі й груди — її широкий
+    # тон звести до тону шкіри довкола смуги
+    sm = (maska_uv(0, r, True) > 0) & ~Mb
+    if sm.any():
+        poza = (uvm & ~sm & ~Mb & ~temne_px).astype(np.float32)
+        smf = sm.astype(np.float32)
+        tut = cv2.GaussianBlur(k3 * smf[..., None], (0, 0), r * 0.012) / np.maximum(cv2.GaussianBlur(smf, (0, 0), r * 0.012)[..., None], 1e-3)
+        dov = np.median(k3[poza > 0], 0)
+        mn = np.clip(dov / np.maximum(tut, 1e-3), 0.6, 1.6)
+        ws = cv2.GaussianBlur(smf, (0, 0), 4)[..., None] * smf[..., None]
+        k3[:] = np.clip(k3 * (1 + (mn - 1) * 0.85 * ws), 0, 1)
+    log("чистити шкіру: білизна — %d граней, замальовано %.1f %% розгортки тіла"
+        % (int(bilyzna.sum()), 100.0 * brud.sum() / max(1, uvm.sum())))
+    im.pixels.foreach_set(px.ravel())
+    im.save()
+    # карта нормалей тіла: де промінь запікання влучив у сусідню поверхню (рука біля стегна,
+    # ноги одна біля одної, пальці), нормаль дивиться вбік — такі точки вирівняти до плоскої
+    imn = karty[(mt.name, "нормалі")]
+    pn = np.array(imn.pixels[:], np.float32).reshape(r, r, 4)
+    nz = pn[..., 2] * 2 - 1
+    kryvi = cv2.dilate((uvm & (nz < arg("--нормаль-поріг", float, 0.8))).astype(np.uint8), np.ones((9, 9), np.uint8))
+    wn = cv2.GaussianBlur(kryvi.astype(np.float32), (0, 0), 3)[..., None]
+    pn[..., :3] = pn[..., :3] * (1 - wn) + np.array([0.5, 0.5, 1.0], np.float32) * wn
+    log("чистити шкіру: нормалей вирівняно %.1f %% розгортки тіла" % (100.0 * kryvi.sum() / max(1, uvm.sum())))
+    imn.pixels.foreach_set(pn.ravel())
+    imn.save()
 if "--вирівняти-тон" in A:
     # орчиха (12.11.2026): скульпт голови з великого плану вийшов блідішим за тіло — обличчя
     # бежеве на оливковому тілі. Тон голови — множником по каналах до тону тіла на шиї:
@@ -739,6 +903,15 @@ if "--вирівняти-тон" in A:
         log("тон голови: множник шиї %s, обличчя %s (зразків тіла %d, шиї %d, обличчя %d)"
             % (m_shyi.round(3), m_obl.round(3), len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
         W = cv2.GaussianBlur(cv2.dilate(W, np.ones((9, 9), np.uint8)), (0, 0), 6)[..., None]
+        def shkira_maska(k3):
+            """Шкіра голови без губ, носа й вух (червоніші за медіану шкіри) і без брів та очей (темні).
+            Поріг — від медіани самої шкіри, а не «r < 1,3·g»: у світлої ельфійки вся шкіра рожева."""
+            u = maska_uv(1, r) > 0
+            ch = k3[..., 0] / np.maximum(k3.sum(2), 1e-4)
+            sv = k3.max(2)
+            zr = u & (sv > 0.2)
+            return (zr & (ch < np.median(ch[zr]) + 0.045) & (sv > 0.45 * np.median(sv[zr]))).astype(np.float32)
+
         if "--тон-плавний" in A:
             # слово замовника 12.11: «тон обличчя та тіла не співпадають». Один множник на все
             # обличчя лишав бліду середину й зелені краї: генератор освітлив обличчя плямою.
@@ -747,7 +920,7 @@ if "--вирівняти-тон" in A:
             # тон міряється лише по шкірі: губи (червоне) й брови, очі (темне) у розмиття не йдуть —
             # інакше довкола рота лишалась зеленкувата пляма, а губи блідли
             k3 = px[..., :3]
-            mk = ((maska_uv(1, r) > 0) & (k3.max(2) > 0.2) & (k3[..., 0] < k3[..., 1] * 1.3)).astype(np.float32)
+            mk = shkira_maska(k3)
             sg = r * arg("--тон-розмиття", float, 0.02)
             rozm = cv2.GaussianBlur(px[..., :3] * mk[..., None], (0, 0), sg) / np.maximum(
                 cv2.GaussianBlur(mk, (0, 0), sg)[..., None], 1e-3)
@@ -768,7 +941,7 @@ if "--вирівняти-тон" in A:
             sg2 = r * arg("--тон-плями", float, 0.0)
             if sg2:
                 k3 = px[..., :3]
-                mk = ((maska_uv(1, r) > 0) & (k3.max(2) > 0.2) & (k3[..., 0] < k3[..., 1] * 1.3)).astype(np.float32)
+                mk = shkira_maska(k3)
                 rozm = cv2.GaussianBlur(k3 * mk[..., None], (0, 0), sg2) / np.maximum(
                     cv2.GaussianBlur(mk, (0, 0), sg2)[..., None], 1e-3)
                 mn = np.clip(cil / np.maximum(rozm, 1e-3), 0.6, 1.6)
@@ -780,6 +953,37 @@ if "--вирівняти-тон" in A:
         im.save()
     else:
         log("тон голови: замало зразків (%d, %d, %d) — без змін" % (len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
+VUKHA = arg("--вуха-гостріші", float, 0.0)
+if VUKHA:
+    # слово замовника 12.11.2026 (ельфійка): «вуха трохи більш гострі і трошки більш стирчачі».
+    # Вухо — вершини голови, що виступають за ширину черепа над вухами; тягнеться до кінчика
+    # (довше й тонше) і відводиться від голови. Після запікання: розгортка й карти не міняються.
+    V = np.array([v.co[:] for v in me.vertices])
+    hol_v = np.zeros(len(V), bool)
+    for p_ in me.polygons:
+        if p_.material_index == 1:
+            hol_v[list(p_.vertices)] = True
+    STYR = arg("--вуха-стирчать", float, 0.02)
+    for zn in (-1, 1):
+        bik = hol_v & (V[:, 0] * zn > 0.03)
+        ik = np.nonzero(bik)[0][np.argmax(V[bik, 0] * zn)]
+        kin = V[ik]
+        x0 = (V[bik & (V[:, 2] > kin[2] + 0.025), 0] * zn).max()
+        vu = bik & (V[:, 0] * zn > x0)
+        kor_ = V[vu & (V[:, 0] * zn < x0 + 0.004)].mean(0)
+        d = kin - kor_
+        dl = np.linalg.norm(d)
+        d /= dl
+        P = V[vu]
+        t = np.clip((P - kor_) @ d / dl, 0, 1)
+        vis = kor_ + np.outer(t * dl, d)
+        P2 = vis + (P - vis) * (1 - 0.35 * VUKHA / 0.3 * t)[:, None] + np.outer(t * t * VUKHA * dl, d)
+        P2[:, 0] += zn * STYR * t
+        P2[:, 1] += 0.4 * STYR * t          # і трохи назад — вухо розвертається від черепа
+        P2[:, 2] += 0.6 * STYR * t          # і вгору: кінчик дивиться вгору-назад, а не вбік
+        V[vu] = P2
+        log("вуха: бік %+d, вершин %d, довжина %.3f → %.3f м" % (zn, int(vu.sum()), dl, dl * (1 + VUKHA)))
+    zapysaty(o, V)
 for s in dzh:
     bpy.data.objects.remove(s)
 for mat in (mt, mh):

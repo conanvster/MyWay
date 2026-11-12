@@ -66,6 +66,28 @@ INSTR = {
         "the face, scalp, neck and shoulders, with sharp skin pores. Plain light grey studio "
         "background, soft even shadowless frontal light, the whole head with both ears and the "
         "neck in frame, photorealistic, sharp focus."),
+    # ельфійки (12.11.2026, слово замовника: «зроби ельфійок», кадри вікі ельф-жінка-v1..v3):
+    # одне тіло (з v1) і три обличчя; висока тендітна (пам'ятка про пропорції ельфійки)
+    "тіло-ельф-ж": (
+        "Turn this elf woman into a clean base body reference for 3D modeling. Strict symmetric "
+        "T-pose, front view, arms straight out to the sides at shoulder height, palms down, "
+        "fingers spread apart, legs straight and slightly apart. Remove the shirt, vest, belts, "
+        "bracers, trousers and boots: bare body, barefoot, wearing only plain tight black briefs "
+        "and a plain tight black bandeau top. Shave her head completely bald, remove all hair. "
+        "She is very tall and slender with long thin legs, narrow hips, narrow shoulders, thin "
+        "arms and a long neck; crotch at half of her height. Keep her face, small pointed ears and "
+        "pale fair skin exactly the same. Plain light grey studio background, soft even "
+        "shadowless light, whole body from head to feet in frame, photorealistic."),
+    "голова-ельф-ж": (
+        "Close-up head and neck portrait of this same elf woman for 3D modeling, strict front "
+        "view, head upright and level, looking straight at the camera, mouth closed, calm serious "
+        "expression. She is a young woman: delicate feminine face, smooth pale fair skin, thin "
+        "light eyebrows, slender long neck and narrow bare shoulders. Shave her head completely "
+        "bald, remove all hair, remove clothes and jewelry. Keep her own facial features, eyes, "
+        "nose, lips, cheekbones and small pointed ears exactly the same as in the image. Even "
+        "skin tone on face, scalp, neck and shoulders. Plain light grey studio background, soft "
+        "even shadowless frontal light, the whole head with both ears and the neck in frame, "
+        "photorealistic, sharp focus."),
 }
 
 

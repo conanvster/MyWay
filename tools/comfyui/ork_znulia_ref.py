@@ -80,6 +80,42 @@ INSTR = {
         "the pose, arms, hands, legs, body proportions, bald head, face, skin and camera of the "
         "first image exactly the same. Plain light grey studio background, soft even shadowless "
         "light, whole body from head to feet in frame, photorealistic."),
+    # сет по зонах (12.11.2026, `spec/сети-броні-дослідження.md`): великий план однієї частини
+    # нашого тіла в одній речі з кадру вікі (--друга); решта тіла гола — за шкірою річ суміщається
+    "зона-чоботи-орк": (
+        "Put the boots of the orc from the second image on the legs from the first image: tall "
+        "heavy dark leather boots reaching just below the knees, with a thick shaggy fur trim "
+        "around the top, leather straps, iron buckles and studs, thick soles, closed toes. Keep "
+        "the bare green thighs and knees, the black briefs, the pose of the legs and the camera "
+        "of the first image exactly the same. No loincloth, no belt, no trousers, no cloak. Plain "
+        "light grey studio background, soft even shadowless light, both legs and boots fully in "
+        "frame, photorealistic, sharp detailed leather, fur and metal."),
+    "зона-наручі-орк": (
+        "Put the bracer of the orc from the second image on the forearm of the arm from the first "
+        "image: a heavy bracer of dark leather and iron plates with rows of rivets, engraved iron "
+        "bands, leather straps with buckles and lacing, and a short fur trim at the elbow end, "
+        "covering the forearm from the wrist to just below the elbow. Keep the bare green elbow, "
+        "upper arm, hand and fingers, the pose and the camera of the first image exactly the "
+        "same. No glove, no other armor. Plain light grey studio background, soft even shadowless "
+        "light, photorealistic, sharp detailed leather, metal and stitching."),
+    "зона-наплічники-орк": (
+        "Put the shoulder armor of the orc from the second image on the bald orc from the first "
+        "image: two large layered dark steel pauldrons with riveted edges and engraved trim, a "
+        "short fur lining under them, and two crossed brown leather chest straps with stitching, "
+        "rivets and an iron ring buckle in the middle of the chest. Bare chest, belly, neck and "
+        "arms stay visible. No cloak, no cape, no helmet, no hair, no beard, no necklace. Keep the "
+        "pose, body, bald head, face and camera of the first image exactly the same. Plain light "
+        "grey studio background, soft even shadowless light, photorealistic, sharp detailed "
+        "metal, leather and stitching."),
+    "зона-пояс-орк": (
+        "Put the belt and loincloth of the orc from the second image on the hips from the first "
+        "image: wide layered brown leather belts with stitching, rivets and a large iron buckle, "
+        "small leather pouches, and a dark leather loincloth of hanging studded leather plates "
+        "with iron trim in front, at the sides and at the back, reaching the middle of the thighs "
+        "and fully covering the black briefs. Keep the bare green belly, thighs, hands, the pose "
+        "and the camera of the first image exactly the same. No cloak, no trousers, no boots. "
+        "Plain light grey studio background, soft even shadowless light, photorealistic, sharp "
+        "detailed leather, metal and stitching."),
     # ельфійки (12.11.2026, слово замовника: «зроби ельфійок», кадри вікі ельф-жінка-v1..v3):
     # одне тіло (з v1) і три обличчя; висока тендітна (пам'ятка про пропорції ельфійки)
     "тіло-ельф-ж": (

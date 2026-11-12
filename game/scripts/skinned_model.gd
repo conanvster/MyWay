@@ -430,11 +430,15 @@ func _hide_under(shown: Dictionary) -> void:
 	for m: MeshInstance3D in find_children("білизна-*", "MeshInstance3D", true, false):
 		var under: int = UNDERWEAR.get(str(m.name), -1)
 		m.visible = under < 0 or hide[under] < 0.5
-	if _skin_mat == null or _body_mesh == null or _body_mesh.mesh == null:
+	if _body_mesh == null or _body_mesh.mesh == null:
 		return
 	if not (_body_mesh.mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR):
 		return
-	_skin_mat.set_shader_parameter("hide_under", hide)
+	if _skin_mat != null:
+		_skin_mat.set_shader_parameter("hide_under", hide)
+	# моделі зі скульпту: шкіра — кілька матеріалів (тіло, голова), ховає кожен
+	for m: ShaderMaterial in _sculpt_mats:
+		m.set_shader_parameter("hide_under", hide)
 
 
 ## Зброя й щит у руках — з `WeaponLook`. Щоразу наново: вдягання

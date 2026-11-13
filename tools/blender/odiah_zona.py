@@ -67,7 +67,7 @@ ZONY = {
                    pid_kistky=("calf_",), vidstup=(0.0, 0.05)),
     "наручі": dict(komirka="рукавиці", kistky=("lowerarm_", "hand_"),
                    kadr=("upperarm_", "lowerarm_", "hand_") + PALTSI,
-                   shkira_kistky=("upperarm_",) + PALTSI, tsil_vse=True,   # кисть не годиться: на ній край наруча
+                   shkira_kistky=("upperarm_",) + PALTSI,                  # кисть не годиться: на ній край наруча
                    kanal=3, zavzhdy=(), tryk=9000, tex=2048, dzerkalo=True, bik="_r", pidhin="шкіра",
                    pid_kistky=("lowerarm_",), vidstup=(0.03, 0.04)),
     "наплічники": dict(komirka="тіло", kistky=("clavicle_", "upperarm_", "spine_01", "spine_02", "spine_03", "neck_01"),
@@ -224,6 +224,12 @@ for i, p in enumerate(sm.polygons):
         if bvh_s.ray_cast(c + d * ep, d)[0] is None:
             vydno[i] = True
             break
+# --глибина-кадру f: лишити передню частину скульпту завглибшки f його висоти. З кадру однієї
+# руки генератор домальовує позаду другу руку й порожню оболонку (13.11.2026) — це не річ і не опора.
+HLYB = arg("--глибина-кадру", float, 0.0)
+if HLYB:
+    vydno &= C0[:, 1] < P_SYRE[:, 1].min() + HLYB * (P_SYRE[:, 2].max() - P_SYRE[:, 2].min())
+    log("глибина кадру %.2f: лишилось зовнішніх граней %d" % (HLYB, int(vydno.sum())))
 # колір шкіри скульпту: спершу грані, близькі барвою до шкіри нашого тіла, потім їх медіана
 t_px = pikseli(kartynka(ss.material_slots[0].material))[::8, ::8].reshape(-1, 3)
 t_shk = np.median(t_px[t_px.max(1) > 0.12], 0)
@@ -373,7 +379,9 @@ for dzerkalo, bik in varianty:
     # тони шкіри — з самого скульпту, з місць, де речі напевно немає (`shkira_kistky`: кисть і
     # плече для наруча, стегна для чобіт). Барва наперед невідома: генератор малює кисть
     # зеленішою, плече — рожевим; за дотиком до тіла теж не вгадати — річ буває впритул.
-    na_tili = vydno & (dist < 0.025) & np.array([k.startswith(Z["shkira_kistky"]) for k in kist]) & (jas > 0.25)
+    # …і лише грані, що лягли на наше тіло (< 1 см): хутро біля ліктя й зап'ястка теж «на кістці
+    # плеча й пальців», але стирчить на 2 см і більше
+    na_tili = vydno & (dist < 0.01) & np.array([k.startswith(Z["shkira_kistky"]) for k in kist]) & (jas > 0.25)
     tony, lysh = [], na_tili.copy()
     for _ in range(4):
         if lysh.sum() < max(300, 0.15 * na_tili.sum()):
@@ -402,6 +410,8 @@ for dzerkalo, bik in varianty:
     # поза зоною (плече над наручем стало рожевим) — це «не шкіра», але й не річ
     zk_i = [i for i, g_ in enumerate(hrupy) if g_.startswith(Z["kistky"])]
     bilia = W[:, zk_i].sum(1)[t_hran_v[bf]] > 0.15
+    if Z.get("pid_kistky"):                  # річ на кінцівці не буває далі 6 см від неї
+        kandydat &= dist < 0.06                # (вигадана генератором друга рука позаду — буває)
     rich = np.zeros(n, bool)
     for sh in ostrivtsi(vydno & kandydat & bilia):
         if plosh[sh].sum() > 0.003 and (plosh[sh] * u_zoni[sh]).sum() > 0.6 * plosh[sh].sum():
@@ -492,7 +502,9 @@ for dzerkalo, bik in varianty:
                 cs.append(c_)
                 ks.append((rl + 0.004) / max(rp, 1e-3))
         if len(ks) > 3:
-            k_ = float(np.clip(np.percentile(ks, 75), 1.0, 1.4))
+            # не більш як на 15 %: кінцівка під річчю однаково ховається, а сильне розширення
+            # розтягує річ у смуги
+            k_ = float(np.clip(np.median(ks), 1.0, 1.15))
             cs = np.array(cs)
             cx, cy = np.interp(Q[:, 2], zs, cs[:, 0]), np.interp(Q[:, 2], zs, cs[:, 1])
             Q[:, 0] = cx + (Q[:, 0] - cx) * k_

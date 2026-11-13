@@ -61,17 +61,21 @@ ZONY = {
     # частини, що не гнуться (ваги — до середнього по своєму боку); zaminiuie — пілотні деталі геть
     "чоботи": dict(komirka="взуття", kistky=("calf_", "foot_", "ball_"),
                    kadr=("pelvis", "thigh_", "calf_", "foot_", "ball_", "hand_") + PALTSI,
+                   shkira_kistky=("thigh_",),
                    kanal=2, zavzhdy=("foot_", "ball_"), tryk=12000, tex=2048, pidhin="нога",
                    pid_kistky=("calf_",), vidstup=(0.0, 0.05)),
     "наручі": dict(komirka="рукавиці", kistky=("lowerarm_", "hand_"),
                    kadr=("upperarm_", "lowerarm_", "hand_") + PALTSI,
+                   shkira_kistky=("hand_", "upperarm_") + PALTSI,
                    kanal=3, zavzhdy=(), tryk=9000, tex=2048, dzerkalo=True, bik="_r", pidhin="шкіра",
                    pid_kistky=("lowerarm_",), vidstup=(0.03, 0.04)),
     "наплічники": dict(komirka="тіло", kistky=("clavicle_", "upperarm_", "spine_01", "spine_02", "spine_03", "neck_01"),
+                       shkira_kistky=("head", "lowerarm_", "hand_") + PALTSI,
                        kadr=None, kanal=None, zavzhdy=(), tryk=18000, tex=4096,
                        tverdi=("clavicle_", "upperarm_"), tverdist=0.6),
     "пояс": dict(komirka="тіло", kistky=("pelvis", "spine_01", "spine_02", "thigh_"),
                  kadr=("pelvis", "spine_01", "spine_02", "thigh_", "lowerarm_", "hand_") + PALTSI,
+                 shkira_kistky=("lowerarm_", "hand_", "spine_02") + PALTSI,
                  kanal=None, zavzhdy=(), tryk=16000, tex=4096, zaminiuie=("набедреник",)),
 }
 Z = ZONY[ZONA]
@@ -221,12 +225,26 @@ for i, p in enumerate(sm.polygons):
 t_px = pikseli(kartynka(ss.material_slots[0].material))[::8, ::8].reshape(-1, 3)
 t_shk = np.median(t_px[t_px.max(1) > 0.12], 0)
 blyzki = vydno & (np.linalg.norm(barva(s_k) - barva(t_shk), axis=1) < 0.14) & (s_k.sum(1) > 0.3 * t_shk.sum())
-shk = np.median(s_k[blyzki], 0) if blyzki.sum() > 500 else t_shk
 jas = s_k.sum(1)
-ne_shkira = (np.linalg.norm(barva(s_k) - barva(shk), axis=1) > BARVA) | (jas < 0.35 * shk.sum())
-shkira = vydno & ~ne_shkira
-log("зовнішніх граней %d з %d; шкіра тіла %s, скульпту %s, граней шкіри %d"
-    % (int(vydno.sum()), n, t_shk.round(3), shk.round(3), int(shkira.sum())))
+# шкіра в скульпті буває двох тонів: наш (зелений) і перемальований генератором поза зоною
+# (рожеве плече над наручем) — обидва шкіра. Тон: барва поруч із центром І схожа яскравість
+# (ремінь тієї ж барви, що рожева шкіра, — темніший).
+tsentry_shk, lysh = [], blyzki.copy()
+for _ in range(4):
+    if lysh.sum() < max(500, 0.04 * blyzki.sum()):
+        break
+    c_ = np.median(s_k[lysh], 0)
+    tsentry_shk.append(c_)
+    lysh &= np.linalg.norm(barva(s_k) - barva(c_), axis=1) > 0.05
+if not tsentry_shk:
+    tsentry_shk = [t_shk]
+shkira_k = np.zeros(n, bool)
+for c_ in tsentry_shk:
+    shkira_k |= (np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA) & (jas > 0.45 * c_.sum()) & (jas < 2.2 * c_.sum())
+ne_shkira = ~shkira_k
+shkira = vydno & shkira_k
+log("зовнішніх граней %d з %d; шкіра тіла %s, тони шкіри скульпту %s, граней шкіри %d"
+    % (int(vydno.sum()), n, t_shk.round(3), [c_.round(3).tolist() for c_ in tsentry_shk], int(shkira.sum())))
 
 plosh0 = np.array([p.area for p in sm.polygons])
 po_rebru = {}
@@ -281,44 +299,117 @@ for dzerkalo, bik in varianty:
           np.median(khmara[:, 1]) - np.median(P[:, 1]), z_nyz - P[:, 2].min()]
     ish = np.nonzero(shkira)[0]
     ish = ish[rng.choice(len(ish), min(8000, len(ish)), replace=False)]
-    for mezha in [0.08] * 10 + [0.04] * 15 + [0.02] * 20 + [0.01] * 20:
-        Q = tsentry(P)[ish]
-        X, Y = [], []
-        for q in Q:
-            loc, _n, _f, d = bvh_k.find_nearest(Vector(q))
-            if d < mezha:
-                X.append(q)
-                Y.append(loc[:])
-        if len(X) < 200:
-            break
-        s_, R, t = podibnist(np.array(X), np.array(Y))
-        P = s_ * (P @ R.T) + t
+    # у кадрі буває зайве (бік тулуба поруч із рукою) — центр кадру не збігається з центром
+    # кінцівки; тож суміщення пробується з кількох зсувів по X, лишається найщільніше
+    najkr = None
+    for zsuv in ((0.0, -0.08, 0.08, -0.16, 0.16) if Z["kadr"] is not None else (0.0,)):
+        Pz = P + [zsuv, 0, 0]
+        masht = 1.0
+        for mezha in [0.08] * 10 + [0.04] * 15 + [0.02] * 20 + [0.01] * 20:
+            Q = Pz[tri[ish]].mean(1)
+            X, Y = [], []
+            for q in Q:
+                loc, _n, _f, d = bvh_k.find_nearest(Vector(q))
+                if d < mezha:
+                    X.append(q)
+                    Y.append(loc[:])
+            if len(X) < 200:
+                break
+            s_, R, t = podibnist(np.array(X), np.array(Y))
+            if not 0.88 < masht * s_ < 1.12:    # масштаб не тікає: інакше все стискається в точку
+                s_, R, t = podibnist(np.array(X), np.array(Y), False)
+            masht *= s_
+            Pz = s_ * (Pz @ R.T) + t
+        if najkr is None or len(X) > najkr[0]:
+            najkr = (len(X), Pz, zsuv)
+    P = najkr[1]
+    X = range(najkr[0])
+    if Z["kadr"] is not None:
+        log("початковий зсув по X: %+.2f м" % najkr[2])
     C = tsentry(P)
     vid = np.array([bvh_k.find_nearest(Vector(q))[3] for q in C[ish]])
     log("%sсуміщення за шкірою: пар %d з %d, медіана %.1f мм, 90 %%: %.1f мм"
         % ("дзеркало, " if dzerkalo else "", len(X), len(ish), np.median(vid) * 1000, np.percentile(vid, 90) * 1000))
+    if Z.get("pidhin") == "шкіра":
+        # у кадрі одна кінцівка: досумістити її всю жорстко за шкірою біля речі (кисть, лікоть)
+        bf0 = np.array([bvh_t.find_nearest(Vector(c))[2] for c in C[ish]])
+        k0 = t_kistka[t_hran_v[bf0]]
+        js = ish[np.array([k.startswith(Z["kistky"]) for k in k0])]
+        if len(js) > 300:
+            G0 = C[js]
+            G = G0.copy()
+            for mezha in [0.03] * 10 + [0.015] * 15 + [0.008] * 15:
+                X, Y = [], []
+                for q in G:
+                    loc, _n, _f, d = bvh_k.find_nearest(Vector(q))
+                    if d < mezha:
+                        X.append(q)
+                        Y.append(loc[:])
+                if len(X) < 100:
+                    break
+                _s, R, t = podibnist(np.array(X), np.array(Y), False)
+                G = G @ R.T + t
+            _s, R, t = podibnist(G0, G, False)
+            P = P @ R.T + t
+            C = tsentry(P)
+            log("  досуміщення за шкірою зони: %d точок, зсув %.1f мм" % (len(js), np.median(np.linalg.norm(G - G0, axis=1)) * 1000))
     # річ: зв'язні шматки «не шкіри» на кістках зони
     plosh = plosh0 * (np.linalg.norm(P[tri[:, 1]] - P[tri[:, 0]], axis=1).mean()
                       / max(1e-9, np.linalg.norm(P_SYRE[tri[:, 1]] - P_SYRE[tri[:, 0]], axis=1).mean())) ** 2
-    bf = np.array([bvh_t.find_nearest(Vector(c))[2] for c in C])
+    bf = np.zeros(n, int)
+    dist = np.zeros(n, np.float32)
+    for i in range(n):
+        _loc, _nr, bf[i], dist[i] = bvh_t.find_nearest(Vector(C[i]))
     kist = t_kistka[t_hran_v[bf]]
+    # тони шкіри — з самого скульпту, з місць, де речі напевно немає (`shkira_kistky`: кисть і
+    # плече для наруча, стегна для чобіт). Барва наперед невідома: генератор малює кисть
+    # зеленішою, плече — рожевим; за дотиком до тіла теж не вгадати — річ буває впритул.
+    na_tili = vydno & (dist < 0.025) & np.array([k.startswith(Z["shkira_kistky"]) for k in kist]) & (jas > 0.25)
+    tony, lysh = [], na_tili.copy()
+    for _ in range(4):
+        if lysh.sum() < max(300, 0.15 * na_tili.sum()):
+            break
+        c_ = np.median(s_k[lysh], 0)
+        tony.append(c_)
+        lysh &= np.linalg.norm(barva(s_k) - barva(c_), axis=1) > 0.05
+    shk2 = np.zeros(n, bool)
+    for c_ in tony:
+        shk2 |= (np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA) & (jas > 0.45 * c_.sum()) & (jas < 2.2 * c_.sum())
+    log("тони шкіри: %s" % [c_.round(2).tolist() for c_ in tony])
+    shk_m = np.zeros(n, bool)                # «м'яко схоже на шкіру» — для граней упритул до тіла
+    for c_ in tony:
+        shk_m |= (np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA * 1.7) & (jas > 0.3 * c_.sum()) & (jas < 3.0 * c_.sum())
+    kandydat = (~shk2 & (dist > 0.006)) | (~shk_m & (dist > 0.002)) | (dist > 0.02)
     u_zoni = np.array([k.startswith(Z["kistky"]) for k in kist])
     # грань речі має лежати біля кісток зони (вага > 0,15): генератор буває перемальовує шкіру
     # поза зоною (плече над наручем стало рожевим) — це «не шкіра», але й не річ
     zk_i = [i for i, g_ in enumerate(hrupy) if g_.startswith(Z["kistky"])]
     bilia = W[:, zk_i].sum(1)[t_hran_v[bf]] > 0.15
     rich = np.zeros(n, bool)
-    for sh in ostrivtsi(vydno & ne_shkira & bilia):
+    for sh in ostrivtsi(vydno & kandydat & bilia):
         if plosh[sh].sum() > 0.003 and (plosh[sh] * u_zoni[sh]).sum() > 0.6 * plosh[sh].sum():
             rich[sh] = True
     for sh in list(ostrivtsi(vydno & ~rich)):       # дірки < 10 см² усередині речі
         if plosh[sh].sum() < 0.001:
             rich[sh] = True
+    # тонкі язики (смужки затіненої шкіри при краї речі): звузити на 3 кільця граней, лишити
+    # великі шматки, розширити назад у межах початкового
+    vuz = rich.copy()
+    for _ in range(3):
+        vuz = vuz & np.array([all(vuz[u] for u in sus[i]) if vuz[i] else False for i in range(n)])
+    yadro = np.zeros(n, bool)
+    for sh in ostrivtsi(vuz):
+        if plosh[sh].sum() > 0.002:
+            yadro[sh] = True
+    for _ in range(4):
+        dod = [u for i in np.nonzero(yadro)[0] for u in sus[i] if rich[u] and not yadro[u]]
+        yadro[dod] = True
+    rich = yadro
     log("річ: %d граней, %.2f м²" % (int(rich.sum()), float(plosh[rich].sum())))
     # місцева підгонка: гомілка вдягненого скульпту стоїть не там, де наша (суміщено за стегнами),
     # а шкіри під чоботом немає. Халява — довкола осі нашої гомілки, підошва — під нашою стопою,
     # носок — туди ж, куди наші пальці. Для наручів — жорстке досуміщення за шкірою кисті й ліктя.
-    for zn in ((1, -1) if Z.get("pidhin") else ()):
+    for zn in ((1, -1) if Z.get("pidhin") == "нога" else ()):
         bk = "_l" if zn > 0 else "_r"
         fi = np.nonzero(rich & (C[:, 0] * zn > 0))[0]
         if len(fi) < 200:
@@ -327,7 +418,7 @@ for dzerkalo, bik in varianty:
         L = BV[np.array([k.startswith(Z["kistky"]) and k.endswith(bk) for k in t_kistka])]
         Q0 = P[vi].copy()
         Q = Q0.copy()
-        if Z["pidhin"] == "нога":
+        if True:
             for _ in range(8):
                 X, Y = [], []
                 z0 = max(L[:, 2].min() + 0.14, Q[:, 2].min() + 0.14)
@@ -347,29 +438,38 @@ for dzerkalo, bik in varianty:
                     Y += [[cb[0], cb[1], ca[2] + dz], [ns_l[0], ns_l[1], ns_q[2] + dz]]
                 _s, R, t = podibnist(np.array(X), np.array(Y), False)
                 Q = Q @ R.T + t
-        else:
-            ms = shkira & np.array([k.startswith(Z["kadr"]) and k.endswith(bk) for k in kist]) & (C[:, 0] * zn > 0)
-            if ms.sum() > 300:
-                js = np.nonzero(ms)[0]
-                js = js[rng.choice(len(js), min(3000, len(js)), replace=False)]
-                G0 = C[js]
-                G = G0.copy()
-                for mezha in [0.03] * 10 + [0.015] * 15 + [0.008] * 10:
-                    X, Y = [], []
-                    for q in G:
-                        loc, _n, _f, d = bvh_k.find_nearest(Vector(q))
-                        if d < mezha:
-                            X.append(q)
-                            Y.append(loc[:])
-                    if len(X) < 100:
-                        break
-                    _s, R, t = podibnist(np.array(X), np.array(Y), False)
-                    G = G @ R.T + t
-                _s, R, t = podibnist(G0, G, False)
-                Q = Q0 @ R.T + t
         P[vi] = Q
         log("  підгонка %s%s: зсув медіана %.1f мм, найбільший %.1f мм"
             % (Z["pidhin"], bk, np.median(np.linalg.norm(Q - Q0, axis=1)) * 1000, np.linalg.norm(Q - Q0, axis=1).max() * 1000))
+    # річ має охоплювати НАШУ кінцівку: рука вдягненого скульпту буває тонша за нашу, і наруч
+    # опинявся всередині передпліччя. Розширити річ від осі кінцівки, доки її внутрішній
+    # радіус не стане більшим за радіус кінцівки + 4 мм.
+    for zn in ((1, -1) if Z.get("pid_kistky") else ()):
+        bk = "_l" if zn > 0 else "_r"
+        fi = np.nonzero(rich & (tsentry(P)[:, 0] * zn > 0))[0]
+        if len(fi) < 200:
+            continue
+        vi = np.unique(tri[fi])
+        Q = P[vi]
+        L = BV[np.array([k.startswith(Z["pid_kistky"]) and k.endswith(bk) for k in t_kistka])]
+        zs, cs, ks = [], [], []
+        for z_ in np.arange(max(Q[:, 2].min(), L[:, 2].min()) + 0.01, min(Q[:, 2].max(), L[:, 2].max()), 0.015):
+            a_, b_ = Q[np.abs(Q[:, 2] - z_) < 0.01], L[np.abs(L[:, 2] - z_) < 0.01]
+            if len(a_) > 20 and len(b_) > 8:
+                c_ = b_[:, :2].mean(0)
+                rl = np.percentile(np.linalg.norm(b_[:, :2] - c_, axis=1), 95)
+                rp = np.percentile(np.linalg.norm(a_[:, :2] - c_, axis=1), 15)
+                zs.append(z_)
+                cs.append(c_)
+                ks.append((rl + 0.004) / max(rp, 1e-3))
+        if len(ks) > 3:
+            k_ = float(np.clip(np.percentile(ks, 75), 1.0, 1.4))
+            cs = np.array(cs)
+            cx, cy = np.interp(Q[:, 2], zs, cs[:, 0]), np.interp(Q[:, 2], zs, cs[:, 1])
+            Q[:, 0] = cx + (Q[:, 0] - cx) * k_
+            Q[:, 1] = cy + (Q[:, 1] - cy) * k_
+            P[vi] = Q
+            log("  охоплення%s: розширено від осі в %.2f раза" % (bk, k_))
     # високополігональна річ — з текстурою скульпту (джерело запікання)
     bm = bmesh.new()
     bm.from_mesh(sm)
@@ -462,7 +562,21 @@ nyz.data.materials.append(mat)
 sc = bpy.context.scene
 sc.render.engine = "CYCLES"
 sc.cycles.samples = 1
+def comfy_zainiatyi():
+    """ComfyUI щось рахує — відеопам'ять його: запікання на відеокарті валить йому скульпт
+    (нестача пам'яті, 13.11.2026) і саме мовчки дає чорне."""
+    try:
+        import json
+        import urllib.request
+        q = json.load(urllib.request.urlopen("http://127.0.0.1:8188/queue", timeout=3))
+        return bool(q["queue_running"] or q["queue_pending"])
+    except Exception:
+        return False
+
+
 try:
+    if comfy_zainiatyi():
+        raise RuntimeError("ComfyUI рахує — відеокарту не чіпаємо")
     pr = bpy.context.preferences.addons["cycles"].preferences
     pr.compute_device_type = "OPTIX"
     pr.get_devices()

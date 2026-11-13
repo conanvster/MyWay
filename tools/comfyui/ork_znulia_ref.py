@@ -94,9 +94,10 @@ INSTR = {
         "Put the bracer of the orc from the second image on the forearm of the arm from the first "
         "image: a heavy bracer of dark leather and iron plates with rows of rivets, engraved iron "
         "bands, leather straps with buckles and lacing, and a short fur trim at the elbow end, "
-        "covering the forearm from the wrist to just below the elbow. Keep the bare green elbow, "
-        "upper arm, hand and fingers, the pose and the camera of the first image exactly the "
-        "same. No glove, no other armor. Plain light grey studio background, soft even shadowless "
+        "covering the forearm from the wrist to just below the elbow. This is the arm of a green "
+        "orc: the elbow, upper arm, hand, fingers and body keep exactly the same olive green skin "
+        "as in the first image, no pink or human skin anywhere. Keep the pose and the camera of "
+        "the first image exactly the same. No glove, no other armor. Plain light grey studio background, soft even shadowless "
         "light, photorealistic, sharp detailed leather, metal and stitching."),
     "зона-наплічники-орк": (
         "Put the shoulder armor of the orc from the second image on the bald orc from the first "

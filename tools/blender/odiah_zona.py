@@ -57,6 +57,7 @@ ZONY = {
     # pidhin — місцева підгонка речі («нога»: за віссю гомілки й стопою; «шкіра»: за шкірою поруч);
     # pid_kistky, vidstup — кінцівка під річчю ховається за висотою: вершини цих кісток між низом
     # речі + vidstup[0] і її верхом − vidstup[1] (річ охоплює кінцівку цілком);
+    # nazovni — тіло під річчю видно, тож річ виштовхується назовні від шкіри;
     # dzerkalo — у кадрі одна кінцівка (бік `bik`), друга робиться дзеркалом; tverdi/tverdist —
     # частини, що не гнуться (ваги — до середнього по своєму боку); zaminiuie — пілотні деталі геть
     "чоботи": dict(komirka="взуття", kistky=("calf_", "foot_", "ball_"),
@@ -66,21 +67,23 @@ ZONY = {
                    pid_kistky=("calf_",), vidstup=(0.0, 0.05)),
     "наручі": dict(komirka="рукавиці", kistky=("lowerarm_", "hand_"),
                    kadr=("upperarm_", "lowerarm_", "hand_") + PALTSI,
-                   shkira_kistky=("hand_", "upperarm_") + PALTSI,
+                   shkira_kistky=("upperarm_",) + PALTSI, tsil_vse=True,   # кисть не годиться: на ній край наруча
                    kanal=3, zavzhdy=(), tryk=9000, tex=2048, dzerkalo=True, bik="_r", pidhin="шкіра",
                    pid_kistky=("lowerarm_",), vidstup=(0.03, 0.04)),
     "наплічники": dict(komirka="тіло", kistky=("clavicle_", "upperarm_", "spine_01", "spine_02", "spine_03", "neck_01"),
-                       shkira_kistky=("head", "lowerarm_", "hand_") + PALTSI,
+                       shkira_kistky=("lowerarm_", "hand_") + PALTSI,   # голова не годиться: біля шиї хутро
                        kadr=None, kanal=None, zavzhdy=(), tryk=18000, tex=4096,
-                       tverdi=("clavicle_", "upperarm_"), tverdist=0.6),
+                       tverdi=("clavicle_", "upperarm_"), tverdist=0.6, nazovni=True,
+                       gladyty=2, stinka=0.012),      # тонкі ремені: згладжування й тонка стінка їх рвуть
     "пояс": dict(komirka="тіло", kistky=("pelvis", "spine_01", "spine_02", "thigh_"),
                  kadr=("pelvis", "spine_01", "spine_02", "thigh_", "lowerarm_", "hand_") + PALTSI,
                  shkira_kistky=("lowerarm_", "hand_", "spine_02") + PALTSI,
-                 kanal=None, zavzhdy=(), tryk=16000, tex=4096, zaminiuie=("набедреник",)),
+                 kanal=None, zavzhdy=(), tryk=16000, tex=4096, zaminiuie=("набедреник",), nazovni=True,
+                 gladyty=4),
 }
 Z = ZONY[ZONA]
 BARVA = arg("--барва", float, 0.07)
-STINKA = arg("--стінка", float, 0.008)
+STINKA = arg("--стінка", float, Z.get("stinka", 0.008))
 VOKSEL = arg("--воксель", float, 0.003)
 ROZMIR = arg("--текстура", int, Z["tex"])
 
@@ -290,12 +293,18 @@ for dzerkalo, bik in varianty:
     if NYZ >= 0:
         mk &= BV[:, 2] > NYZ
     khmara = BV[mk]
+    if Z.get("tsil_vse"):                    # у кадрі руки є ще бік тулуба й стегно — теж опора
+        mk = np.ones(len(BV), bool)
     hran_k = np.nonzero(mk[t_hran_v])[0]
     bvh_k = BVHTree.FromPolygons([Vector(p) for p in BV], [tuple(tm.polygons[f].vertices) for f in hran_k])
     z_nyz = NYZ if NYZ >= 0 else khmara[:, 2].min()
     z_verh = VERH if VERH else khmara[:, 2].max()
     P = P * ((z_verh - z_nyz) / (P[:, 2].max() - P[:, 2].min()))
-    P += [(khmara[:, 0].max() + khmara[:, 0].min()) / 2 - (P[:, 0].max() + P[:, 0].min()) / 2,
+    # центр кадру по X (м, у позі скульпту; для дзеркала — з протилежним знаком), якщо в кадрі
+    # не лише кінцівка: тоді центр хмари кісток кадру — не центр скульпту
+    tx = arg("--центр-x", float, 9.0)
+    tsx = (-tx if dzerkalo else tx) if tx < 8 else (khmara[:, 0].max() + khmara[:, 0].min()) / 2
+    P += [tsx - (P[:, 0].max() + P[:, 0].min()) / 2,
           np.median(khmara[:, 1]) - np.median(P[:, 1]), z_nyz - P[:, 2].min()]
     ish = np.nonzero(shkira)[0]
     ish = ish[rng.choice(len(ish), min(8000, len(ish)), replace=False)]
@@ -372,14 +381,22 @@ for dzerkalo, bik in varianty:
         c_ = np.median(s_k[lysh], 0)
         tony.append(c_)
         lysh &= np.linalg.norm(barva(s_k) - barva(c_), axis=1) > 0.05
+    # «червонуватість» r/g: коричнева шкіра ременя на світлі близька барвою до оливкової шкіри
+    # орка, але червоного в ній помітно більше, ніж зеленого (r/g 1,5 проти 1,05)
+    rg = s_k[:, 0] / np.maximum(s_k[:, 1], 1e-3)
+    CHERV = arg("--червонуватість", float, 0.18)
     shk2 = np.zeros(n, bool)
     for c_ in tony:
-        shk2 |= (np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA) & (jas > 0.45 * c_.sum()) & (jas < 2.2 * c_.sum())
+        shk2 |= ((np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA) & (jas > 0.45 * c_.sum()) & (jas < 2.2 * c_.sum())
+                 & (np.abs(rg - c_[0] / c_[1]) < CHERV))
     log("тони шкіри: %s" % [c_.round(2).tolist() for c_ in tony])
     shk_m = np.zeros(n, bool)                # «м'яко схоже на шкіру» — для граней упритул до тіла
     for c_ in tony:
-        shk_m |= (np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA * 1.7) & (jas > 0.3 * c_.sum()) & (jas < 3.0 * c_.sum())
-    kandydat = (~shk2 & (dist > 0.006)) | (~shk_m & (dist > 0.002)) | (dist > 0.02)
+        shk_m |= ((np.linalg.norm(barva(s_k) - barva(c_), axis=1) < BARVA * 1.4) & (jas > 0.3 * c_.sum()) & (jas < 3.0 * c_.sum())
+                  & (np.abs(rg - c_[0] / c_[1]) < CHERV))
+    # лише за кольором: відстань до нашого тіла тут не ознака — стегна й живіт вдягненого скульпту
+    # місцями відстоять від наших на 2–4 см, і «далеке» тягло в річ клапті шкіри
+    kandydat = ~shk_m | (~shk2 & (dist > 0.012))
     u_zoni = np.array([k.startswith(Z["kistky"]) for k in kist])
     # грань речі має лежати біля кісток зони (вага > 0,15): генератор буває перемальовує шкіру
     # поза зоною (плече над наручем стало рожевим) — це «не шкіра», але й не річ
@@ -392,6 +409,18 @@ for dzerkalo, bik in varianty:
     for sh in list(ostrivtsi(vydno & ~rich)):       # дірки < 10 см² усередині речі
         if plosh[sh].sum() < 0.001:
             rich[sh] = True
+    if "--діагностика" in A:                 # де губляться грані: коробка x0 x1 y0 y1 z0 z1 (м)
+        kx = [float(x) for x in A[A.index("--діагностика") + 1:A.index("--діагностика") + 7]]
+        vk = ((C[:, 0] > kx[0]) & (C[:, 0] < kx[1]) & (C[:, 1] > kx[2]) & (C[:, 1] < kx[3])
+              & (C[:, 2] > kx[4]) & (C[:, 2] < kx[5]))
+        log("діагностика: у коробці %d граней; зовнішніх %d; не шкіра (м'яко) %d; кандидатів %d; біля кісток зони %d; у речі %d"
+            % (vk.sum(), (vk & vydno).sum(), (vk & vydno & ~shk_m).sum(), (vk & vydno & kandydat).sum(),
+               (vk & vydno & kandydat & bilia).sum(), (vk & rich).sum()))
+        kk_, cc_ = np.unique(kist[vk & vydno & kandydat], return_counts=True)
+        log("діагностика: кістки кандидатів %s" % dict(zip(kk_.tolist(), cc_.tolist())))
+        log("діагностика: медіана кольору кандидатів %s, усіх зовнішніх %s"
+            % (np.median(s_k[vk & vydno & kandydat], 0).round(2) if (vk & vydno & kandydat).any() else None,
+               np.median(s_k[vk & vydno], 0).round(2)))
     # тонкі язики (смужки затіненої шкіри при краї речі): звузити на 3 кільця граней, лишити
     # великі шматки, розширити назад у межах початкового
     vuz = rich.copy()
@@ -470,6 +499,17 @@ for dzerkalo, bik in varianty:
             Q[:, 1] = cy + (Q[:, 1] - cy) * k_
             P[vi] = Q
             log("  охоплення%s: розширено від осі в %.2f раза" % (bk, k_))
+    if Z.get("nazovni"):
+        # тіло під цією річчю не ховається (видно живіт, стегна) — жодна вершина речі не має
+        # бути під шкірою чи ближче 6 мм до неї
+        vi = np.unique(tri[rich])
+        k_ = 0
+        for i in vi:
+            loc, nrm, _f, _d = bvh_t.find_nearest(Vector(P[i]))
+            if (Vector(P[i]) - loc).dot(nrm) < 0.006:
+                P[i] = (loc + nrm * 0.006)[:]
+                k_ += 1
+        log("  назовні: виштовхнуто %d з %d вершин речі" % (k_, len(vi)))
     # високополігональна річ — з текстурою скульпту (джерело запікання)
     bm = bmesh.new()
     bm.from_mesh(sm)
@@ -531,12 +571,13 @@ for v0 in bm.verts:
                 st.append(u)
     shm.append(ost)
 naib = max(len(s_) for s_ in shm)
-for s_ in shm:
-    if len(s_) < 0.05 * naib:
+MALE = 400                                   # дрібний уламок — менш ніж стільки вершин (~35 см²).
+for s_ in shm:                                # Не частка від найбільшого: окремий ремінь на грудях
+    if len(s_) < MALE:                        # малий проти наплічників, але він — річ (13.11.2026)
         bmesh.ops.delete(bm, geom=s_, context="VERTS")
 # згладити перед спрощенням: шпичаки хутра спрощення перетворює на гострі уламки; дрібний
 # рельєф (хутро, пряжки, шви) повернеться картою нормалей із неспрощеного скульпту
-for _ in range(arg("--гладити", int, 10)):
+for _ in range(arg("--гладити", int, Z.get("gladyty", 10))):
     bmesh.ops.smooth_vert(bm, verts=bm.verts, factor=0.5, use_axis_x=True, use_axis_y=True, use_axis_z=True)
 bm.to_mesh(nyz.data)
 bm.free()
@@ -544,12 +585,24 @@ tr = sum(len(p.vertices) - 2 for p in nyz.data.polygons)
 m = nyz.modifiers.new("с", "DECIMATE")
 m.ratio = min(1.0, Z["tryk"] / tr)
 bpy.ops.object.modifier_apply(modifier=m.name)
+if Z.get("nazovni"):
+    # стінка всередину, ремеш і згладжування знову заводять тонкі ремені під шкіру — ще раз назовні
+    NV0 = np.array([v.co[:] for v in nyz.data.vertices])
+    k_ = 0
+    for i, p in enumerate(NV0):
+        loc, nrm, _f, _d = bvh_t.find_nearest(Vector(p))
+        if (Vector(p) - loc).dot(nrm) < 0.006:
+            NV0[i] = (loc + nrm * 0.006)[:]
+            k_ += 1
+    nyz.data.vertices.foreach_set("co", NV0.ravel())
+    nyz.data.update()
+    log("ігрова сітка: виштовхнуто назовні %d з %d вершин" % (k_, len(NV0)))
 bpy.ops.object.shade_smooth()
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
 bpy.ops.object.mode_set(mode="OBJECT")
-log("ігрова сітка: %d → %d трикутників, шматків %d" % (tr, sum(len(p.vertices) - 2 for p in nyz.data.polygons), sum(len(s_) >= 0.05 * naib for s_ in shm)))
+log("ігрова сітка: %d → %d трикутників, шматків %d" % (tr, sum(len(p.vertices) - 2 for p in nyz.data.polygons), sum(len(s_) >= MALE for s_ in shm)))
 
 # ── запікання: колір, нормалі, маска влучань ─────────────────────────────
 mat = bpy.data.materials.new("скульпт-одяг-%s" % ZONA)
@@ -738,6 +791,9 @@ Wo = np.zeros((len(NV), W.shape[1]), np.float32)
 for i, p in enumerate(NV):
     bik = "_l" if p[0] > 0 else "_r"
     for _co, j, d_ in kd.find_n(p, 8):
+        if Z.get("nazovni"):                # річ на відкритому тілі (ремені): ваги самої шкіри під нею,
+            Wo[i] += W[j] / (d_ + 0.005)    # інакше в русі ремінь тоне в грудях
+            continue
         for b, nm_ in zk.items():
             if nm_.endswith(bik) or not nm_.endswith(("_l", "_r")):
                 Wo[i, b] += W[j, b] / (d_ + 0.005)
@@ -759,7 +815,10 @@ if Z.get("tverdist"):                       # тверда пластина не
     for bik in ("_l", "_r"):
         mt_ = np.array([k.startswith(Z["tverdi"]) and k.endswith(bik) for k in holovna])
         if mt_.any():
-            Wo[mt_] = Wo[mt_] * (1 - Z["tverdist"]) + Wo[mt_].mean(0) * Z["tverdist"]
+            # твердість — лише далеко від шкіри (пластина наплічника); що лежить на шкірі, йде за нею
+            vd = np.array([bvh_t.find_nearest(Vector(p))[3] for p in NV[mt_]])
+            tv = (Z["tverdist"] * np.clip((vd - 0.012) / 0.03, 0, 1))[:, None]
+            Wo[mt_] = Wo[mt_] * (1 - tv) + Wo[mt_].mean(0) * tv
 Wa = Wo[:, akt].astype(np.float64)
 Wa /= np.maximum(Wa.sum(1, keepdims=True), 1e-9)
 Mv = np.einsum("ib,bjk->ijk", Wa, M)

@@ -826,24 +826,70 @@ func _build_bodies() -> void:
 
 ## Поверхня обертання для тіла: `sides` по колу, крок `dy` по висоті,
 ## `radius(a, y)`. З `cut` — без клітинок, що в проході дверей.
+##
+## Біля дверей сітка густа (DOOR_CELL м і по куту, і по висоті), а
+## клітинка вилітає, коли в овалі дверей будь-яка її точка. Була вада
+## (14.11.2026, замовник не зміг зайти): після збільшення дерев 13.11
+## клітинка кори завширшки 15–25 м стала ширша за двері (~10 м), середина
+## жодної в овал не влучала — на вигляд двері є, а тіло суцільне.
+const DOOR_CELL := 1.5
+
+
 func _lathe_faces(faces: PackedVector3Array, sides: int, dy: float, y0: float,
 		y1: float, radius: Callable, cut: bool) -> void:
+	var angles: Array[float] = []
+	for i in sides + 1:
+		angles.append(TAU * float(i) / float(sides))
+	var heights: Array[float] = []
 	var rows := maxi(1, ceili((y1 - y0) / dy))
-	for j in rows:
-		var ya := lerpf(y0, y1, float(j) / float(rows))
-		var yb := lerpf(y0, y1, float(j + 1) / float(rows))
-		for i in sides:
-			var a0 := TAU * float(i) / float(sides)
-			var a1 := TAU * float(i + 1) / float(sides)
-			var mid_a := (a0 + a1) * 0.5
+	for j in rows + 1:
+		heights.append(lerpf(y0, y1, float(j) / float(rows)))
+	if cut:
+		for op: Dictionary in openings:
+			if not op["двері"]:
+				continue
+			var r_ref: float = radius.call(float(op["a"]), float(op["y"]))
+			var half := (float(op["w"]) * 1.6 + 3.0) / maxf(r_ref, 1.0)
+			var many := ceili(half * 2.0 * r_ref / DOOR_CELL)
+			for i in many + 1:
+				angles.append(fposmod(float(op["a"]) - half
+						+ 2.0 * half * float(i) / float(many), TAU))
+			var low := float(op["y"]) - float(op["h"]) - 2.0
+			var high := float(op["y"]) + float(op["h"]) + 2.0
+			var y := low
+			while y <= high:
+				if y > y0 and y < y1:
+					heights.append(y)
+				y += DOOR_CELL
+		angles.sort()
+		heights.sort()
+	for j in heights.size() - 1:
+		var ya := heights[j]
+		var yb := heights[j + 1]
+		if yb - ya < 0.01:
+			continue
+		for i in angles.size() - 1:
+			var a0 := angles[i]
+			var a1 := angles[i + 1]
+			if a1 - a0 < 1e-5:
+				continue
 			var ra: float = radius.call(a0, ya)
 			var rb: float = radius.call(a1, ya)
 			var rc: float = radius.call(a1, yb)
 			var rd: float = radius.call(a0, yb)
-			if cut and in_opening(mid_a, (ya + yb) * 0.5, (ra + rc) * 0.5, true):
+			if cut and _cell_in_door(a0, a1, ya, yb, (ra + rc) * 0.5):
 				continue
 			_quad(faces, _on(ra, a0, ya), _on(rb, a1, ya), _on(rc, a1, yb),
 					_on(rd, a0, yb))
+
+
+## Чи зачіпає клітинка овал дверей: середина або будь-який кут.
+func _cell_in_door(a0: float, a1: float, ya: float, yb: float, r: float) -> bool:
+	for p: Vector2 in [Vector2((a0 + a1) * 0.5, (ya + yb) * 0.5), Vector2(a0, ya),
+			Vector2(a1, ya), Vector2(a0, yb), Vector2(a1, yb)]:
+		if in_opening(p.x, p.y, r, true):
+			return true
+	return false
 
 
 func _on(r: float, a: float, y: float) -> Vector3:

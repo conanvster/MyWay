@@ -19,6 +19,8 @@ var ladder: Dictionary = {}
 ## Скільки міцності в новій зброї (`data/smith.json`); 0 — міцності
 ## немає. Ставить `GameData`, коли прочитав коваля.
 var weapon_durability := 0
+## Місткість торби (`items.json → торба`, 14.11.2026).
+var bag: Dictionary = {}
 
 
 func load_from(raw: Dictionary) -> void:
@@ -26,6 +28,7 @@ func load_from(raw: Dictionary) -> void:
 	affixes = raw.get("афікси", {})
 	trade = raw.get("торгівля", {})
 	ladder = raw.get("грейди", {}).get("до рівня", {})
+	bag = raw.get("торба", {})
 
 
 ## Грейд рівня за драбиною: рівень 30 — це C.
@@ -46,6 +49,40 @@ func base_of(name: String) -> Dictionary:
 
 func kind_of(name: String) -> String:
 	return str(base_of(name).get("вид", ""))
+
+
+## Скільки місць у торбі цієї істоти: основа з даних і те, що вона
+## заробила зачищеними підземеллями (`bag_extra`).
+func bag_room(who: Node) -> int:
+	return int(bag.get("місць", 30)) + int(who.bag_extra)
+
+
+## Скільки місць зайнято: кожна невдягнена поодинока річ і кожен вид
+## складаних, крім грошей (так само їх розкладає вікно речей, `hud._fill_bag`).
+func bag_used(who: Node) -> int:
+	var used := 0
+	for at in who.things.size():
+		if not who.is_worn(at):
+			used += 1
+	for name: String in who.items:
+		if name != "гроші" and int(who.items[name]) > 0:
+			used += 1
+	return used
+
+
+## Чи влізе в торбу: `things` поодиноких і стоси `stacks` (назви). Стос
+## того, що вже є, місця не просить. `freed` — скільки місць звільниться
+## тим самим кроком (віддані в обмін речі, матеріали, що скінчаться).
+func bag_fits(who: Node, things: int, stacks: Array = [], freed := 0) -> bool:
+	var need := things
+	var seen := {}
+	for name: String in stacks:
+		if name == "гроші" or seen.has(name):
+			continue
+		seen[name] = true
+		if int(who.items.get(name, 0)) <= 0:
+			need += 1
+	return need == 0 or bag_used(who) - freed + need <= bag_room(who)
 
 
 ## Складані речі рахуються кількістю, поодинокі — ні.

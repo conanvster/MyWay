@@ -142,7 +142,9 @@ func _ready() -> void:
 	spawner = Spawner.new(creatures, self, data)
 	shop = Shop.new(data)
 	warehouse = Warehouse.new()
+	warehouse.book = data.items
 	trade = Trade.new()
+	trade.book = data.items
 	trade.names = _names
 	summons = Summons.new(creatures, combat, data, spawn, remove)
 	wardens = Wardens.new(creatures, link)
@@ -1390,6 +1392,8 @@ func close_dungeon(at: int) -> void:
 func _shut(at: int, penalty: bool) -> void:
 	var levels := dungeons.levels_of(at)
 	var title := "за святинею %d" % at
+	# Хто був усередині, коли зачистили, — тим і нагорода (торба +2).
+	var inside: Array[int] = []
 	if not levels.is_empty():
 		title = "«%s»" % dungeons.open[levels[0]]["plan"].title
 		var back := _beside_shrine(at)
@@ -1401,6 +1405,7 @@ func _shut(at: int, penalty: bool) -> void:
 					a.global_position.z)
 			if key < 0 or Dungeons.shrine_of(key) != at:
 				continue
+			inside.append(id)
 			a.teleport_to(back, 0.0)
 			link.to_watchers(id, &"client_place",
 					[id, a.global_position, a.facing])
@@ -1438,6 +1443,27 @@ func _shut(at: int, penalty: bool) -> void:
 	for id: int in creatures:
 		if id > 0:
 			link.notice(id, text)
+	if not penalty:
+		_reward_bag(inside)
+
+
+## Зачищене підземелля розширює торбу кожному, хто був усередині
+## (слово замовника 14.11.2026: «зачищене підземелля +2 ячейки —
+## з'являється полоса прокрутки»). Скільки — `items.json → торба`.
+func _reward_bag(ids: Array[int]) -> void:
+	var step := int(data.items.bag.get("за зачищене підземелля", 2))
+	if step <= 0:
+		return
+	for id in ids:
+		var a: Node = creatures.get(id)
+		if a == null:
+			continue
+		a.bag_extra += step
+		link.notice(id, "торба більшає: +%d місця, тепер %d"
+				% [step, data.items.bag_room(a)])
+		print("[торба] %d: +%d за зачищене підземелля, тепер %d"
+				% [id, step, data.items.bag_room(a)])
+		send_things(id)
 
 
 ## Повісити на монстра чинні штрафи світу (Ф7) і, в глибоких рівнях
@@ -1860,7 +1886,8 @@ func send_things(id: int) -> void:
 	var a: Node = creatures.get(id)
 	if a == null or id <= 0:
 		return
-	rpc_id(id, "client_things", _bag_row(a), _stacks_row(a))
+	rpc_id(id, "client_things", _bag_row(a), _stacks_row(a),
+			data.items.bag_room(a))
 
 
 ## Вдягти річ із торби. Номер перевіряє сама істота (`equip`), а слот вона
@@ -3592,9 +3619,9 @@ func client_ground(rows: Array) -> void:
 ## Не просто рядки: щоб річ можна було вдягти натиском, клієнтові
 ## потрібен її НОМЕР у переліку, слот і те, чи вона вже на тілі.
 @rpc("authority", "call_remote", "reliable")
-func client_things(things: Array, stacks: Array) -> void:
+func client_things(things: Array, stacks: Array, room: int = 30) -> void:
 	if hud != null:
-		hud.set_things(things, stacks)
+		hud.set_things(things, stacks, room)
 	# Показ дивиться на гроші, щоб не йти до крамаря з порожньою кишенею.
 	# Віддав усі — стосу «гроші» в торбі немає, і число мусить стати 0.
 	view.money = 0

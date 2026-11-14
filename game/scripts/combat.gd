@@ -101,7 +101,14 @@ func attack(me: int) -> bool:
 	# стосується: у них речей немає.
 	if me > 0 and a.wear_weapon(smith.wear_per_hit()):
 		var broke: Dictionary = smith.break_weapon(a, goods)
-		if not broke.is_empty():
+		if not broke.is_empty() and bool(broke.get("торба повна", false)):
+			for name: String in broke["лишила"]:
+				if ground != null:
+					ground.put_stack(name, int(broke["лишила"][name]),
+							a.global_position, goods)
+			_link.notice(me, "‼ «%s» зламалась — торба повна, на землі: %s"
+					% [broke["назва"], Smith.yield_text(broke["лишила"])])
+		elif not broke.is_empty():
 			_link.notice(me, "‼ «%s» зламалась — у торбі: %s"
 					% [broke["назва"], Smith.yield_text(broke["лишила"])])
 			_link.report(me, "[бій] %d зламав зброю %s, лишилось %s"
@@ -623,8 +630,15 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 
 ## Покласти здобуте. Складані речі йдуть кількістю, поодинокі — кожна
 ## окремо, і на кожну кидаються свої афікси (П-83).
+##
+## Торба повна (14.11.2026) — здобуте лягає на землю біля переможця, і
+## йому кажуть «торба повна»: підняти можна, коли звільнить місце.
 func _give(me: int, who: Node, name: String, count: int) -> void:
 	if not goods.has(name) or goods.is_stackable(name):
+		if not goods.bag_fits(who, 0, [name]) and ground != null:
+			ground.put_stack(name, count, who.global_position, goods)
+			_link.notice(me, "торба повна: %s ×%d лежить на землі" % [name, count])
+			return
 		who.give_item(name, count)
 		_link.notice(me, "здобуто: %s ×%d" % [name, count])
 		return
@@ -632,12 +646,20 @@ func _give(me: int, who: Node, name: String, count: int) -> void:
 		var item: Item = goods.make(name)
 		if item == null:
 			continue
+		# Порожня комірка тіла бере річ і з повної торби: вдягнене місця
+		# в торбі не займає.
+		var wears_free := item.slot != "" and ItemBook.slots_for(item.slot) \
+				.any(func(place: String) -> bool: return not who.gear.has(place))
+		if not wears_free and not goods.bag_fits(who, 1) and ground != null:
+			ground.put_thing(item, who.global_position)
+			_link.notice(me, "торба повна: %s лежить на землі" % item.title())
+			continue
 		var at: int = who.add_thing(item)
 		_link.notice(me, "здобуто: %s" % item.title())
 		# Порожній слот заповнюється сам: новачкові не треба шукати, де
 		# вдягається перша в житті куртка. Зайняте не чіпаємо — вибір
 		# лишається за гравцем.
-		if item.slot != "" and not who.gear.has(item.slot):
+		if wears_free:
 			who.equip(at)
 			_link.notice(me, "вдягнено: %s" % item.title())
 

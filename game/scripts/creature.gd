@@ -134,6 +134,9 @@ var warehouse_items: Dictionary = {}
 var warehouse_things: Array[Item] = []
 ## Що вдягнене: слот -> номер у `things`.
 var gear: Dictionary = {}
+## Додаткові місця в торбі понад основу з даних — за зачищені підземелля
+## (14.11.2026, `ItemBook.bag_room`). Зберігається в базі.
+var bag_extra := 0
 
 ## Вивчені скіли: ключ -> рівень усередині грейду (П-106).
 var learned: Dictionary = {}

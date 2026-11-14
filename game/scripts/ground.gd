@@ -129,11 +129,20 @@ func nearest(at: Vector3, reach: float = REACH) -> int:
 ## Підняти найближчу річ: поодинока лягає в торбу як була, стос —
 ## увесь, до того, що вже є (складається). Повертає {"назва",
 ## "скільки"} або порожньо, якщо поруч нічого.
-func pick_up(who: Node) -> Dictionary:
+##
+## `book` дана — спершу перевіряє місце в торбі: не влазить — річ лежить
+## далі, а у відповіді {"торба повна": true, "назва"} (14.11.2026).
+func pick_up(who: Node, book: ItemBook = null) -> Dictionary:
 	var key := nearest(who.global_position)
 	if key == 0:
 		return {}
 	var row: Dictionary = lying[key]
+	if book != null:
+		var single: bool = row["річ"] != null
+		if not book.bag_fits(who, 1 if single else 0,
+				[] if single else [str(row["назва"])]):
+			return {"торба повна": true, "назва": row["назва"],
+					"скільки": row["скільки"]}
 	lying.erase(key)
 	changed = true
 	if row["річ"] != null:

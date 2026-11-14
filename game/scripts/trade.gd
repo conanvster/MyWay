@@ -32,6 +32,8 @@ var _invites: Dictionary = {}
 ## Імена персонажів за номером — той самий словник, що веде світ. У
 ## пробі може бути порожній: тоді «гравець N».
 var names: Dictionary = {}
+## Книга речей — для місткості торби («торба повна», 14.11.2026).
+var book: ItemBook = null
 
 
 func _name(id: int) -> String:
@@ -201,6 +203,20 @@ func _swap(id_a: int, a: Node, id_b: int, b: Node) -> String:
 			if int(who.items.get(name, 0)) < int(side["стоси"][name]):
 				return "%s уже не має стільки «%s»" % [title, name]
 
+	# Торба повна (14.11.2026): кожен мусить умістити те, що отримує, —
+	# з урахуванням місць, які звільнить віддане.
+	if book != null:
+		for pair: Array in [[_deals[id_b], a, _deals[id_a]], [_deals[id_a], b, _deals[id_b]]]:
+			var gets: Dictionary = pair[0]
+			var who: Node = pair[1]
+			var gives: Dictionary = pair[2]
+			var freed: int = (gives["речі"] as Array).size()
+			for name: String in gives["стоси"]:
+				if name != "гроші" and int(gives["стоси"][name]) >= int(who.items.get(name, 0)):
+					freed += 1
+			if not book.bag_fits(who, (gets["речі"] as Array).size(),
+					(gets["стоси"] as Dictionary).keys(), freed):
+				return "у %s торба повна" % _name(id_a if who == a else id_b)
 	var a_gives := _pull(_deals[id_a], a)
 	var b_gives := _pull(_deals[id_b], b)
 	_push(a_gives, b)

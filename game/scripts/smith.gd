@@ -151,6 +151,13 @@ func forge(who: Node, base: String, book: ItemBook) -> String:
 	var item: Item = book.make(base)
 	if item == null:
 		return "%s не кується" % base
+	# Скінчиться стос матеріалу — звільнить місце під скуте.
+	var freed := 0
+	for name: String in needs:
+		if int(needs[name]) >= int(who.items.get(name, 0)):
+			freed += 1
+	if not book.bag_fits(who, 1, [], freed):
+		return "торба повна"
 	for name: String in needs:
 		who.take_item(name, int(needs[name]))
 	who.add_thing(item)
@@ -195,10 +202,14 @@ func break_weapon(who: Node, book: ItemBook) -> Dictionary:
 		return {}
 	var item: Item = who.things[at]
 	var left := break_yield(item, book)
+	# Торба повна (14.11.2026) — зброя однаково ламається, а матеріали
+	# кладе на землю той, хто кликав (`combat`): ковалеві земля невідома.
+	var full := not book.bag_fits(who, 0, left.keys())
 	who.drop_thing(at)
-	for name: String in left:
-		who.give_item(name, int(left[name]))
-	return {"назва": item.title(), "лишила": left}
+	if not full:
+		for name: String in left:
+			who.give_item(name, int(left[name]))
+	return {"назва": item.title(), "лишила": left, "торба повна": full}
 
 
 ## Як показати, що лишилось: «залізо ×1, рунна есенція D ×1».

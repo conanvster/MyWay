@@ -98,6 +98,16 @@ cd ~/гра-lineage
 sudo -u postgres psql -d myway < db/migration-appearance.sql
 ```
 
+### Місця в торбі (14.11.2026)
+
+Стовпець `bag_extra` — місця понад основу (30) за зачищені підземелля.
+Без нього розширена торба живе лише до перезапуску сервера.
+
+```
+cd ~/гра-lineage
+sudo -u postgres psql -d myway < db/migration-bag.sql
+```
+
 Кожна закінчується рядком `Done!`; без нього — зупинилась на помилці.
 Повторний запуск безпечний (`ADD COLUMN IF NOT EXISTS`). Після обох —
 перезапустити сервер гри.

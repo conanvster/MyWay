@@ -733,6 +733,12 @@ const DOLL_PLACES := {
 var _things_box: WindowBox
 var _body_cells: Dictionary = {}
 var _bag_cells: Array = []
+## Сітка торби з прокруткою (14.11.2026: «зачищене підземелля +2 ячейки —
+## з'являється полоса прокрутки»): видно BAG_ROWS рядів, комірок —
+## скільки місць у торбі; смуга з'являється, щойно рядів більше.
+var _pack_grid: Dictionary = {}
+var _bag_room := BAG_COLUMNS * BAG_ROWS
+var _room_text: Label
 var _money_text: Label
 
 
@@ -852,7 +858,8 @@ func _cells_for(grid: Dictionary, count: int) -> Array:
 func _build_things() -> void:
 	var body_wide := CELL_SIDE * 2.0 + DOLL_WIDE + CELL_GAP * 2.0
 	var body_high := BODY_ROW * 5.0 + CELL_GAP * 4.0
-	var bag_wide := BAG_COLUMNS * CELL_SIDE + (BAG_COLUMNS - 1) * CELL_GAP
+	var bag_wide := BAG_COLUMNS * CELL_SIDE + (BAG_COLUMNS - 1) * CELL_GAP \
+			+ SCROLL_GAP + SCROLL_BAR
 	var bag_high := BAG_ROWS * CELL_SIDE + (BAG_ROWS - 1) * CELL_GAP
 	var inner := Vector2(body_wide + 24.0 + bag_wide,
 			18.0 + maxf(body_high, bag_high) + 12.0 + 30.0)
@@ -915,12 +922,12 @@ func _build_things() -> void:
 
 	# Праворуч — сітка. Порожні комірки лишаються на місці: так видно,
 	# скільки ще влізе, а речі не стрибають по вікну після кожної здобичі.
-	for i in BAG_COLUMNS * BAG_ROWS:
-		var at := Vector2(
-				body_wide + 24.0 + (i % BAG_COLUMNS) * (CELL_SIDE + CELL_GAP),
-				18.0 + int(i / BAG_COLUMNS) * (CELL_SIDE + CELL_GAP))
-		_bag_cells.append(_make_cell(page, at,
-				Vector2(CELL_SIDE, CELL_SIDE)))
+	_pack_grid = _cell_scroll(page, Vector2(body_wide + 24.0, 18.0),
+			BAG_COLUMNS, BAG_ROWS)
+	# Смуга — лише коли рядів більше, ніж видно (торба розширилась).
+	(_pack_grid["scroll"] as ScrollContainer).vertical_scroll_mode = \
+			ScrollContainer.SCROLL_MODE_AUTO
+	_bag_cells = _cells_for(_pack_grid, _bag_room)
 
 	# Гроші — окремим рядком унизу, як просив замовник.
 	var purse := _plate(Vector2(inner.x, 30), Color(0.16, 0.14, 0.08, 0.95),
@@ -937,6 +944,14 @@ func _build_things() -> void:
 	_money_text.text = "гроші: 0"
 	_money_text.position = Vector2(34, inner.y - 25)
 	_money_text.modulate = Color(0.95, 0.85, 0.45)
+	# Скільки місць зайнято — праворуч у тому ж рядку.
+	_room_text = _text(15, page)
+	_room_text.name = "Місця"
+	_room_text.text = ""
+	_room_text.size = Vector2(160, 20)
+	_room_text.position = Vector2(inner.x - 166, inner.y - 25)
+	_room_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_room_text.modulate = Color(0.85, 0.85, 0.8)
 
 
 func _toggle_things() -> void:
@@ -959,11 +974,13 @@ func show_windows() -> void:
 
 
 ## Що в торбі — приходить від сервера.
-func set_things(things: Array, stacks: Array) -> void:
+func set_things(things: Array, stacks: Array, room: int = -1) -> void:
 	if _things_box == null:
 		return
 	_things = things
 	_stacks = stacks
+	if room > 0:
+		_bag_room = room
 	# Артефакт зник із торби (продали, віддали) — мінікарта згортається
 	# сама: показувати її без речі означало б давати дурно те, за що
 	# платять. З'явився вперше — розгортається, щоб було видно, що річ
@@ -1042,8 +1059,18 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 			continue
 		rows.append(row)
 
+	# Понад місця (речі, набрані до обмеження 14.11.2026) — теж видно:
+	# сховати їх означало б загубити.
+	var shown := maxi(_bag_room, rows.size())
+	_bag_cells = _cells_for(_pack_grid, shown)
+	if _room_text != null:
+		_room_text.text = "торба: %d / %d" % [rows.size(), _bag_room]
+		_room_text.modulate = Color(1.0, 0.55, 0.4) if rows.size() >= _bag_room \
+				else Color(0.85, 0.85, 0.8)
 	for i in _bag_cells.size():
 		var cell: Dictionary = _bag_cells[i]
+		# Комірки за межею місць (ряд добито до кінця) не показуємо.
+		(cell["press"] as Button).visible = i < shown
 		var press: Button = cell["press"]
 		var icon: ItemIcon = cell["icon"]
 		var count: Label = cell["count"]

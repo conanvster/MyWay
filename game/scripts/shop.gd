@@ -113,6 +113,9 @@ func buy(who: Node, resident: Dictionary, name: String,
 		return "ціни на це немає"
 	if money_of(who) < price:
 		return "не вистачає грошей: треба %d" % price
+	var stacks := _data.items.is_stackable(name)
+	if not _data.items.bag_fits(who, 0 if stacks else 1, [name] if stacks else []):
+		return "торба повна"
 	take_money(who, price)
 	if _data.items.is_stackable(name):
 		who.give_item(name, count)

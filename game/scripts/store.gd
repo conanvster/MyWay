@@ -223,6 +223,8 @@ static func row_of(name: String, who: Node) -> Dictionary:
 		"warehouse_items": who.warehouse_items,
 		"warehouse_things": _things_row_of(who.warehouse_things),
 		"gear": who.gear,
+		# Місця в торбі понад основу — за зачищені підземелля (14.11.2026).
+		"bag_extra": who.bag_extra,
 		# Розкладка панелі — своя в кожного (її тягають мишею у вікні
 		# «Скіли»), тож без неї персонаж щоразу вертався б до типової.
 		"bar": who.bar,
@@ -293,6 +295,7 @@ static func apply_row(who: Node, row: Dictionary, goods: Object = null) -> void:
 	who.items = _whole(row.get("items", {}))
 	who.warehouse_items = _whole(row.get("warehouse_items", {}))
 	who.gear = _whole(row.get("gear", {}))
+	who.bag_extra = int(row.get("bag_extra", who.bag_extra))
 	# Порожня розкладка — це «ще не розкладав»: тоді лишається типова з
 	# data/bar.json, яку вже поставив світ.
 	var saved_bar: Array = row.get("bar", [])

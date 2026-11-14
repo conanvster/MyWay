@@ -8,6 +8,9 @@ extends RefCounted
 ## 03.09.2026) і бере і складані речі, і поодинокі з афіксами.
 
 const TALK_RANGE := 4.0
+## Книга речей — для місткості торби («торба повна», 14.11.2026).
+## Порожня — забирає без перевірки (старі проби).
+var book: ItemBook = null
 
 
 func within(who: Node3D, resident: Node3D) -> bool:
@@ -41,6 +44,8 @@ func withdraw_stack(who: Node, name: String, count: int = -1) -> String:
 		count = have
 	if count == 0 or count > have:
 		return "стільки на складі немає: є %d" % have
+	if book != null and not book.bag_fits(who, 0, [name]):
+		return "торба повна"
 	if count == have:
 		who.warehouse_items.erase(name)
 	else:
@@ -66,6 +71,8 @@ func store_thing(who: Node, at: int) -> String:
 func withdraw_thing(who: Node, at: int) -> String:
 	if at < 0 or at >= who.warehouse_things.size():
 		return "на складі цього немає"
+	if book != null and not book.bag_fits(who, 1):
+		return "торба повна"
 	var item: Item = who.warehouse_things[at]
 	who.warehouse_things.remove_at(at)
 	who.add_thing(item)

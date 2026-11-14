@@ -140,9 +140,12 @@ func pick_up(me: int) -> bool:
 	var a: Node = _creatures.get(me)
 	if a == null or not a.is_alive() or ground == null:
 		return false
-	var got: Dictionary = ground.pick_up(a)
+	var got: Dictionary = ground.pick_up(a, goods)
 	if got.is_empty():
 		_link.notice(me, "поруч нічого не лежить")
+		return false
+	if bool(got.get("торба повна", false)):
+		_link.notice(me, "торба повна — «%s» лишається на землі" % got["назва"])
 		return false
 	if int(got["скільки"]) > 1:
 		_link.notice(me, "піднято: %s ×%d" % [got["назва"], got["скільки"]])

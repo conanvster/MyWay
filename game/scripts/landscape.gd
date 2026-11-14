@@ -806,6 +806,7 @@ func _height_v2(x: float, z: float) -> float:
 			near = far
 			flat = float(spot["радіус"])
 			level = float(spot.get("висота", high))
+			edge = float(spot.get("поле", earth.get("поле", 14)))
 	if not _flat_spots.is_empty():
 		if near < flat:
 			return level
@@ -1040,6 +1041,21 @@ func _ground() -> void:
 	if not _flat_spots.is_empty():
 		_city_at = _flat_spots[0]["де"]
 		_city_flat = float(_flat_spots[0]["радіус"])
+	# Дерева-велети (13.11.2026: «зробив би в 2–3 рази більше масштабу»):
+	# стовбур у сотні метрів на прибережному схилі мав би всередині і море,
+	# і урвище — тож земля під ним рівняється до висоти його середини, як
+	# під містом, лише з довшим переходом до схилу довкола.
+	if _grid > 0:
+		for mark: Dictionary in data.get("орієнтири", []):
+			if str(mark.get("вид", "")) != "дерево-велет":
+				continue
+			var at := _point(mark.get("де", [0, 0, 0]))
+			var giant := GiantTree.spec_near(at.x, at.z)
+			if giant.is_empty():
+				continue
+			_flat_spots.append({"де": at, "радіус": GiantTree.pad_radius(giant),
+					"висота": maxf(_field_at(at.x, at.z), sea_level() + 3.0),
+					"поле": GiantTree.PAD_EDGE})
 
 	_noise = FastNoiseLite.new()
 	_noise.seed = SEED

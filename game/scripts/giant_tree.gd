@@ -69,7 +69,23 @@ const LEAVES := "res://assets/baobab/krona-puchky.png"
 ## Висота стовбура до ширини (з фото): пляшка вища за ширину, зрощений —
 ## нижчий. Стовбур вищий за поверхи — над верхнім поверхом порожня шия
 ## дупла до неба, як у справжнього дуплистого дерева.
-const TALL := {"пляшка": 1.2, "сивий": 1.1, "зрощений": 0.85}
+const TALL := {"пляшка": 0.8, "сивий": 1.1, "зрощений": 0.85,
+		"ялівець": 0.75, "секвоя": 1.15}
+## Земля під деревом рівняється (`landscape._ground`): майданчик трохи
+## ширший за кору, далі стільки метрів переходу до схилу довкола.
+const PAD_OVER := 1.16
+const PAD_MORE := 14.0
+const PAD_EDGE := 60.0
+## Зала поверху (слово замовника 13.11.2026: «форму залів наблизити до»
+## референсів): стіна прямо вгору на цю частку висоти зали, далі —
+## склепіння еліпсом до «ока» посередині стелі (частка радіуса зали), з
+## якого падає світло. Верхній поверх має справжнє око — у небо.
+const WALL_PART := 0.42
+const OCULUS := 0.22
+const OCULUS_TOP := 0.45
+## Текстури порід, намальовані 13.11.2026 (`tools/comfyui/dereva_tekstury.py`).
+const GLOW_WARM := Color(1.0, 0.5, 0.15)
+const GLOW_COLD := Color(0.7, 1.0, 0.9)
 ## Скільки метрів кори на одну текстуру.
 const BARK_TILE := 14.0
 const INSIDE_TILE := 7.0
@@ -103,6 +119,21 @@ var door_ground := 0.0
 var trunk_top := 0.0
 ## Дупла: [{"a", "y", "w", "h", "двері"}] — кут, висота середини, півосі.
 var openings: Array = []
+## Тема кожного поверху з даних («поверхи»): відтінок стін, світло, мох,
+## папороть, «речі» — за референсами 13.11.2026.
+var themes: Array = []
+## Колони поверхів із темою «колони»: [місце (від дерева), радіус, низ,
+## верх] — і тіло, і вигляд.
+var columns: Array = []
+## Перегородки поверхів (слово замовника 13.11.2026: «перегородки … щоб не
+## було пустинно … щоб під час бою з монстрами можна було сховатися або
+## втекти»): [{"k", "pts": [Vector3 від дерева], "h", "w"}] — стіни з
+## коріння з проходами між ними; і тіло, і вигляд.
+var screens: Array = []
+## Пні-укриття: [місце (від дерева), радіус, висота].
+var stumps: Array = []
+## Розмір пучка листя крони (частка верхнього радіуса), своя для породи.
+var _puff := 0.42
 var _noise: FastNoiseLite
 
 
@@ -143,6 +174,25 @@ static func blocks(x: float, z: float, pad := 6.0) -> bool:
 	return false
 
 
+## Радіус майданчика, до якого рівняється земля під деревом.
+static func pad_radius(one: Dictionary) -> float:
+	var wide := float((one.get("діаметр", [0, 0]) as Array)[0]) * 0.5
+	return (wide + float(rules().get("стіна", 3.0))) * PAD_OVER + PAD_MORE
+
+
+## Чи зона появи мапи (коло `pad` довкола точки) зачіпає стовбур якогось
+## дерева: такі зони не будуються — там поверхи дерева.
+static func covers(x: float, z: float, pad := 0.0) -> bool:
+	var thick := float(rules().get("стіна", 3.0))
+	for one: Dictionary in rules().get("дерева", []):
+		var at: Array = one.get("де", [0, 0])
+		var wide := float((one.get("діаметр", [0, 0]) as Array)[0]) * 0.5
+		if Vector2(float(at[0]) - x, float(at[1]) - z).length() \
+				<= (wide + thick) * 1.2 + pad:
+			return true
+	return false
+
+
 ## Числа виду, підсилені під поверх: рівень, усі стати й кількість дропу.
 ## Шанс дропу не множиться — множиться те, скільки випадає.
 static func boosted(tuning: Dictionary, level: int, boost: float) -> Dictionary:
@@ -178,6 +228,7 @@ func build(from: Dictionary, land: Node, visual: bool) -> void:
 	wall = float(r.get("стіна", 3.0))
 	var n := maxi(2, int(spec.get("поверхів", 3)))
 	var wide: Array = spec.get("діаметр", [100.0, 50.0])
+	themes = spec.get("поверхи", [])
 	radii.clear()
 	for k in n:
 		var t := float(k) / float(n - 1)
@@ -189,6 +240,8 @@ func build(from: Dictionary, land: Node, visual: bool) -> void:
 	_numbers(n)
 	_place_steps(land, n)
 	_place_openings()
+	_place_columns()
+	_place_screens()
 	_build_bodies()
 	if visual:
 		_build_look(land)
@@ -223,7 +276,7 @@ func _measure(land: Node, n: int) -> void:
 	floors.append(top_in + storey)
 	for k in range(2, n + 1):
 		floors.append(floors[1] + float(k - 1) * storey)
-	trunk_top = maxf(floors[n] + storey, base_y + float(TALL.get(shape, 1.0))
+	trunk_top = maxf(floors[n] + 10.0, base_y + float(TALL.get(shape, 1.0))
 			* (radii[0] + wall) * 2.0)
 	door_angle = _toward_road(land)
 	door_ground = land.height_at(position.x + cos(door_angle) * r0,
@@ -335,10 +388,10 @@ func zones(mobs: Dictionary) -> Array:
 		var kinds := _kinds_near(mobs, levels[k], 3)
 		if kinds.is_empty():
 			continue
+		var spots := _pack_spots(k)
 		for p in packs:
-			var a := door_angle + TAU * (float(p) + 0.5) / float(packs) \
-					+ float(k) * 0.7
-			var far: float = radii[k] * (0.55 if p % 2 == 0 else 0.3)
+			var a: float = spots[p].x
+			var far: float = spots[p].y
 			var zone := MobZone.new()
 			zone.name = "%s_поверх%d_зграя%d" % [title.replace(" ", "_"),
 					k + 1, p + 1]
@@ -364,6 +417,184 @@ func zones(mobs: Dictionary) -> Array:
 					position.z + sin(a) * far)
 			made.append(zone)
 	return made
+
+
+## Де стоять зграї поверху `k`: (кут, відстань від середини). Три кільця:
+## на зовнішньому зграй найбільше (воно найдовше).
+func _pack_spots(k: int) -> Array[Vector2]:
+	var r := rules()
+	var total := clampi(int(round(PI * radii[k] * radii[k] / 1000.0
+			* float(r.get("монстрів на 1000 м²", 1.6)))),
+			int(r.get("найменше на поверх", 10)),
+			int(r.get("найбільше на поверх", 48)))
+	var packs := ceili(float(total) / float(maxi(1, int(r.get("у зграї", 5)))))
+	var ring_of := [0, 0, 0, 1, 1, 2]
+	var in_ring := [0, 0, 0]
+	for p in packs:
+		in_ring[ring_of[p % 6]] += 1
+	var seen := [0, 0, 0]
+	var out: Array[Vector2] = []
+	for p in packs:
+		var lane: int = ring_of[p % 6]
+		var a := door_angle + TAU * (float(seen[lane]) + 0.5) \
+				/ float(in_ring[lane]) + float(k) * 0.7 + float(lane) * 0.4
+		seen[lane] += 1
+		var far: float = radii[k] * [0.78, 0.52, 0.26][lane]
+		# Не на переході: щойно піднявся — і вже в зграї.
+		for _try in 6:
+			if _far_from_steps(k, a, far, 26.0):
+				break
+			a += 0.22
+		out.append(Vector2(a, far))
+	return out
+
+
+## Перегородки й пні кожного поверху. Дуги на двох кільцях МІЖ кільцями
+## зграй, спиці від стіни (кишені, де можна сховатись) і між дугами, пні
+## врозкид. Усюди проходи: шматок перегородки не ставиться в колі зграї
+## (монстр не з'явиться в стіні), біля переходу, на стежці від дверей і
+## посередині під оком.
+func _place_screens() -> void:
+	screens.clear()
+	stumps.clear()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = absi(hash(title + "перегородки"))
+	for k in radii.size():
+		var rk: float = radii[k]
+		var spots := _pack_spots(k)
+		if not has_thing(k, "колони"):
+			for ring in 2:
+				var far: float = rk * (0.65 if ring == 0 else 0.39)
+				var many := clampi(int(round(TAU * far / 60.0)), 3, 12)
+				for i in many:
+					var a0 := door_angle + TAU * (float(i) + 0.2 + 0.5 * float(ring)) \
+							/ float(many)
+					var a1 := a0 + TAU / float(many) * rng.randf_range(0.5, 0.68)
+					var line: Array[Vector3] = []
+					var parts := maxi(2, ceili((a1 - a0) * far / 6.0))
+					for j in parts + 1:
+						var a := lerpf(a0, a1, float(j) / float(parts))
+						line.append(_on(far + 3.0 * sin(a * 7.0 + float(k)), a,
+								floors[k]))
+					_add_screen(k, line, rng.randf_range(8.0, 14.0), spots)
+		var spokes := clampi(int(rk / 20.0), 3, 9)
+		for i in spokes:
+			var a := door_angle + TAU * (float(i) + 0.5) / float(spokes) \
+					+ rng.randf_range(-0.1, 0.1)
+			for inner: bool in [false, true]:
+				if inner and i % 2 == 0:
+					continue
+				var from: float = rk * (0.44 if inner else 0.72)
+				var to: float = rk * (0.6 if inner else 0.97)
+				var line: Array[Vector3] = []
+				var parts := maxi(2, ceili((to - from) / 6.0))
+				var lean := rng.randf_range(-0.12, 0.12)
+				for j in parts + 1:
+					var t := float(j) / float(parts)
+					line.append(_on(lerpf(from, to, t), a + (0.08 if inner else 0.0)
+							+ lean * t, floors[k]))
+				_add_screen(k, line, rng.randf_range(7.0, 12.0), spots)
+		for i in int(rk / 5.0):
+			var at := _on(rk * sqrt(rng.randf()) * 0.9, rng.randf() * TAU, floors[k])
+			var thick := rng.randf_range(2.0, 4.5)
+			if _screen_free(k, at, spots, thick + 1.0):
+				stumps.append([at, thick, rng.randf_range(3.0, 7.0)])
+
+
+## Чи можна тут ставити перегородку чи пень: `pad` — півтовщини речі.
+func _screen_free(k: int, at: Vector3, spots: Array[Vector2], pad: float) -> bool:
+	var rk: float = radii[k]
+	var flat := Vector2(at.x, at.z)
+	if flat.length() < maxf(rk * 0.14, 10.0):
+		return false
+	var zone_r := minf(12.0, rk * 0.22)
+	for spot: Vector2 in spots:
+		if flat.distance_to(Vector2(cos(spot.x), sin(spot.x)) * spot.y) \
+				< zone_r + pad + 0.3:
+			return false
+	for s: Dictionary in steps:
+		if int(s["з"]) != k and int(s["з"]) + 1 != k:
+			continue
+		var spot: Vector3 = s["низ"] if int(s["з"]) == k else s["верх"]
+		if flat.distance_to(Vector2(spot.x - position.x, spot.z - position.z)) \
+				< 16.0 + pad:
+			return false
+	if k == 0:
+		var door := Vector2(cos(door_angle), sin(door_angle))
+		if flat.dot(door) > 0.0 and absf(flat.dot(Vector2(-door.y, door.x))) \
+				< 9.0 + pad:
+			return false
+	for col: Array in columns:
+		if is_equal_approx(float(col[2]), floors[k]) and flat.distance_to(
+				Vector2((col[0] as Vector3).x, (col[0] as Vector3).z)) \
+				< float(col[1]) + pad + 2.0:
+			return false
+	return true
+
+
+## Лінію перегородки розбити на шматки там, де ставити не можна (проходи).
+func _add_screen(k: int, line: Array[Vector3], high: float,
+		spots: Array[Vector2]) -> void:
+	var wide := 2.6
+	var run: Array[Vector3] = []
+	for j in line.size() + 1:
+		if j < line.size() and _screen_free(k, line[j], spots, wide * 0.5):
+			run.append(line[j])
+			continue
+		if run.size() >= 3:
+			screens.append({"k": k, "pts": run, "h": high, "w": wide})
+		run = []
+
+
+## Чи точка поверху `k` (кут, відстань від середини) далі за `least`
+## від обох кінців переходів цього поверху.
+func _far_from_steps(k: int, a: float, far: float, least: float) -> bool:
+	var at := Vector2(position.x + cos(a) * far, position.z + sin(a) * far)
+	for s: Dictionary in steps:
+		var spot: Vector3 = s["низ"] if int(s["з"]) == k else s["верх"]
+		if int(s["з"]) != k and int(s["з"]) + 1 != k:
+			continue
+		if at.distance_to(Vector2(spot.x, spot.z)) < least:
+			return false
+	return true
+
+
+## Вершина склепіння зали поверху `k`.
+func hall_top(k: int) -> float:
+	return floors[k + 1] - SLAB - 0.3
+
+
+## Де стіна зали переходить у склепіння.
+func wall_top(k: int) -> float:
+	return floors[k] + (hall_top(k) - floors[k]) * WALL_PART
+
+
+func oculus(k: int) -> float:
+	return OCULUS_TOP if k == radii.size() - 1 else OCULUS
+
+
+## Висота стелі зали поверху `k` на відстані `r` від середини.
+func ceil_at(k: int, r: float) -> float:
+	var part := clampf(r / radii[k], 0.0, 1.0)
+	return wall_top(k) + (hall_top(k) - wall_top(k)) * sqrt(1.0 - part * part)
+
+
+## Тема поверху `k` (порожня — якщо в даних немає).
+func theme(k: int) -> Dictionary:
+	if k < themes.size() and themes[k] is Dictionary:
+		return themes[k]
+	return {}
+
+
+func has_thing(k: int, thing: String) -> bool:
+	return (theme(k).get("речі", []) as Array).has(thing)
+
+
+static func _tone(row: Dictionary, key: String, fallback: Color) -> Color:
+	var v: Variant = row.get(key)
+	if v is Array and (v as Array).size() >= 3:
+		return Color(float(v[0]), float(v[1]), float(v[2]))
+	return fallback
 
 
 static func _kinds_near(mobs: Dictionary, level: int, many: int) -> Array:
@@ -411,6 +642,16 @@ func outer_r(a: float, y: float) -> float:
 		"сивий":
 			grow = 1.0 + 0.42 * exp(-t * 6.0) + 0.06 * sin(PI * t)
 			lobe = 1.0 + 0.05 * sin(4.0 * a + y * 0.02) + 0.03 * sin(9.0 * a - y * 0.05)
+		"ялівець":
+			# Кілька зрощених стовбурів, скручених гвинтом (фото замовника).
+			grow = 1.0 + 0.10 * exp(-t * 7.0) + 0.04 * sin(PI * t)
+			lobe = 1.0 + 0.10 * pow(0.5 + 0.5 * cos(6.0 * a + (y - base_y) * 0.045),
+					0.6) + 0.025 * sin(13.0 * a - (y - base_y) * 0.09)
+		"секвоя":
+			# Рівна колона з контрфорсами коріння при землі («Генерал Шерман»).
+			grow = 1.0 + 0.06 * exp(-t * 10.0)
+			lobe = 1.0 + 0.07 * exp(-t * 9.0) * pow(0.5 + 0.5 * cos(11.0 * a), 0.7) \
+					+ 0.01 * sin(24.0 * a + 0.3 * sin(y * 0.05))
 		_:
 			grow = 1.06 + 0.24 * exp(-t * 5.0)
 			lobe = 1.0 + 0.18 * pow(0.5 + 0.5 * cos(7.0 * a + 0.5 * sin(y * 0.035)), 0.55)
@@ -444,8 +685,43 @@ func _place_openings() -> void:
 				if _clear_of_steps(a, k):
 					break
 				a += 0.45
-			openings.append({"a": a, "y": floors[k] + 6.0, "w": 3.4,
-					"h": 4.2, "двері": false})
+			openings.append({"a": a, "y": floors[k] + storey * 0.2,
+					"w": storey * 0.09, "h": storey * 0.12, "двері": false})
+	# «Кора тріснула — видно небо крізь щілини»: високі вузькі просвіти.
+	for k in range(1, n):
+		if not has_thing(k, "щілини"):
+			continue
+		for j in 7:
+			var a := door_angle + 0.6 + TAU * float(j) / 7.0
+			for _try in 8:
+				if _clear_of_steps(a, k):
+					break
+				a += 0.3
+			openings.append({"a": a, "y": floors[k] + storey * 0.2,
+					"w": 1.3 + 0.5 * float(j % 3), "h": storey * 0.17,
+					"двері": false})
+
+
+## Колони від підлоги до стелі на поверхах із темою «колони» — між
+## кільцями зон появи, щоб монстр не з'явився всередині колони.
+func _place_columns() -> void:
+	columns.clear()
+	var n := radii.size()
+	for k in range(1, n - 1):
+		if not has_thing(k, "колони"):
+			continue
+		for ring in 2:
+			var many := 9 if ring == 0 else 6
+			var far: float = radii[k] * (0.65 if ring == 0 else 0.39)
+			for i in many:
+				var a := door_angle + TAU * (float(i) + 0.5 * float(ring)) / float(many)
+				for _try in 6:
+					if _far_from_steps(k, a, far, 14.0):
+						break
+					a += 0.2
+				columns.append([Vector3(cos(a) * far, 0.0, sin(a) * far),
+						3.0 + 1.2 * float((i * 7 + ring * 3) % 4) / 3.0,
+						floors[k], floors[k + 1] - SLAB])
 
 
 func _clear_of_steps(a: float, k: int) -> bool:
@@ -503,6 +779,37 @@ func _build_bodies() -> void:
 		floor_body.shape = slab
 		floor_body.position = Vector3(0, floors[k] - SLAB * 0.5, 0)
 		body.add_child(floor_body)
+	for col: Array in columns:
+		var post_body := CollisionShape3D.new()
+		var post := CylinderShape3D.new()
+		post.radius = float(col[1])
+		post.height = float(col[3]) - float(col[2])
+		post_body.shape = post
+		post_body.position = (col[0] as Vector3) + Vector3(0,
+				(float(col[2]) + float(col[3])) * 0.5, 0)
+		body.add_child(post_body)
+	for sc: Dictionary in screens:
+		var pts: Array = sc["pts"]
+		var tall: float = float(sc["h"]) * 0.85
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var b: Vector3 = pts[i + 1]
+			var wall_body := CollisionShape3D.new()
+			var box := BoxShape3D.new()
+			box.size = Vector3(a.distance_to(b) + 0.6, tall + 1.0, float(sc["w"]))
+			wall_body.shape = box
+			wall_body.position = (a + b) * 0.5 + Vector3(0, tall * 0.5 - 0.5, 0)
+			wall_body.rotation.y = -atan2(b.z - a.z, b.x - a.x)
+			body.add_child(wall_body)
+	for st: Array in stumps:
+		var stump_body := CollisionShape3D.new()
+		var round_body := CylinderShape3D.new()
+		round_body.radius = float(st[1])
+		round_body.height = float(st[2]) + 1.0
+		stump_body.shape = round_body
+		stump_body.position = (st[0] as Vector3) + Vector3(0, float(st[2]) * 0.5
+				- 0.5, 0)
+		body.add_child(stump_body)
 	# Прохід дверей крізь товщу — овальна труба.
 	for op: Dictionary in openings:
 		if op["двері"]:
@@ -578,17 +885,11 @@ func _tunnel(m: _Mesh, op: Dictionary, sides: int) -> void:
 func _build_look(land: Node) -> void:
 	var n := radii.size()
 	var bark := bark_material()
-	var inside := ShaderMaterial.new()
-	inside.shader = load("res://scripts/baobab_inside.gdshader")
-	if ResourceLoader.exists(INSIDE_WOOD):
-		inside.set_shader_parameter("wood", load(INSIDE_WOOD))
-	if ResourceLoader.exists(MOSS):
-		inside.set_shader_parameter("moss", load(MOSS))
 	var lip_mat := bark
 	# Кора зовні: щільна поверхня обертання, дупла вирізані.
 	var outside := _Mesh.new()
 	var bark_r := func(a: float, y: float) -> float: return outer_r(a, y)
-	_lathe_look(outside, 144, 2.5, base_y, trunk_top, bark_r, true, true,
+	_lathe_look(outside, 192, 2.5, base_y, trunk_top, bark_r, true, true,
 			BARK_TILE)
 	# Верх стовбура: кільце від кори до стіни шиї дупла.
 	_lid(outside, trunk_top)
@@ -596,11 +897,12 @@ func _build_look(land: Node) -> void:
 	# і згори шиєю.
 	_add_mesh("Кора", outside.commit(), bark, true)
 	# Нутро: стіни поверхів горбкуваті, мох понизу (висота над підлогою —
-	# UV2), підлоги — мох, стелі — деревина.
-	var wood := _Mesh.new()
+	# UV2), підлоги — мох, стелі — деревина. Кожен поверх — своя сітка й
+	# свій матеріал: відтінок стін і мох — з теми поверху.
 	for k in n:
+		var wood := _Mesh.new()
 		var y0: float = base_y if k == 0 else floors[k]
-		var y1: float = floors[k + 1] - SLAB if k < n - 1 else trunk_top
+		var y1: float = wall_top(k)
 		var rk: float = radii[k]
 		var floor_at: float = floors[k]
 		var bumpy := func(a: float, y: float) -> float:
@@ -608,14 +910,22 @@ func _build_look(land: Node) -> void:
 		var ground_k := k
 		var above := func(a: float, y: float) -> float:
 			return y - (_ground_near(land, a, rk) if ground_k == 0 else floor_at)
-		_lathe_look(wood, 120, 2.0, y0, y1, bumpy, false, true, INSIDE_TILE,
-				above)
-	for k in range(1, n):
-		wood.disc(radii[k - 1] + 1.5, floors[k], true, INSIDE_TILE, 1.0)
-		wood.disc(radii[k - 1] + 1.5, floors[k] - SLAB, false, INSIDE_TILE, 99.0)
-	for op: Dictionary in openings:
-		_tunnel(wood, op, 28)
-	_add_mesh("Нутро", wood.commit(), inside, true)
+		_lathe_look(wood, clampi(int(TAU * rk / 4.0), 120, 300), 2.0, y0, y1,
+				bumpy, false, true, INSIDE_TILE, above)
+		if k > 0:
+			wood.disc(radii[k - 1] + 1.5, floors[k], true, INSIDE_TILE, 1.0)
+		_dome(wood, k)
+		if k == n - 1:
+			# Шия дупла над оком верхнього поверху — до неба.
+			var neck: float = rk * OCULUS_TOP
+			var straight := func(_a: float, _y: float) -> float: return neck
+			_lathe_look(wood, 96, 4.0, ceil_at(k, neck), trunk_top, straight,
+					false, false, INSIDE_TILE)
+		for op: Dictionary in openings:
+			if maxi(0, storey_of(Vector3(position.x, float(op["y"]),
+					position.z))) == k:
+				_tunnel(wood, op, 28)
+		_add_mesh("Нутро%d" % (k + 1), wood.commit(), inside_material(k), true)
 	# Губа дупел зовні — товстий валик кори довкола овалу (фото 5).
 	var lips := _Mesh.new()
 	for op: Dictionary in openings:
@@ -637,11 +947,34 @@ func _build_look(land: Node) -> void:
 	_build_port_mark()
 
 
+## Деревина нутра поверху `k`: текстура породи («нутро»), відтінок стін і
+## мох — із теми поверху.
+func inside_material(k: int) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://scripts/baobab_inside.gdshader")
+	var path := str(spec.get("нутро", INSIDE_WOOD))
+	if not ResourceLoader.exists(path):
+		path = INSIDE_WOOD
+	if ResourceLoader.exists(path):
+		m.set_shader_parameter("wood", load(path))
+	if ResourceLoader.exists(MOSS):
+		m.set_shader_parameter("moss", load(MOSS))
+	var row := theme(k)
+	var walls := _tone(row, "стіни", Color.WHITE)
+	m.set_shader_parameter("tint", Vector3(walls.r, walls.g, walls.b))
+	m.set_shader_parameter("moss_high", float(row.get("мох", 2.6)))
+	var green := _tone(row, "мох колір", Color.WHITE)
+	m.set_shader_parameter("moss_tint", Vector3(green.r, green.g, green.b))
+	return m
+
+
 ## Кора з фото цього дерева (`кора`), з відтінком (`відтінок`).
 func bark_material() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = load("res://scripts/baobab_bark.gdshader")
 	var path := str(spec.get("кора", BARK_DEFAULT))
+	if not ResourceLoader.exists(path):
+		path = BARK_DEFAULT
 	if ResourceLoader.exists(path):
 		m.set_shader_parameter("bark", load(path))
 	var tone: Array = spec.get("відтінок", [1.0, 1.0, 1.0])
@@ -665,11 +998,22 @@ func _lathe_look(m: _Mesh, sides: int, dy: float, y0: float, y1: float,
 	var first := m.verts.size()
 	for j in rows + 1:
 		var y := lerpf(y0, y1, float(j) / float(rows))
+		# U — кут на СЕРЕДНІЙ радіус ряду, а не на свій. При `a * r` похідна
+		# по куту r + a·dr/da: на горбах ялівця й контрфорсах секвої вона
+		# ставала від'ємною вже за пів обороту, текстура йшла назад і кора
+		# біля дверей складалась зигзагами-гармошкою (14.11.2026).
+		var row_r: Array[float] = []
+		var mean := 0.0
+		for i in sides + 1:
+			var r: float = radius.call(TAU * float(i) / float(sides), y)
+			row_r.append(r)
+			mean += r
+		mean /= float(sides + 1)
 		for i in sides + 1:
 			var a := TAU * float(i) / float(sides)
-			var r: float = radius.call(a, y)
+			var r: float = row_r[i]
 			m.verts.append(_on(r, a, y))
-			m.uvs.append(Vector2(a * r / tile, -y / tile))
+			m.uvs.append(Vector2(a * mean / tile, -y / tile))
 			m.uv2s.append(Vector2(0.0, above.call(a, y) if above.is_valid()
 					else 0.0))
 	for j in rows:
@@ -691,6 +1035,36 @@ func _lathe_look(m: _Mesh, sides: int, dy: float, y0: float, y1: float,
 			m.tri_idx(v00, v11, v01, face)
 
 
+## Склепіння зали: від верху стіни еліпсом до ока посередині.
+func _dome(m: _Mesh, k: int) -> void:
+	var rk: float = radii[k]
+	var sides := clampi(int(TAU * rk / 5.0), 96, 240)
+	var rows := 14
+	var low := wall_top(k)
+	var high := hall_top(k)
+	var end := acos(oculus(k))
+	var first := m.verts.size()
+	for j in rows + 1:
+		var th := end * float(j) / float(rows)
+		for i in sides + 1:
+			var a := TAU * float(i) / float(sides)
+			var r := (rk + inner_bump(a, low + th * 20.0, rk)) * cos(th)
+			m.verts.append(_on(r, a, low + (high - low) * sin(th)))
+			m.uvs.append(Vector2(a * rk / INSIDE_TILE, -(low + th * rk)
+					/ INSIDE_TILE))
+			m.uv2s.append(Vector2(0.0, 99.0))
+	var centre := Vector3(0, floors[k], 0)
+	for j in rows:
+		for i in sides:
+			var v00 := first + j * (sides + 1) + i
+			var v10 := v00 + 1
+			var v01 := v00 + sides + 1
+			var v11 := v01 + 1
+			var face := centre - m.verts[v00].lerp(m.verts[v11], 0.5)
+			m.tri_idx(v00, v10, v11, face)
+			m.tri_idx(v00, v11, v01, face)
+
+
 ## Обідок верху стовбура: від кори до стіни верхнього поверху.
 func _lid(m: _Mesh, y: float) -> void:
 	var n := radii.size()
@@ -698,7 +1072,7 @@ func _lid(m: _Mesh, y: float) -> void:
 	for i in sides:
 		var a0 := TAU * float(i) / float(sides)
 		var a1 := TAU * float(i + 1) / float(sides)
-		var r_in: float = radii[n - 1] + 0.8
+		var r_in: float = radii[n - 1] * OCULUS_TOP
 		m.quad(_on(r_in, a0, y), _on(r_in, a1, y), _on(outer_r(a1, y), a1, y),
 				_on(outer_r(a0, y), a0, y), Vector3.UP,
 				Vector2(a0 * r_in / BARK_TILE, 0), Vector2(a1 * r_in / BARK_TILE, 0),
@@ -731,11 +1105,13 @@ func _build_hollow(land: Node) -> void:
 	var n := radii.size()
 	var roots := _Mesh.new()
 	var ferns := _Mesh.new()
+	var bag := {"коріння": roots}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = absi(hash(title + "нутро"))
 	for k in n:
 		var rk: float = radii[k]
-		var many := clampi(int(rk / 5.0), 6, 18)
+		var row := theme(k)
+		var many := clampi(int(rk / 5.0), 6, 40)
 		for i in many:
 			var a := door_angle + TAU * (float(i) + rng.randf_range(0.1, 0.9)) \
 					/ float(many)
@@ -748,7 +1124,7 @@ func _build_hollow(land: Node) -> void:
 			var twist := rng.randf_range(-0.25, 0.25)
 			var pts: Array[Vector3] = []
 			var widths: Array[float] = []
-			var scale := clampf(rk / 40.0, 0.7, 2.0)
+			var scale := clampf(rk / 40.0, 0.7, 3.0)
 			for j in 12:
 				var t := float(j) / 11.0
 				var r := lerpf(rk + 0.3, rk * (1.0 - reach), t)
@@ -759,14 +1135,16 @@ func _build_hollow(land: Node) -> void:
 				pts.append(_on(r, a + twist * t, y))
 				widths.append(lerpf(1.3, 0.25, t) * scale)
 			roots.tube(pts, widths, 7, 4.0)
-		var bushes := clampi(int(rk * 1.3), 24, 120)
+		var bushes := int(float(clampi(int(rk * 1.3), 24, 260))
+				* float(row.get("папороть", 1.0)))
+		var lush := 1.0 + 0.35 * (float(row.get("папороть", 1.0)) - 1.0)
 		for i in bushes:
 			var a := rng.randf() * TAU
 			if not _clear_of_steps(a, k):
 				continue
-			var r := rk * rng.randf_range(0.72, 0.97)
+			var r := rk * rng.randf_range(0.72 if lush <= 1.0 else 0.25, 0.97)
 			var at := _on(r, a, _floor_y(land, k, a, r))
-			var size := rng.randf_range(2.2, 4.8)
+			var size := rng.randf_range(2.2, 4.8) * maxf(lush, 0.6)
 			for turn: float in [0.0, PI * 0.5]:
 				var side := Vector3(cos(a + turn + 0.4), 0, sin(a + turn + 0.4)) \
 						* size * 0.6
@@ -777,18 +1155,47 @@ func _build_hollow(land: Node) -> void:
 						0.0)
 		var lamp := OmniLight3D.new()
 		lamp.name = "Світло%d" % (k + 1)
-		lamp.light_color = Color(0.85, 0.95, 0.6)
-		lamp.light_energy = 0.9
-		lamp.omni_range = rk * 1.15
-		lamp.omni_attenuation = 0.8
+		lamp.light_color = _tone(row, "світло", Color(0.85, 0.95, 0.6))
+		# Зала не залежить від пори доби надворі: світло з ока сильне, і
+		# ще одне, слабше, знизу посередині — щоб було видно ребра стін.
+		lamp.light_energy = float(row.get("сила", 0.9)) * 2.2
+		lamp.omni_range = rk * 1.8 + storey
+		lamp.omni_attenuation = 0.5
+		var fill := OmniLight3D.new()
+		fill.name = "Відсвіт%d" % (k + 1)
+		fill.light_color = lamp.light_color.lerp(Color.WHITE, 0.3)
+		fill.light_energy = float(row.get("сила", 0.9)) * 0.9
+		fill.omni_range = rk * 1.5
+		fill.omni_attenuation = 0.4
+		fill.shadow_enabled = false
+		fill.position = Vector3(0, floors[k] + 9.0, 0)
+		add_child(fill)
 		lamp.shadow_enabled = false
-		lamp.position = Vector3(0, (floors[k] if k > 0 else floors[0])
-				+ storey * 0.6, 0)
+		lamp.position = Vector3(0, ceil_at(k, rk * oculus(k)) - 5.0, 0)
 		add_child(lamp)
+		_build_ribs(land, roots, k, rng)
+		_build_skylight(k, lamp.light_color)
+		_build_things(land, bag, k, rng)
+	for col: Array in columns:
+		var at: Vector3 = col[0]
+		var pts: Array[Vector3] = []
+		var widths: Array[float] = []
+		for j in 9:
+			var t := float(j) / 8.0
+			pts.append(at + Vector3(sin(t * 5.0 + at.x) * 0.8, lerpf(float(col[2])
+					- 0.5, float(col[3]) + 0.5, t), cos(t * 4.0 + at.z) * 0.8))
+			widths.append(float(col[1]) * (1.0 + 0.5 * pow(absf(2.0 * t - 1.0),
+					2.5)))
+		roots.tube(pts, widths, 12, 5.0)
+	_build_screens(roots)
 	var root_mat := ShaderMaterial.new()
 	root_mat.shader = load("res://scripts/baobab_inside.gdshader")
-	if ResourceLoader.exists(INSIDE_BARK):
-		root_mat.set_shader_parameter("wood", load(INSIDE_BARK))
+	var root_wood := str(spec.get("кора", INSIDE_BARK)) if shape != "пляшка" \
+			else INSIDE_BARK
+	if not ResourceLoader.exists(root_wood):
+		root_wood = INSIDE_BARK
+	if ResourceLoader.exists(root_wood):
+		root_mat.set_shader_parameter("wood", load(root_wood))
 	if ResourceLoader.exists(MOSS):
 		root_mat.set_shader_parameter("moss", load(MOSS))
 	root_mat.set_shader_parameter("tint", Vector3(0.75, 0.68, 0.6))
@@ -803,6 +1210,464 @@ func _build_hollow(land: Node) -> void:
 	fern_mat.albedo_color = Color(0.75, 0.85, 0.65)
 	fern_mat.roughness = 0.8
 	_add_mesh("Папороть", ferns.commit(), fern_mat)
+	_add_things(bag)
+
+
+## Ребра зали, як на референсах: товсте коріння з підлоги вгору стіною й
+## склепінням до ока, між сусідніми ребрами — арка (ніша). Картинка, без
+## тіл.
+func _build_ribs(land: Node, roots: _Mesh, k: int,
+		rng: RandomNumberGenerator) -> void:
+	var rk: float = radii[k]
+	var many := clampi(int(rk / 6.0), 12, 28)
+	var big := clampf(rk / 60.0, 0.8, 1.8)
+	var low := wall_top(k)
+	var twist := 0.5 if shape == "ялівець" else 0.12
+	var end := acos(oculus(k))
+	var at: Array[float] = []
+	for i in many:
+		at.append(door_angle + TAU * (float(i) + 0.5 + rng.randf_range(-0.18, 0.18))
+				/ float(many))
+	for i in many:
+		var a: float = at[i]
+		if k == 0 and absf(wrapf(a - door_angle, -PI, PI)) < 0.2:
+			continue
+		var bend := twist * rng.randf_range(0.5, 1.0) * (1.0 if i % 2 == 0 else -0.4)
+		var pts: Array[Vector3] = []
+		var widths: Array[float] = []
+		# Палець кореня на підлозі → до стіни.
+		for j in 4:
+			var t := float(j) / 3.0
+			var r := lerpf(rk * 0.78, rk + 0.2, t)
+			pts.append(_on(r, a - bend * 0.3 * (1.0 - t), _floor_y(land, k, a, r)
+					+ 0.2 + 5.0 * t * t))
+			widths.append(lerpf(0.9, 3.0, t) * big)
+		# Стіною вгору.
+		for j in range(1, 5):
+			var t := float(j) / 4.0
+			pts.append(_on(rk + 0.2, a + bend * 0.25 * t, lerpf(floors[k] + 5.2,
+					low, t)))
+			widths.append(lerpf(3.0, 2.3, t) * big)
+		# Склепінням до ока.
+		for j in range(1, 11):
+			var th := end * float(j) / 10.0
+			pts.append(_on(rk * cos(th) + 0.2, a + bend * (0.25 + th), low
+					+ (hall_top(k) - low) * sin(th) - 0.4))
+			widths.append(lerpf(2.3, 1.2, float(j) / 10.0) * big)
+		roots.tube(pts, widths, 8, 5.0)
+		# Арка-ніша до наступного ребра.
+		var b: float = at[(i + 1) % many]
+		if b < a:
+			b += TAU
+		var arch: Array[Vector3] = []
+		var arch_w: Array[float] = []
+		for j in 9:
+			var t := float(j) / 8.0
+			arch.append(_on(rk + 0.3, lerpf(a, b, t), floors[k] + (low - floors[k])
+					* (0.55 + 0.4 * sin(PI * t))))
+			arch_w.append((1.0 + 0.6 * absf(cos(PI * t))) * big)
+		roots.tube(arch, arch_w, 6, 5.0)
+	# Обід ока.
+	var rim: Array[Vector3] = []
+	var rim_w: Array[float] = []
+	var hole: float = rk * oculus(k)
+	for j in 33:
+		rim.append(_on(hole + 0.6, TAU * float(j) / 32.0, ceil_at(k, hole) - 0.3))
+		rim_w.append(1.5 * big)
+	roots.tube(rim, rim_w, 8, 5.0)
+
+
+## Світло з ока склепіння: світлий диск «неба» в оці (на верхньому поверсі
+## небо справжнє) і напівпрозорий сніп променів до підлоги.
+func _build_skylight(k: int, tone: Color) -> void:
+	var rk: float = radii[k]
+	var hole: float = rk * oculus(k)
+	var top := ceil_at(k, hole)
+	var pale := tone.lerp(Color.WHITE, 0.55)
+	if k < radii.size() - 1:
+		var sky := _Mesh.new()
+		sky.disc_at(Vector3(0, top + 0.5, 0), hole + 1.0, 40)
+		var sky_mat := StandardMaterial3D.new()
+		sky_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		sky_mat.albedo_color = pale
+		sky_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		sky_mat.disable_fog = true
+		_add_mesh("Око%d" % (k + 1), sky.commit(), sky_mat)
+	var rays := _Mesh.new()
+	# Чотири снопи один в одному — край променів м'який, а не «абажур».
+	for layer in 4:
+		var part := 1.0 - 0.22 * float(layer)
+		var wide := rk * 0.36 * part
+		for i in 32:
+			var a0 := TAU * float(i) / 32.0
+			var a1 := TAU * float(i + 1) / 32.0
+			rays.quad(_on(hole * part, a0, top), _on(hole * part, a1, top),
+					_on(wide, a1, floors[k] + 0.3), _on(wide, a0, floors[k] + 0.3),
+					Vector3(cos(a0), 0, sin(a0)), Vector2(0, 0), Vector2(1, 0),
+					Vector2(1, 1), Vector2(0, 1), 0.0)
+	var ray_mat := StandardMaterial3D.new()
+	ray_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ray_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ray_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	ray_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	ray_mat.albedo_color = Color(pale.r, pale.g, pale.b, 0.012)
+	ray_mat.disable_fog = true
+	_add_mesh("Промені%d" % (k + 1), rays.commit(), ray_mat)
+
+
+## Вигляд перегородок і пнів: стіна з кори, ширша при підлозі, з нерівним
+## верхом, товстим коренем по гребеню і стовбурцями на кінцях.
+func _build_screens(roots: _Mesh) -> void:
+	for sc: Dictionary in screens:
+		var pts: Array = sc["pts"]
+		var high: float = sc["h"]
+		var wide: float = sc["w"]
+		var tops: Array[float] = []
+		var crest: Array[Vector3] = []
+		var crest_w: Array[float] = []
+		for p: Vector3 in pts:
+			tops.append(high * (0.9 + 0.35 * _noise.get_noise_3dv(p * 0.11)))
+			crest.append(p + Vector3.UP * tops[-1])
+			crest_w.append(wide * 0.45)
+		var along := 0.0
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var b: Vector3 = pts[i + 1]
+			var step := a.distance_to(b)
+			var side := (b - a).cross(Vector3.UP).normalized()
+			var u0 := along / 5.0
+			var u1 := (along + step) / 5.0
+			along += step
+			for way: float in [-1.0, 1.0]:
+				var out := side * way
+				var a0 := a + out * wide * 0.8 - Vector3.UP
+				var b0 := b + out * wide * 0.8 - Vector3.UP
+				var a1 := a + out * wide * 0.5 + Vector3.UP * tops[i] * 0.45
+				var b1 := b + out * wide * 0.5 + Vector3.UP * tops[i + 1] * 0.45
+				var a2 := a + out * wide * 0.28 + Vector3.UP * tops[i]
+				var b2 := b + out * wide * 0.28 + Vector3.UP * tops[i + 1]
+				roots.quad(a0, b0, b1, a1, out, Vector2(u0, 0), Vector2(u1, 0),
+						Vector2(u1, -tops[i + 1] * 0.09), Vector2(u0, -tops[i] * 0.09),
+						0.3)
+				roots.quad(a1, b1, b2, a2, out, Vector2(u0, -tops[i] * 0.09),
+						Vector2(u1, -tops[i + 1] * 0.09), Vector2(u1, -tops[i + 1]
+						* 0.2), Vector2(u0, -tops[i] * 0.2), 99.0)
+		roots.tube(crest, crest_w, 7, 5.0)
+		for end: int in [0, pts.size() - 1]:
+			var foot: Vector3 = pts[end]
+			var post: Array[Vector3] = [foot - Vector3.UP, foot + Vector3.UP
+					* tops[end] * 0.5, foot + Vector3.UP * tops[end] * 1.08]
+			var post_w: Array[float] = [wide * 1.0, wide * 0.7, wide * 0.5]
+			roots.tube(post, post_w, 8, 5.0)
+	for st: Array in stumps:
+		var foot: Vector3 = st[0]
+		var thick: float = st[1]
+		var tall: float = st[2]
+		var trunk: Array[Vector3] = [foot - Vector3.UP, foot + Vector3.UP * tall
+				* 0.3, foot + Vector3.UP * tall]
+		var trunk_w: Array[float] = [thick * 1.3, thick * 1.0, thick * 0.92]
+		roots.tube(trunk, trunk_w, 10, 5.0)
+		roots.blob(foot + Vector3.UP * tall, Vector3(thick * 0.92, 0.5,
+				thick * 0.92), 10, 4)
+
+
+## Сітка «речей» за назвою матеріалу (одна на все дерево).
+func _of(bag: Dictionary, label: String) -> _Mesh:
+	if not bag.has(label):
+		bag[label] = _Mesh.new()
+	return bag[label]
+
+
+## «Речі» поверху з його референсу: трутовики, світні гриби, вода,
+## струмок, коріння-мости, бурштин, кокони, тотеми, кістки, гнізда, сніг,
+## завіси лишайнику, сухі квіти. Усе — картинка, тіл не має (тіла мають
+## лише колони, `_place_columns`).
+func _build_things(land: Node, bag: Dictionary, k: int,
+		rng: RandomNumberGenerator) -> void:
+	var n := radii.size()
+	var rk: float = radii[k]
+	var floor_y: float = floors[k]
+	var open_top := k == n - 1
+	var ceil_y: float = hall_top(k)
+	var glow := GLOW_WARM if shape == "секвоя" else GLOW_COLD
+	for thing: String in theme(k).get("речі", []):
+		match thing:
+			"трутовики":
+				for i in int(rk * 0.5):
+					var a := rng.randf() * TAU
+					for j in rng.randi_range(2, 6):
+						var y := floor_y + 2.0 + float(j) * rng.randf_range(2.5, 4.0)
+						if y > wall_top(k) - 1.0:
+							break
+						var size := rng.randf_range(1.5, 4.5)
+						_of(bag, "трутовик").blob(_on(rk + 0.3, a + float(j) * 0.05,
+								y), Vector3(size, size * 0.22, size), 10, 5)
+			"світні гриби":
+				for i in int(rk * 0.45):
+					var a := rng.randf() * TAU
+					var r := rk * (rng.randf_range(0.82, 0.97) if i % 3 > 0
+							else rng.randf_range(0.2, 0.8))
+					if not _far_from_steps(k, a, r, 8.0):
+						continue
+					for j in rng.randi_range(2, 6):
+						var aa := a + rng.randf_range(-0.03, 0.03)
+						var rr := minf(r + rng.randf_range(-3.0, 3.0), rk - 0.5)
+						var at := _on(rr, aa, _floor_y(land, k, aa, rr) - 0.1)
+						var high := rng.randf_range(0.8, 4.5)
+						var cap := high * rng.randf_range(0.45, 0.8)
+						var stem: Array[Vector3] = [at, at + Vector3.UP * high]
+						var thick: Array[float] = [high * 0.09, high * 0.06]
+						_of(bag, "ніжка").tube(stem, thick, 6, 2.0)
+						_of(bag, "шапка").blob(at + Vector3.UP * high,
+								Vector3(cap, cap * 0.4, cap), 10, 5)
+				_glow_lamps(k, glow, 6, 1.6, 0.6)
+			"вода":
+				var a := door_angle + 2.0
+				_of(bag, "вода").disc_at(Vector3(cos(a) * rk * 0.12, floor_y + 0.12,
+						sin(a) * rk * 0.12), rk * 0.62, 48)
+			"струмок":
+				var a0 := door_angle + 1.1
+				var from := _on(rk * 0.96, a0, floor_y + 0.12)
+				var to := _on(rk * 0.96, a0 + PI * 0.9, floor_y + 0.12)
+				var across := (to - from).cross(Vector3.UP).normalized()
+				var last := from
+				for j in range(1, 41):
+					var t := float(j) / 40.0
+					var p := from.lerp(to, t) + across * sin(t * 9.0) * rk * 0.07
+					var side := (p - last).cross(Vector3.UP).normalized() \
+							* (2.2 + 0.8 * sin(t * 17.0))
+					_of(bag, "вода").quad(last - side, last + side, p + side,
+							p - side, Vector3.UP, Vector2(0, t), Vector2(1, t),
+							Vector2(1, t), Vector2(0, t), 0.0)
+					last = p
+			"коріння-мости":
+				for i in 6:
+					var a := door_angle + TAU * float(i) / 6.0 + 0.3
+					var b := a + PI + rng.randf_range(-0.5, 0.5)
+					var from := _on(rk + 0.5, a, floor_y + rng.randf_range(2.0, 6.0))
+					var to := _on(rk + 0.5, b, floor_y + rng.randf_range(2.0, 6.0))
+					var high := rng.randf_range(0.35, 0.7) * (ceil_y - floor_y)
+					var side := (to - from).cross(Vector3.UP).normalized()
+					var pts: Array[Vector3] = []
+					var widths: Array[float] = []
+					for j in 17:
+						var t := float(j) / 16.0
+						pts.append(from.lerp(to, t) + Vector3.UP * sin(PI * t) * high
+								+ side * sin(TAU * t) * rk * 0.05)
+						widths.append(1.6 + 1.2 * absf(cos(PI * t)))
+					_of(bag, "коріння").tube(pts, widths, 8, 4.0)
+			"бурштин":
+				for i in int(rk * 0.8):
+					var a := rng.randf() * TAU
+					var r := rk * (0.3 + 0.65 * sqrt(rng.randf()))
+					var long := rng.randf_range(3.0, 12.0)
+					var top := _on(r, a, ceil_at(k, r) + 0.3)
+					var pts: Array[Vector3] = [top, top - Vector3.UP * long * 0.5,
+							top - Vector3.UP * long]
+					var widths: Array[float] = [long * 0.12, long * 0.06, 0.03]
+					_of(bag, "бурштин").tube(pts, widths, 6, 2.0)
+				for i in int(rk * 0.4):
+					var a := rng.randf() * TAU
+					_of(bag, "бурштин").blob(_on(rk + 0.3, a, rng.randf_range(
+							floor_y + 4.0, wall_top(k))), Vector3(1.2,
+							rng.randf_range(2.0, 6.0), 1.2), 8, 6)
+				for i in int(rk * 0.25):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.9
+					_of(bag, "бурштин").disc_at(_on(r, a, floor_y + 0.06
+							+ float(i) * 0.002), rng.randf_range(2.0, 6.0), 14)
+				_glow_lamps(k, Color(1.0, 0.55, 0.15), 5, 2.2, 0.55)
+			"кокони":
+				for i in int(rk * 0.5):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.9
+					var long := rng.randf_range(3.0, 7.0)
+					var drop := rng.randf_range(2.0, 10.0)
+					var top := _on(r, a, ceil_at(k, r) + 0.2)
+					var line: Array[Vector3] = [top, top - Vector3.UP * drop]
+					var thin: Array[float] = [0.08, 0.08]
+					_of(bag, "кокон").tube(line, thin, 4, 1.0)
+					_of(bag, "кокон").blob(top - Vector3.UP * (drop + long * 0.5),
+							Vector3(long * 0.32, long * 0.5, long * 0.32), 8, 6)
+				for i in 16:
+					var a := rng.randf() * TAU
+					var low := floor_y + rng.randf_range(0.0, 4.0)
+					_of(bag, "павутина").quad(_on(rk, a, low), _on(rk, a + 0.22, low),
+							_on(rk * 0.72, a + 0.18, ceil_at(k, rk * 0.72)),
+							_on(rk * 0.8, a, ceil_at(k, rk * 0.8)),
+							Vector3.UP, Vector2(0, 0), Vector2(1, 0), Vector2(1, 1),
+							Vector2(0, 1), 0.0)
+			"тотеми":
+				var ring := maxf(14.0, rk * 0.16)
+				for i in 9:
+					var a := door_angle + TAU * float(i) / 9.0
+					var base := _on(ring, a, floor_y - 0.3)
+					var high := rng.randf_range(10.0, 16.0)
+					var top := base + Vector3.UP * high
+					var pole: Array[Vector3] = [base, top]
+					var thick: Array[float] = [0.55, 0.4]
+					_of(bag, "кістка").tube(pole, thick, 7, 2.0)
+					for j in 3:
+						_of(bag, "кістка").blob(base + Vector3.UP * high
+								* (0.45 + 0.25 * float(j)), Vector3(1.0, 1.1, 1.2)
+								* rng.randf_range(0.9, 1.3), 8, 6)
+					var out := Vector3(cos(a), 0, sin(a))
+					var across := Vector3(-out.z, 0, out.x)
+					for way: float in [-1.0, 1.0]:
+						var horn: Array[Vector3] = [top, top + across * way * 2.0
+								+ Vector3.UP * 1.5, top + across * way * 3.5
+								+ Vector3.UP * 4.0]
+						var taper: Array[float] = [0.25, 0.18, 0.05]
+						_of(bag, "кістка").tube(horn, taper, 5, 1.0)
+					var bar: Array[Vector3] = [base + Vector3.UP * high * 0.7
+							- across * 2.2, base + Vector3.UP * high * 0.7
+							+ across * 2.2]
+					var bar_w: Array[float] = [0.2, 0.2]
+					_of(bag, "кістка").tube(bar, bar_w, 5, 1.0)
+			"кістки":
+				for i in int(rk * 0.6):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.92
+					var at := _on(r, a, _floor_y(land, k, a, r) + 0.3)
+					var big := rng.randf_range(0.8, 2.0)
+					if i % 3 == 0:
+						_of(bag, "кістка").blob(at + Vector3.UP * 0.3 * big,
+								Vector3(0.7, 0.6, 0.9) * big, 8, 6)
+					else:
+						var turn := rng.randf() * TAU
+						var dir := Vector3(cos(turn), 0, sin(turn)) * 1.4 * big
+						var bone: Array[Vector3] = [at - dir, at + dir]
+						var bone_w: Array[float] = [0.16 * big, 0.16 * big]
+						_of(bag, "кістка").tube(bone, bone_w, 5, 1.0)
+						for end: Vector3 in [at - dir, at + dir]:
+							_of(bag, "кістка").blob(end, Vector3.ONE * 0.3 * big, 6, 4)
+			"гнізда":
+				for i in 9:
+					var a := door_angle + TAU * float(i) / 9.0 + rng.randf_range(0, 0.4)
+					var r := rk * rng.randf_range(0.3, 0.85)
+					var c := _on(r, a, floor_y)
+					var wide := rng.randf_range(3.5, 7.0)
+					for j in 30:
+						var t := TAU * float(j) / 30.0 + rng.randf_range(0, 0.2)
+						var out := Vector3(cos(t), 0, sin(t))
+						var p := c + out * wide * rng.randf_range(0.8, 1.1) \
+								+ Vector3.UP * rng.randf_range(0.2, wide * 0.35)
+						var dir := (Vector3(-out.z, 0, out.x) + Vector3.UP
+								* rng.randf_range(-0.3, 0.3) + out
+								* rng.randf_range(-0.4, 0.4)).normalized() \
+								* rng.randf_range(1.0, 2.2)
+						var stick: Array[Vector3] = [p - dir, p + dir]
+						var stick_w: Array[float] = [0.14, 0.1]
+						_of(bag, "гніздо").tube(stick, stick_w, 4, 1.0)
+					for j in rng.randi_range(1, 3):
+						_of(bag, "кістка").blob(c + Vector3(rng.randf_range(-1, 1),
+								0.7, rng.randf_range(-1, 1)), Vector3(0.6, 0.8, 0.6),
+								8, 6)
+			"сніг":
+				for i in int(rk * 0.5):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.95
+					_of(bag, "сніг").disc_at(_on(r, a, floor_y + 0.05
+							+ float(i) * 0.002), rng.randf_range(3.0, 10.0), 14)
+			"завіси":
+				if open_top:
+					continue
+				for i in int(rk * 1.6):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.97
+					var top := _on(r, a, ceil_at(k, r))
+					var turn := rng.randf() * TAU
+					var side := Vector3(cos(turn), 0, sin(turn)) \
+							* rng.randf_range(1.0, 2.5)
+					var down := Vector3.UP * rng.randf_range(5.0, 14.0)
+					_of(bag, "завіса").quad(top - side - down, top + side - down,
+							top + side, top - side, Vector3(-sin(turn), 0, cos(turn)),
+							Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1),
+							0.0)
+			"сухі квіти":
+				for i in int(rk * 3.0):
+					var a := rng.randf() * TAU
+					var r := rk * sqrt(rng.randf()) * 0.96
+					var at := _on(r, a, _floor_y(land, k, a, r))
+					var size := rng.randf_range(0.8, 1.8)
+					for turn: float in [0.0, PI * 0.5]:
+						var side := Vector3(cos(a + turn), 0, sin(a + turn)) * size * 0.6
+						var up := Vector3(0, size, 0)
+						_of(bag, "сухе").quad(at - side, at + side, at + side + up,
+								at - side + up, Vector3(cos(a), 0.3, sin(a)).normalized(),
+								Vector2(0, 1), Vector2(1, 1), Vector2(1, 0),
+								Vector2(0, 0), 0.0)
+
+
+## Кілька малих ламп по колу поверху — світіння грибів чи бурштину.
+func _glow_lamps(k: int, tone: Color, many: int, power: float,
+		ring: float) -> void:
+	for i in many:
+		var a := door_angle + TAU * (float(i) + 0.5) / float(many)
+		var lamp := OmniLight3D.new()
+		lamp.light_color = tone
+		lamp.light_energy = power
+		lamp.omni_range = maxf(28.0, radii[k] * 0.45)
+		lamp.omni_attenuation = 1.2
+		lamp.shadow_enabled = false
+		lamp.position = _on(radii[k] * ring, a, floors[k] + 5.0)
+		add_child(lamp)
+
+
+func _add_things(bag: Dictionary) -> void:
+	var glow := GLOW_WARM if shape == "секвоя" else GLOW_COLD
+	for label: String in bag:
+		if label == "коріння":
+			continue
+		var mat := StandardMaterial3D.new()
+		mat.roughness = 0.85
+		match label:
+			"трутовик":
+				mat.albedo_color = Color(0.8, 0.55, 0.3)
+			"ніжка":
+				mat.albedo_color = Color(0.85, 0.85, 0.75)
+			"шапка":
+				mat.albedo_color = glow
+				mat.emission_enabled = true
+				mat.emission = glow
+				mat.emission_energy_multiplier = 1.8
+			"вода":
+				mat.albedo_color = Color(0.15, 0.35, 0.4, 0.6)
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				mat.roughness = 0.08
+				mat.metallic = 0.2
+			"бурштин":
+				mat.albedo_color = Color(1.0, 0.55, 0.1)
+				mat.emission_enabled = true
+				mat.emission = Color(1.0, 0.5, 0.1)
+				mat.emission_energy_multiplier = 1.2
+				mat.roughness = 0.25
+			"кокон":
+				mat.albedo_color = Color(0.82, 0.8, 0.74)
+			"павутина":
+				mat.albedo_color = Color(0.9, 0.9, 0.92, 0.3)
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+			"кістка":
+				mat.albedo_color = Color(0.88, 0.85, 0.76)
+			"гніздо":
+				mat = _material("res://models/nature/Bark_DeadTree.png", "",
+						Color(0.45, 0.35, 0.25))
+			"сніг":
+				mat.albedo_color = Color(0.95, 0.97, 1.0)
+			"завіса", "сухе":
+				if ResourceLoader.exists(FERN):
+					mat.albedo_texture = load(FERN)
+				mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+				mat.alpha_scissor_threshold = 0.45
+				mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+				mat.albedo_color = Color(0.55, 0.65, 0.5) if label == "завіса" \
+						else Color(0.55, 0.2, 0.15)
+		_add_mesh(_named(label), (bag[label] as _Mesh).commit(), mat)
+
+
+static func _named(label: String) -> String:
+	return label.capitalize().replace(" ", "")
 
 
 func _floor_y(land: Node, k: int, a: float, r: float) -> float:
@@ -829,7 +1694,22 @@ func _build_crown() -> void:
 	var depth := 3
 	var kids := 3
 	var leafy := 1.0
+	# Яруси гілок: частки висоти стовбура нижче верхівки (0 — сама
+	# верхівка). Пучок листя — частка `rim`.
+	var tiers: Array[float] = [0.0]
+	_puff = 0.42
 	match shape:
+		"пляшка":
+			# Баобаб на референсах (13.11.2026): крона — широка пласка
+			# парасоля, ширша за стовбур, а не жмут на маківці. Крону
+			# міряли від верхнього поверху (він удвічі вужчий за низ), і
+			# на стовбурі 200 м вона виходила чубчиком (14.11.2026).
+			limbs = 11
+			length = rim * 1.0
+			thick = rim * 0.17
+			rise = 0.42
+			kids = 3
+			_puff = 0.8
 		"сивий":
 			limbs = 9
 			length = rim * 0.95
@@ -846,14 +1726,46 @@ func _build_crown() -> void:
 			depth = 3
 			kids = 3
 			leafy = 1.0
+		"ялівець":
+			# Як на фото: частина гілок — голі вибілені шпичаки, частина —
+			# з темною хвоєю; хвоя лежить широкими пласкими «подушками».
+			limbs = 9
+			length = rim * 1.0
+			thick = rim * 0.13
+			rise = 0.6
+			depth = 3
+			kids = 3
+			leafy = 1.0
+			_puff = 0.7
+		"секвоя":
+			# Секвоя: гілки ярусами по верхній частині стовбура, ростуть
+			# убік і трохи вниз; крона вузька й довга, не парасоля.
+			limbs = 13
+			length = rim * 0.75
+			thick = rim * 0.08
+			rise = 0.12
+			depth = 3
+			kids = 3
+			leafy = 1.0
+			tiers = [0.0, 0.07, 0.14]
+			_puff = 0.5
 	var wood := _Mesh.new()
 	var leaves := _Mesh.new()
-	for i in limbs:
-		var a := TAU * (float(i) + rng.randf_range(0.0, 0.6)) / float(limbs)
-		var from := _on(rim * 0.78, a, top - thick * 0.6)
-		var dir := (Vector3(cos(a), rise, sin(a))).normalized()
-		_branch(wood, leaves, rng, from, dir, length, thick, depth, kids, leafy,
-				rim)
+	var tall_part := top - floors[0]
+	for tier in tiers.size():
+		var y := top - tall_part * tiers[tier]
+		var shrink := 1.0 - 0.12 * float(tier)
+		var many := limbs - tier * 2
+		for i in many:
+			var a := TAU * (float(i) + rng.randf_range(0.0, 0.6) + 0.37 * float(tier)) \
+					/ float(many)
+			var r_here := rim if tier == 0 else outer_r(a, y)
+			var from := _on(r_here * (0.78 if tier == 0 else 0.92), a,
+					y - thick * 0.6)
+			var dir := (Vector3(cos(a), rise, sin(a))).normalized()
+			_branch(wood, leaves, rng, from, dir, length * shrink, thick * shrink,
+					depth, kids, 0.0 if shape == "ялівець" and i % 3 == 1 else leafy,
+					rim)
 	_add_mesh("Гілля", wood.commit(), bark_material(), true)
 	if leafy > 0.0:
 		var leaf_mat := StandardMaterial3D.new()
@@ -863,6 +1775,8 @@ func _build_crown() -> void:
 		leaf_mat.alpha_scissor_threshold = 0.5
 		leaf_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 		leaf_mat.roughness = 0.85
+		if shape == "ялівець" or shape == "секвоя":
+			leaf_mat.albedo_color = Color(0.4, 0.55, 0.38)
 		_add_mesh("Листя", leaves.commit(), leaf_mat)
 
 
@@ -883,7 +1797,11 @@ func _branch(wood: _Mesh, leaves: _Mesh, rng: RandomNumberGenerator,
 	wood.tube(pts, widths, 8 if depth > 1 else 6, BARK_TILE)
 	if depth <= 1:
 		if leafy > 0.0:
-			_leaf_puff(leaves, rng, to, rim * 0.42)
+			# Два пучки на кінцеву гілку — на кінці й посередині: одним
+			# пучком крона світилася наскрізь.
+			_leaf_puff(leaves, rng, to, rim * _puff)
+			_leaf_puff(leaves, rng, from.lerp(to, 0.55) + Vector3.UP * length * 0.1,
+					rim * _puff * 0.8)
 		return
 	for c in kids:
 		var turn := TAU * (float(c) + rng.randf()) / float(kids)
@@ -897,7 +1815,7 @@ func _branch(wood: _Mesh, leaves: _Mesh, rng: RandomNumberGenerator,
 		_branch(wood, leaves, rng, to, nd, length * rng.randf_range(0.6, 0.75),
 				thick * 0.58, depth - 1, kids, leafy, rim)
 	if leafy > 0.0 and depth == 2:
-		_leaf_puff(leaves, rng, to, rim * 0.5)
+		_leaf_puff(leaves, rng, to, rim * _puff * 1.15)
 
 
 ## Пучок листя: три великі картки навхрест (одна майже лежить) з
@@ -1109,6 +2027,38 @@ class _Mesh:
 			add(p, Vector2(p.x, p.z) / tile, above)
 		for i in sides:
 			tri_idx(c, first + i, first + i + 1, Vector3.UP if up else Vector3.DOWN)
+
+	## Диск на висоті `c.y` із серединою `c` (калюжа, сніг, вода).
+	func disc_at(c: Vector3, r: float, sides: int) -> void:
+		var mid := add(c, Vector2.ZERO, 0.0)
+		var first := verts.size()
+		for i in sides + 1:
+			var a := TAU * float(i) / float(sides)
+			add(c + Vector3(cos(a) * r, 0, sin(a) * r), Vector2(cos(a), sin(a)), 0.0)
+		for i in sides:
+			tri_idx(mid, first + i, first + i + 1, Vector3.UP)
+
+	## Еліпсоїд із півосями `r` — шапка гриба, череп, кокон.
+	func blob(c: Vector3, r: Vector3, sides: int, rows: int) -> void:
+		var first := verts.size()
+		for j in rows + 1:
+			var lat := PI * (float(j) / float(rows) - 0.5)
+			for i in sides + 1:
+				var lon := TAU * float(i) / float(sides)
+				add(c + Vector3(cos(lat) * cos(lon) * r.x, sin(lat) * r.y,
+						cos(lat) * sin(lon) * r.z), Vector2(float(i) / float(sides),
+						float(j) / float(rows)), 0.0)
+		for j in rows:
+			for i in sides:
+				var v00 := first + j * (sides + 1) + i
+				var v10 := v00 + 1
+				var v01 := v00 + sides + 1
+				var v11 := v01 + 1
+				var face := (verts[v00] + verts[v11]) * 0.5 - c
+				if j > 0:
+					tri_idx(v00, v10, v11, face)
+				if j < rows - 1:
+					tri_idx(v00, v11, v01, face)
 
 	## Труба вздовж точок із товщиною в кожній — гілка, корінь, губа дупла.
 	func tube(pts: Array[Vector3], widths: Array[float], sides: int,

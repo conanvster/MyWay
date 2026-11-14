@@ -13,6 +13,7 @@ const MAP2 := "res://data/map2.json"
 
 var _dir := "user://дерева"
 var _bad := 0
+var _day: DayCycle
 
 
 func _ready() -> void:
@@ -45,9 +46,15 @@ func _go() -> void:
 	var map: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(MAP2))
 	land.build(map, true)
 	land.fog_to_vision(160.0)
+	# Доба — як у клієнта: туман у залах рідшає й темніє (13.11.2026,
+	# «туман вибілює зали»). Година стала, щоб знімки були порівнянні.
+	_day = DayCycle.new()
+	_day.fixed_hour = 13.0
+	world.add_child(_day)
+	_day.setup(land, world.get_node_or_null("Light") as DirectionalLight3D)
 	var eye := Camera3D.new()
 	eye.far = 1500.0
-	eye.fov = 60.0
+	eye.fov = 75.0
 	get_tree().root.add_child(eye)
 	eye.make_current()
 	var mobs: Dictionary = JSON.parse_string(
@@ -72,20 +79,32 @@ func _go() -> void:
 		_expect("рівні ростуть на 2 або 3", _steps_ok(tree.levels))
 		_expect("множник ×2 → ×4", is_equal_approx(tree.boosts[0], 2.0)
 				and is_equal_approx(tree.boosts[n - 1], 4.0))
-		# Промінь згори в точку на половині радіуса кожного поверху.
+		# Промінь згори в точку на половині радіуса кожного поверху. Після
+		# перегородок (13.11.2026) точка може лягти на стіну чи пень — тоді
+		# наступний кут; підлога мусить знайтись.
 		for k in range(1, n):
-			var a := tree.door_angle + 1.0
-			var x := tree.position.x + cos(a) * tree.radii[k] * 0.5
-			var z := tree.position.z + sin(a) * tree.radii[k] * 0.5
-			var top := tree.floors[k + 1] - GiantTree.SLAB - 0.5
-			var ray := PhysicsRayQueryParameters3D.create(Vector3(x, top, z),
-					Vector3(x, tree.floors[k] - 5.0, z))
-			var hit := space.intersect_ray(ray)
+			var landed := NAN
+			for turn in 12:
+				var a := tree.door_angle + 1.0 + 0.37 * float(turn)
+				var x := tree.position.x + cos(a) * tree.radii[k] * 0.5
+				var z := tree.position.z + sin(a) * tree.radii[k] * 0.5
+				var ray := PhysicsRayQueryParameters3D.create(Vector3(x,
+						tree.floors[k] + 20.0, z), Vector3(x, tree.floors[k] - 5.0, z))
+				var hit := space.intersect_ray(ray)
+				if not hit.is_empty():
+					landed = hit["position"].y
+					if absf(landed - tree.floors[k]) < 0.1:
+						break
 			_expect("поверх %d: промінь сів на підлогу (%.2f, чекав %.2f)"
-					% [k + 1, float(hit.get("position", Vector3.INF).y)
-					if not hit.is_empty() else NAN, tree.floors[k]],
-					not hit.is_empty() and absf(hit["position"].y
-					- tree.floors[k]) < 0.1)
+					% [k + 1, landed, tree.floors[k]],
+					absf(landed - tree.floors[k]) < 0.1)
+		var walls := 0.0
+		for sc: Dictionary in tree.screens:
+			for i in (sc["pts"] as Array).size() - 1:
+				walls += (sc["pts"][i] as Vector3).distance_to(sc["pts"][i + 1])
+		print("    перегородок %d (%.0f м стін), пнів %d" % [tree.screens.size(),
+				walls, tree.stumps.size()])
+		_expect("на кожному поверсі є перегородки чи пні", _cover_on_every(tree))
 		for s: Dictionary in tree.steps:
 			var k: int = s["з"]
 			var low: Vector3 = s["низ"]
@@ -105,6 +124,21 @@ func _go() -> void:
 					tree.step_at(arrive).is_empty()
 					or tree.step_at(arrive)[1] == true)
 		var zones: Array = tree.zones(mobs)
+		# Монстр не з'являється в перегородці: з кожної зони вище першого
+		# поверху 12 випадкових точок, промінь униз мусить сісти на підлогу.
+		var buried := 0
+		for zone: MobZone in zones:
+			if not zone.on_floor:
+				continue
+			for i in 12:
+				var at := zone.random_point()
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(
+						Vector3(at.x, zone.floor_y + 18.0, at.z),
+						Vector3(at.x, zone.floor_y - 3.0, at.z)))
+				if hit.is_empty() or absf(hit["position"].y - zone.floor_y) > 0.2:
+					buried += 1
+		_expect("зони появи вільні від перегородок (точок у стіні: %d)" % buried,
+				buried == 0)
 		var per := {}
 		var total := 0
 		for zone: MobZone in zones:
@@ -183,6 +217,20 @@ func _live_check(world: Node, tree: GiantTree, t: int, mobs: Dictionary) -> void
 	world.remove(id)
 
 
+func _cover_on_every(tree: GiantTree) -> bool:
+	for k in tree.radii.size():
+		var found := false
+		for sc: Dictionary in tree.screens:
+			if int(sc["k"]) == k:
+				found = true
+		for st: Array in tree.stumps:
+			if is_equal_approx((st[0] as Vector3).y, tree.floors[k]):
+				found = true
+		if not found:
+			return false
+	return true
+
+
 func _steps_ok(levels: Array[int]) -> bool:
 	for k in range(1, levels.size()):
 		if not (levels[k] - levels[k - 1]) in [2, 3]:
@@ -214,20 +262,21 @@ func _shots(land: Landscape, tree: GiantTree, eye: Camera3D, t: int) -> void:
 		["двері", Vector3(c.x, tree.door_ground, c.z) + door
 				* (tree.outer_r(tree.door_angle, tree.door_ground + 5.0) + 28.0)
 				+ Vector3.UP * 7.0, Vector3(c.x, tree.door_ground + 5.0, c.z)],
-		["поверх-1", c + door * (tree.radii[0] - 6.0) + Vector3.UP * 7.0,
-				c - door * tree.radii[0] + Vector3.UP * 2.0],
-		["поверх-2", Vector3(c.x, tree.floors[1] + 6.0, c.z)
-				+ door * (tree.radii[1] - 5.0),
-				Vector3(c.x, tree.floors[1] + 1.0, c.z) - door * tree.radii[1] * 0.6],
-		["верх", Vector3(c.x, tree.floors[n - 1] + 8.0, c.z)
-				+ door * (tree.radii[n - 1] - 4.0),
-				Vector3(c.x, tree.floors[n - 1] + 3.0, c.z)
-				- door * tree.radii[n - 1] * 0.5],
+		["поверх-1", c + door * (tree.radii[0] * 0.8) + Vector3.UP * 6.0,
+				c - door * tree.radii[0] * 0.2 + Vector3.UP * tree.storey * 0.32],
 	]
+	# Кожен поверх вище першого: від стіни навпроти середини, на висоті
+	# чверті поверху (13.11.2026: у кожного поверху своя тема).
+	for k in range(1, n):
+		views.append(["поверх-%d" % (k + 1), Vector3(c.x, tree.floors[k]
+				+ 6.0, c.z) + door * (tree.radii[k] * 0.8),
+				Vector3(c.x, tree.floors[k] + tree.storey * 0.32, c.z)
+				- door * tree.radii[k] * 0.2])
 	land.fog_to_vision(far * 1.3)
 	for v: Array in views:
 		land.stream_to(v[1])
 		eye.look_at_from_position(v[1], v[2], Vector3.UP)
+		_day.follow(v[1], true)
 		for i in 12:
 			await get_tree().process_frame
 		await RenderingServer.frame_post_draw

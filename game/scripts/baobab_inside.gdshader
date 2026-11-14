@@ -7,6 +7,8 @@ uniform sampler2D wood : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D moss : source_color, filter_linear_mipmap, repeat_enable;
 uniform float moss_high = 2.6;
 uniform vec3 tint = vec3(1.0);
+// Колір моху: червоний мох поверху 8 секвої тощо.
+uniform vec3 moss_tint = vec3(1.0);
 
 varying vec3 world_at;
 
@@ -29,10 +31,16 @@ void vertex() {
 void fragment() {
 	vec3 w = texture(wood, UV).rgb * tint;
 	vec3 m = texture(moss, UV * 1.6).rgb * 0.85;
+	if (moss_tint != vec3(1.0)) {
+		m = vec3(dot(m, vec3(0.4, 0.9, 0.3))) * moss_tint;
+	}
 	float n = noise(world_at.xz * 0.12 + world_at.y * 0.08) * 1.8
 			+ noise(world_at.xz * 0.55 + world_at.y * 0.3) * 0.7;
 	float above = UV2.y;
 	float k = 1.0 - smoothstep(moss_high * 0.3, moss_high, above + 1.2 - n);
+	if (moss_high < 0.05) {
+		k = 0.0;
+	}
 	ALBEDO = mix(w, m, clamp(k, 0.0, 1.0));
 	ROUGHNESS = 0.95;
 }

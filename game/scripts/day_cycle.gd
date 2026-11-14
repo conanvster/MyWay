@@ -36,6 +36,18 @@ var _clock := 0.0
 var _flies: CPUParticles3D = null
 var _fly_glow: StandardMaterial3D = null
 ## Що показано зараз — для годинника в HUD і проби.
+## Усередині дерева-велета (13.11.2026: «туман вибілює зали»). Вуличний
+## об'ємний туман у залі на 200 м світився молоком від стіни до стіни:
+## у залі він рідшає й бере тон стін і світла поверху. 0 — надворі,
+## 1 — цілком у залі; переходить плавно, за INDOOR_TIME секунд.
+const INDOOR_TIME := 0.8
+const INDOOR_DENSITY := 0.18
+var _indoor := 0.0
+var _indoor_fog := Color.BLACK
+var _indoor_glow := Color.BLACK
+var _outdoor: Dictionary = {}
+var _follow_ms := 0
+
 var hour_now := 12.0
 var part_now := "день"
 
@@ -157,9 +169,12 @@ func apply(h: float) -> void:
 		_air.ambient_light_color = _mul(_base["довкілля"], k["довкілля"])
 		_air.ambient_light_energy = float(_base["сила довкілля"]) \
 				* float(k["сила довкілля"])
-		_air.fog_light_color = _mul(_base["туман"], k["туман"])
-		_air.volumetric_fog_albedo = _mul(_base["об'ємний"], k["туман"])
-		_air.volumetric_fog_density = float(_base["густина"]) * float(k["густина"])
+		_outdoor = {
+			"туман": _mul(_base["туман"], k["туман"]),
+			"об'ємний": _mul(_base["об'ємний"], k["туман"]),
+			"густина": float(_base["густина"]) * float(k["густина"]),
+		}
+		_mix_air()
 		_air.tonemap_exposure = float(_base["експозиція"]) * float(k["експозиція"])
 	if _flies != null:
 		var glow := clampf(float(k["світлячки"]), 0.0, 1.0)
@@ -175,9 +190,42 @@ func clock_text() -> String:
 
 
 ## Світлячки ходять за гравцем: `follow` кличе клієнт щокадру.
-func follow(at: Vector3) -> void:
+## `instant` — без переходу (проби знімають кадр одразу після переносу).
+func follow(at: Vector3, instant := false) -> void:
 	if _flies != null:
 		_flies.global_position = at
+	var now := Time.get_ticks_msec()
+	var dt := clampf(float(now - _follow_ms) / 1000.0, 0.0, 0.25)
+	_follow_ms = now
+	var want := 0.0
+	if land != null and land.has_method("giant_trees"):
+		for tree: GiantTree in land.giant_trees():
+			var k := tree.storey_of(at)
+			if k < 0:
+				continue
+			want = 1.0
+			var row := tree.theme(k)
+			var walls := GiantTree._tone(row, "стіни", Color(0.9, 0.8, 0.65))
+			var glow := GiantTree._tone(row, "світло", Color(0.9, 1.0, 0.8))
+			# Далечінь зали темніє в колір її стін, а не біліє.
+			_indoor_fog = walls * 0.32
+			_indoor_glow = glow * 0.45
+			break
+	var was := _indoor
+	_indoor = want if instant else move_toward(_indoor, want, dt / INDOOR_TIME)
+	if not is_equal_approx(was, _indoor):
+		_mix_air()
+
+
+## Туман з урахуванням того, чи гравець у залі дерева-велета.
+func _mix_air() -> void:
+	if _air == null or _outdoor.is_empty():
+		return
+	var t := _indoor * _indoor * (3.0 - 2.0 * _indoor)
+	_air.fog_light_color = (_outdoor["туман"] as Color).lerp(_indoor_fog, t)
+	_air.volumetric_fog_albedo = (_outdoor["об'ємний"] as Color).lerp(_indoor_glow, t)
+	_air.volumetric_fog_density = lerpf(float(_outdoor["густина"]),
+			float(_outdoor["густина"]) * INDOOR_DENSITY, t)
 
 
 ## Точка між двома сусідніми точками доби (по колу через північ).

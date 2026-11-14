@@ -1610,6 +1610,13 @@ func _zones_from_data(list: Array) -> Array:
 	for one: Dictionary in list:
 		var zone := MobZone.new()
 		var at: Array = one.get("де", [0, 0, 0])
+		# Під стовбуром дерева-велета звичайних зон немає: там його поверхи
+		# зі своїми монстрами (після збільшення дерев 13.11.2026 кілька зон
+		# мапи опинились у стіні).
+		if GiantTree.covers(float(at[0]), float(at[2]),
+				float(one.get("радіус", 20.0))):
+			zone.free()
+			continue
 		zone.name = "ЗонаПояви%d" % (made.size() + 1)
 		zone.position = Vector3(float(at[0]), 0.0, float(at[2]))
 		zone.kind = int(one.get("вид", 1))

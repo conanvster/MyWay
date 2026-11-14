@@ -5,7 +5,8 @@ extends Node
 ##     godot --path game res://scenes/bag_window.tscn -- [тека]
 ##
 ## Два кадри: 30 місць (смуги немає) і 34 місця з 31 річчю (смуга є,
-## лічильник «торба: 31 / 34»). Не мережа — лише показ HUD.
+## лічильник «торба: 31 / 34»); третій — напис «РІВЕНЬ 12». Не мережа —
+## лише показ HUD.
 
 var _dir := "user://торба"
 
@@ -42,6 +43,14 @@ func _go() -> void:
 		var path := "%s/%s.png" % [_dir, shot[2]]
 		get_viewport().get_texture().get_image().save_png(path)
 		print("знімок: %s" % path)
+	# Напис нового рівня (14.11.2026) — посеред вискоку.
+	hud._things_box.visible = false
+	hud.show_level_up(12)
+	await get_tree().create_timer(0.5).timeout
+	await RenderingServer.frame_post_draw
+	var banner := "%s/3-напис-рівня.png" % _dir
+	get_viewport().get_texture().get_image().save_png(banner)
+	print("знімок: %s" % banner)
 	get_tree().quit()
 
 

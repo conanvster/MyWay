@@ -3233,6 +3233,61 @@ func _build_coords() -> void:
 	_quest_text.position = Vector2(6, 1)
 
 
+## Напис нового рівня посеред екрана (14.11.2026, анімація рівня): «РІВЕНЬ N»
+## вискакує з легким перебільшенням, тримається й тане вгору. Попередній,
+## якщо ще видно, — геть: два рівні поспіль не мають лягати один на одного.
+var _level_banner: Control = null
+
+
+func show_level_up(level: int) -> void:
+	if _root == null:
+		return
+	if is_instance_valid(_level_banner):
+		_level_banner.queue_free()
+	var box := Control.new()
+	box.name = "НовийРівень"
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(box)
+	_level_banner = box
+	var big := _text(72, box)
+	big.text = "РІВЕНЬ %d" % level
+	big.add_theme_color_override("font_color", Color(1.0, 0.85, 0.42))
+	big.add_theme_color_override("font_outline_color", Color(0.25, 0.12, 0.0, 0.95))
+	big.add_theme_constant_override("outline_size", 10)
+	_wide_line(big, 0.24, 0.0, 100.0)
+	var small := _text(22, box)
+	small.text = "здоров'я й мана відновлені"
+	small.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
+	_wide_line(small, 0.24, 100.0, 132.0)
+	box.modulate.a = 0.0
+	big.scale = Vector2.ONE * 0.6
+	var go := box.create_tween()
+	go.tween_property(box, "modulate:a", 1.0, 0.15)
+	go.parallel().tween_property(big, "scale", Vector2.ONE * 1.12, 0.22) \
+			.set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+	go.tween_property(big, "scale", Vector2.ONE, 0.15)
+	go.tween_interval(1.6)
+	go.tween_property(box, "modulate:a", 0.0, 0.7)
+	go.parallel().tween_property(box, "position:y", -30.0, 0.7)
+	go.tween_callback(box.queue_free)
+
+
+## Рядок на всю ширину екрана з текстом посередині, на `at` висоти екрана
+## (частка), між `top` і `bottom` пікселів від неї. Збільшення — від центру.
+func _wide_line(label: Label, at: float, top: float, bottom: float) -> void:
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.anchor_left = 0.0
+	label.anchor_right = 1.0
+	label.anchor_top = at
+	label.anchor_bottom = at
+	label.offset_left = 0.0
+	label.offset_right = 0.0
+	label.offset_top = top
+	label.offset_bottom = bottom
+	label.resized.connect(func() -> void: label.pivot_offset = label.size * 0.5)
+
+
 func show_clock(text: String) -> void:
 	if _clock_text != null and _clock_text.text != text:
 		_clock_text.text = text

@@ -602,6 +602,9 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 		_link.notice(me, ("рівень %d! здоров'я й мана відновлені, "
 				+ "очок статів: %d") % [killer.level, killer.stat_points])
 		_link.report(me, "[рівень] %d узяв %d рівень" % [me, killer.level])
+		# Анімація рівня (14.11.2026): стовп світла бачать усі поруч, напис —
+		# сам гравець.
+		_link.to_watchers_and_self(me, &"client_level_up", [me, killer.level])
 
 	for row: Dictionary in victim.drop_table:
 		if randf() > float(row.get("шанс", 0.0)) * mult:

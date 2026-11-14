@@ -187,6 +187,9 @@ func _build(key: Vector2i, at: Vector2) -> void:
 			# У річці трава не росте (06.11.2026: травинки стирчали з води).
 			if _land.in_river(x, z, 0.3):
 				continue
+			# Усередині дерева-велета — своя підлога (14.11.2026).
+			if GiantTree.inside_trunk(x, z):
+				continue
 			var patch := clampf(_flowers.get_noise_2d(x, z) * 1.6 + 0.35,
 					0.0, 1.0)
 			var bloom := cover.b * patch * 0.28 + verge * 0.22

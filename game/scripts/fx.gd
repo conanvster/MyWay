@@ -333,6 +333,132 @@ func _aura(who: Node3D, tone: Color) -> void:
 	_flash(who, tone)
 
 
+## Новий рівень (14.11.2026). Півтори секунди: золотий стовп світла з
+## неба, три кільця здіймаються від ніг до голови, іскри йдуть угору
+## спіраллю, спалах на тілі й світло довкола, наостанок — сніп іскор над
+## головою. Бачать усі, хто бачить гравця (`client_level_up`).
+const TONE_LEVEL := Color(1.0, 0.82, 0.38)
+const LEVEL_TIME := 1.6
+
+
+func level_up(id: int) -> void:
+	if _quiet:
+		return
+	var who := _body(id)
+	if who == null:
+		return
+	var feet := who.global_position + Vector3.UP * (0.05 - _feet(who))
+	# Стовп: циліндр, що розгоряється й гасне, трохи ширшаючи.
+	var pillar := MeshInstance3D.new()
+	var tube := CylinderMesh.new()
+	tube.top_radius = 0.55
+	tube.bottom_radius = 0.95
+	tube.height = 14.0
+	tube.cap_top = false
+	tube.cap_bottom = false
+	tube.radial_segments = 32
+	pillar.mesh = tube
+	# М'який промінь: яскравий посередині, тане до країв і догори (свій
+	# шейдер — з простим матеріалом стовп був суцільною жовтою трубою).
+	var paint := ShaderMaterial.new()
+	paint.shader = _beam_shader()
+	paint.set_shader_parameter("tone", TONE_LEVEL)
+	paint.set_shader_parameter("power", 0.0)
+	pillar.material_override = paint
+	pillar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(pillar)
+	pillar.global_position = feet + Vector3.UP * 7.0
+	pillar.scale = Vector3(0.6, 1.0, 0.6)
+	_live += 1
+	var glow := pillar.create_tween()
+	glow.tween_property(paint, "shader_parameter/power", 1.0, 0.25)
+	glow.parallel().tween_property(pillar, "scale", Vector3(1.0, 1.0, 1.0), 0.25)
+	glow.tween_interval(0.5)
+	glow.tween_property(paint, "shader_parameter/power", 0.0, LEVEL_TIME - 0.75)
+	glow.parallel().tween_property(pillar, "scale", Vector3(1.4, 1.0, 1.4),
+			LEVEL_TIME - 0.75)
+	glow.tween_callback(func() -> void:
+		_live -= 1
+		pillar.queue_free())
+	# Три кільця від ніг угору, одне за одним.
+	for i in 3:
+		var ring := _ring_mesh(TONE_LEVEL, 0.9, 0.05)
+		add_child(ring)
+		ring.global_position = feet + Vector3.UP * 0.1
+		ring.scale = Vector3.ONE * 0.6
+		var ring_paint := ring.material_override as StandardMaterial3D
+		ring_paint.albedo_color.a = 0.0
+		_live += 1
+		var rise := ring.create_tween()
+		rise.tween_interval(0.18 * float(i))
+		rise.tween_property(ring_paint, "albedo_color:a", 1.0, 0.08)
+		rise.parallel().tween_property(ring, "global_position",
+				feet + Vector3.UP * 2.3, 0.7).set_ease(Tween.EASE_OUT) \
+				.set_trans(Tween.TRANS_CUBIC)
+		rise.parallel().tween_property(ring, "scale", Vector3.ONE * 1.25, 0.7)
+		rise.tween_property(ring_paint, "albedo_color:a", 0.0, 0.25)
+		rise.tween_callback(func() -> void:
+			_live -= 1
+			ring.queue_free())
+	# Іскри спіраллю вгору.
+	var motes := _particles(TONE_LEVEL, 90, 1.4, 0.13)
+	var motion := motes.process_material as ParticleProcessMaterial
+	motion.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	motion.emission_ring_axis = Vector3.UP
+	motion.emission_ring_radius = 0.9
+	motion.emission_ring_inner_radius = 0.6
+	motion.emission_ring_height = 0.1
+	motion.direction = Vector3.UP
+	motion.spread = 6.0
+	motion.initial_velocity_min = 1.8
+	motion.initial_velocity_max = 3.2
+	motion.orbit_velocity_min = 0.45
+	motion.orbit_velocity_max = 0.7
+	motion.gravity = Vector3.ZERO
+	motion.scale_curve = _fade_curve()
+	motes.explosiveness = 0.4
+	_one_shot(motes, feet)
+	# Спалах на тілі й світло довкола.
+	_flash(who, TONE_LEVEL)
+	var light := OmniLight3D.new()
+	light.light_color = TONE_LEVEL
+	light.light_energy = 0.0
+	light.omni_range = 7.0
+	add_child(light)
+	light.global_position = feet + Vector3.UP * 1.6
+	var shine := light.create_tween()
+	shine.tween_property(light, "light_energy", 5.0, 0.2)
+	shine.tween_property(light, "light_energy", 0.0, LEVEL_TIME - 0.2)
+	shine.tween_callback(light.queue_free)
+	# Сніп іскор над головою, коли кільця дійшли догори.
+	get_tree().create_timer(0.75).timeout.connect(func() -> void:
+		if is_instance_valid(who):
+			_burst(who.global_position + Vector3.UP * (2.2 - _feet(who)),
+					TONE_LEVEL, 40, 5.0))
+
+
+static var _beam: Shader = null
+
+
+static func _beam_shader() -> Shader:
+	if _beam == null:
+		_beam = Shader.new()
+		_beam.code = """shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec3 tone = vec3(1.0, 0.82, 0.38);
+uniform float power = 1.0;
+void fragment() {
+	float face = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float soft = pow(face, 2.5);
+	float up = 1.0 - UV.y;
+	float fade = smoothstep(0.0, 0.15, UV.y) * (0.25 + 0.75 * pow(UV.y, 1.5));
+	ALBEDO = tone * (0.8 + 0.6 * soft);
+	ALPHA = clamp(soft * fade * power * 0.75, 0.0, 1.0);
+}
+"""
+	return _beam
+
+
 ## Вибух іскор у точці.
 func _burst(at: Vector3, tone: Color, count: int, speed: float) -> void:
 	var sparks := _particles(tone, count, 0.5, 0.11)

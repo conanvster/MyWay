@@ -40,6 +40,18 @@ func to_watchers(subject: int, method: StringName, args: Array = []) -> void:
 		to_one(peer, method, args)
 
 
+## Тим, хто бачить, і самому собі — навіть якщо власне з'єднання себе
+## серед «побачених» не має (анімація рівня, 14.11.2026).
+func to_watchers_and_self(subject: int, method: StringName, args: Array = []) -> void:
+	var sent := false
+	if _vision != null:
+		for peer in _vision.watchers_of(subject):
+			to_one(peer, method, args)
+			sent = sent or peer == subject
+	if not sent:
+		to_one(subject, method, args)
+
+
 ## Кожному, хто в грі — незалежно від того, хто що бачить.
 ##
 ## Це виняток із П-43, і він навмисний: є речі, які стосуються всього

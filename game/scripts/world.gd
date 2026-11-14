@@ -3789,6 +3789,16 @@ func client_skill(id: int, key: String, victims: Array) -> void:
 		fx.skill_landed(id, key, victims)
 
 
+## Хтось узяв рівень (14.11.2026: «зроби анімацію після підняття рівня»):
+## стовп світла над ним; якщо це я — ще й напис на весь екран.
+@rpc("authority", "call_remote", "reliable")
+func client_level_up(id: int, level: int) -> void:
+	if fx != null:
+		fx.level_up(id)
+	if hud != null and id == multiplayer.get_unique_id():
+		hud.show_level_up(level)
+
+
 ## Мешканець відповів: вікно розмови (П-132).
 @rpc("authority", "call_remote", "reliable")
 func client_talk(at: int, title: String, trades: bool,

@@ -174,6 +174,18 @@ static func blocks(x: float, z: float, pad := 6.0) -> bool:
 	return false
 
 
+## Чи точка всередині стовбура (у межах кори першого поверху) — там своя
+## підлога, і трава краєвиду не росте. Рахується з даних, до побудови.
+static func inside_trunk(x: float, z: float) -> bool:
+	var thick := float(rules().get("стіна", 3.0))
+	for one: Dictionary in rules().get("дерева", []):
+		var at: Array = one.get("де", [0, 0])
+		var wide := float((one.get("діаметр", [0, 0]) as Array)[0]) * 0.5
+		if Vector2(float(at[0]) - x, float(at[1]) - z).length() <= wide + thick:
+			return true
+	return false
+
+
 ## Радіус майданчика, до якого рівняється земля під деревом.
 static func pad_radius(one: Dictionary) -> float:
 	var wide := float((one.get("діаметр", [0, 0]) as Array)[0]) * 0.5
@@ -960,6 +972,12 @@ func _build_look(land: Node) -> void:
 				bumpy, false, true, INSIDE_TILE, above)
 		if k > 0:
 			wood.disc(radii[k - 1] + 1.5, floors[k], true, INSIDE_TILE, 1.0)
+		else:
+			# Перший поверх — теж своя підлога, як вище (14.11.2026): земля
+			# краєвиду під деревом лишалась видно, і в ялівця, що стоїть на
+			# межі сніжної зони, пів зали було білим. Трава краєвиду під
+			# стовбуром не росте (`meadow.gd`, `GiantTree.inside_trunk`).
+			wood.disc(rk + 1.5, floors[0] + 0.06, true, INSIDE_TILE, 1.0)
 		_dome(wood, k)
 		if k == n - 1:
 			# Шия дупла над оком верхнього поверху — до неба.
@@ -1785,16 +1803,19 @@ func _build_crown() -> void:
 			_puff = 0.7
 		"секвоя":
 			# Секвоя: гілки ярусами по верхній частині стовбура, ростуть
-			# убік і трохи вниз; крона вузька й довга, не парасоля.
-			limbs = 13
-			length = rim * 0.75
-			thick = rim * 0.08
-			rise = 0.12
+			# убік і трохи вниз; крона вузька й довга, не парасоля. Пучки
+			# дрібні й густі (14.11.2026: з пучками по пів радіуса шапка
+			# була грудкою), ярус коротшає догори, а центральний пагін
+			# закруглює маківку (`_sequoia_top`).
+			limbs = 15
+			length = rim * 0.7
+			thick = rim * 0.07
+			rise = 0.08
 			depth = 3
 			kids = 3
 			leafy = 1.0
-			tiers = [0.0, 0.07, 0.14]
-			_puff = 0.5
+			tiers = [0.0, 0.04, 0.08, 0.12, 0.16]
+			_puff = 0.2
 	var wood := _Mesh.new()
 	var leaves := _Mesh.new()
 	var tall_part := top - floors[0]
@@ -1802,6 +1823,10 @@ func _build_crown() -> void:
 		var y := top - tall_part * tiers[tier]
 		var shrink := 1.0 - 0.12 * float(tier)
 		var many := limbs - tier * 2
+		if shape == "секвоя":
+			# Нижні яруси ширші, верхні коротші — крона конусом до маківки.
+			shrink = 0.55 + 0.12 * float(tier)
+			many = limbs
 		for i in many:
 			var a := TAU * (float(i) + rng.randf_range(0.0, 0.6) + 0.37 * float(tier)) \
 					/ float(many)
@@ -1812,6 +1837,8 @@ func _build_crown() -> void:
 			_branch(wood, leaves, rng, from, dir, length * shrink, thick * shrink,
 					depth, kids, 0.0 if shape == "ялівець" and i % 3 == 1 else leafy,
 					rim)
+	if shape == "секвоя":
+		_sequoia_top(wood, leaves, rng, top, rim, length, thick)
 	_add_mesh("Гілля", wood.commit(), bark_material(), true)
 	if leafy > 0.0:
 		var leaf_mat := StandardMaterial3D.new()
@@ -1824,6 +1851,39 @@ func _build_crown() -> void:
 		if shape == "ялівець" or shape == "секвоя":
 			leaf_mat.albedo_color = Color(0.4, 0.55, 0.38)
 		_add_mesh("Листя", leaves.commit(), leaf_mat)
+
+
+## Маківка секвої: центральний пагін угору з короткими гілками навсібіч —
+## крона сходиться округлим верхом, а не обривається пласкою грудкою.
+func _sequoia_top(wood: _Mesh, leaves: _Mesh, rng: RandomNumberGenerator,
+		top: float, rim: float, length: float, thick: float) -> void:
+	var leader_high := rim * 1.1
+	var pts: Array[Vector3] = []
+	var widths: Array[float] = []
+	for j in 7:
+		var t := float(j) / 6.0
+		pts.append(Vector3(rng.randf_range(-1, 1) * rim * 0.03 * t,
+				top - thick + leader_high * t, rng.randf_range(-1, 1) * rim * 0.03 * t))
+		widths.append(lerpf(rim * 0.35, thick * 0.3, t))
+	wood.tube(pts, widths, 10, BARK_TILE)
+	var rings := 6
+	for j in rings:
+		var t := (float(j) + 0.5) / float(rings)
+		var y := top + leader_high * t
+		var reach := length * (1.0 - t * 0.85) * 0.55
+		var many := 7 - j / 2
+		for i in many:
+			var a := TAU * (float(i) + rng.randf_range(0.0, 0.5) + 0.3 * float(j)) \
+					/ float(many)
+			var from := Vector3(0, y, 0) + Vector3(cos(a), 0, sin(a)) * rim * 0.12 * (1.0 - t)
+			var dir := Vector3(cos(a), 0.05, sin(a)).normalized()
+			_branch(wood, leaves, rng, from, dir, reach, thick * 0.5 * (1.0 - t * 0.6),
+					2, 3, 1.0, rim)
+	# Сама маківка — кілька пучків щільно.
+	for i in 4:
+		_leaf_puff(leaves, rng, Vector3(rng.randf_range(-1, 1) * rim * 0.05,
+				top + leader_high * 0.98, rng.randf_range(-1, 1) * rim * 0.05),
+				rim * _puff * 1.2)
 
 
 func _branch(wood: _Mesh, leaves: _Mesh, rng: RandomNumberGenerator,

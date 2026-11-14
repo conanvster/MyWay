@@ -359,7 +359,15 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
         P_ = tochky(tilo)
         dp = (P_ - np.array(SH_P)) @ np.array(SH_N)
         w_ = np.clip(dp / 0.02, 0, 1)[:, None]
-        zapysaty(tilo, P_ - w_ * STINKA * float(z["s"]) * np.array([v.normal[:] for v in tilo.data.vertices]))
+        N_ = np.array([v.normal[:] for v in tilo.data.vertices])
+        # --стінка-лише-зовні (ельф-чоловік, 14.11.2026): голова після ремешу — дві поверхні,
+        # зовнішня й внутрішня (стінка порожнього погруддя). Здуваючи обидві по своїх нормалях,
+        # внутрішню зсували назустріч зовнішній — стінка знову тоншала за воксель, і закриття шиї
+        # (ще один ремеш) розривало верх голови й обличчя на уламки. Внутрішню (нормаль до
+        # центру голови) не чіпати.
+        if "--стінка-лише-зовні" in A:
+            w_ = w_ * (((P_ - np.array(HOL_C)) * N_).sum(1) > 0)[:, None]
+        zapysaty(tilo, P_ - w_ * STINKA * float(z["s"]) * N_)
     # стик: згладити смугу біля площини шиї (не обличчя: лише нижче площини + 1 см над нею)
     bm = bmesh.new()
     bm.from_mesh(tilo.data)
@@ -398,7 +406,13 @@ def vaga_smuhy(co):
     if r > 0.30:
         return 0.0
     hi = 0.035 if co.y < -0.02 else 0.06   # спереду — не чіпати щелепу; за вухами — вище
-    return max(0.0, min(1.0, (d + 0.09) / 0.04, (hi - d) / 0.02, (0.30 - r) / 0.06))
+    w = max(0.0, min(1.0, (d + 0.09) / 0.04, (hi - d) / 0.02, (0.30 - r) / 0.06))
+    # --закриття-без-вух (ельф-чоловік, 14.11.2026): великі гострі вуха низько над площиною шиї
+    # потрапляли в смугу; роздуті на 15 мм, вони перекручували сітку, і спільний ремеш розсипав
+    # голову на 1600 уламків — від голови лишалися шия й вуха. Вище площини — лише шия.
+    if BEZ_VUH and d > -0.01 and abs(co.x) > 0.06:
+        w *= max(0.0, 1.0 - (abs(co.x) - 0.06) / 0.015)
+    return w
 
 
 def rozduty(o_, na):
@@ -417,6 +431,7 @@ def rozduty(o_, na):
 
 
 ZAKR = arg("--закриття", float, 0.015)
+BEZ_VUH = "--закриття-без-вух" in A
 if "--без-закриття" not in A:
     rozduty(o, ZAKR)
     voksel(o, VOKSEL)
@@ -960,6 +975,108 @@ if "--вирівняти-тон" in A:
         im.save()
     else:
         log("тон голови: замало зразків (%d, %d, %d) — без змін" % (len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
+SHKIRA_RIVNO = arg("--тон-тіла-рівний", float, 0.0)
+if SHKIRA_RIVNO:
+    # людина й ельф-чоловік (14.11.2026, слово замовника «так — роби» на «перефарбувати плечі й
+    # груди в тон тіла»): скульпт тіла Pixal3D має великі плями іншого тону довкола шиї, на
+    # плечах і грудях (світліші й темніші за решту шкіри). Низькочастотний тон шкіри тіла —
+    # до медіани всієї шкіри тіла; дрібні деталі (м'язи, пори) лишаються. Білизна (темна) — ні.
+    import cv2
+    im = karty[(mt.name, "колір")]
+    r = im.size[0]
+    px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    k3 = px[..., :3]
+    u = maska_uv(0, r)
+    sv = k3.max(2)
+    mk = (u & (sv > 0.12)).astype(np.float32)
+    cil = np.median(k3[mk > 0], 0)
+    syla = arg("--тон-тіла-сила", float, 0.85)
+    # два проходи: широкий (плями на пів спини) і вузький — темне «намисто» довкола шиї завширшки
+    # кілька сантиметрів широке розмиття лише розмазувало по сусідній шкірі
+    for sg in (r * SHKIRA_RIVNO, r * SHKIRA_RIVNO / 4):
+        k3 = px[..., :3]
+        rozm = cv2.GaussianBlur(k3 * mk[..., None], (0, 0), sg) / np.maximum(
+            cv2.GaussianBlur(mk, (0, 0), sg)[..., None], 1e-3)
+        mn = np.clip(cil / np.maximum(rozm, 1e-3), 0.6, 1.6)
+        px[..., :3] = np.where(mk[..., None] > 0, np.clip(k3 * (1 + (mn - 1) * syla), 0, 1), k3)
+    im.pixels.foreach_set(px.ravel())
+    im.save()
+    log("тон тіла рівний: ціль %s, розмиття %.0f px" % (cil.round(3), sg))
+VUKHA_TON = "--вуха-в-тон" in A
+if VUKHA_TON:
+    # ельф-чоловік (14.11.2026): генератор дав вуха помаранчево-червоні, а маска шкіри голови
+    # (--тон-плавний) червоне навмисно оминає (губи) — тож вуха лишались червоними. Грані голови
+    # збоку, далі за скроні (|x| > 7,5 см), — до медіани шкіри обличчя, з плавним переходом.
+    import cv2
+    im = karty[(mh.name, "колір")]
+    r = im.size[0]
+    px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    uvd = me.uv_layers.active.data
+    Wv = np.zeros((r, r), np.float32)
+    for p_ in me.polygons:
+        if p_.material_index != 1:
+            continue
+        c = sum((me.vertices[i].co for i in p_.vertices), Vector()) / len(p_.vertices)
+        w_ = max(0.0, min(1.0, (abs(c.x) - 0.072) / 0.012))
+        if w_ > 0:
+            pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in p_.loop_indices], np.int32)
+            cv2.fillPoly(Wv, [pts], float(w_))
+    Wv = cv2.GaussianBlur(Wv, (0, 0), 3)[..., None]
+    k3 = px[..., :3]
+    u = maska_uv(1, r)
+    ch = k3[..., 0] / np.maximum(k3.sum(2), 1e-4)       # частка червоного
+    zr = u & (Wv[..., 0] < 0.01) & (k3.max(2) > 0.2)
+    shk = k3[zr]
+    ch0 = np.median(ch[zr])
+    # вухо — червоніше за шкіру обличчя (бік голови без вуха лишається як є)
+    chv = np.clip((ch - ch0 - 0.015) / 0.03, 0, 1).astype(np.float32)
+    Wr = cv2.GaussianBlur(Wv[..., 0] * chv, (0, 0), 4)[..., None]
+    vukh = k3[(Wv[..., 0] > 0.5) & (chv > 0.5) & (k3.max(2) > 0.1)]
+    if len(shk) > 500 and len(vukh) > 100:
+        mn = np.clip(np.median(shk, 0) / np.maximum(np.median(vukh, 0), 1e-4), 0.5, 2.0)
+        px[..., :3] = np.clip(k3 * (1 + (mn - 1) * Wr), 0, 1)
+        im.pixels.foreach_set(px.ravel())
+        im.save()
+        log("вуха в тон: множник %s (пікселів вух %d)" % (mn.round(3), len(vukh)))
+    else:
+        log("вуха в тон: замало зразків (%d, %d) — без змін" % (len(shk), len(vukh)))
+if "--шия-в-тон" in A:
+    # людина-чоловік v3 (14.11.2026, слово замовника «виправ текстуру Людина v3»): на горлі під
+    # щелепою скульпт дав червоно-помаранчеву пляму, а маска шкіри (--тон-плавний) червоне
+    # оминає — пляма лишалась яскравою. Грані голови нижче підборіддя (до 4 см над площиною шиї):
+    # червоніше за шкіру шиї — до медіани шкіри шиї, з плавним переходом.
+    import cv2
+    im = karty[(mh.name, "колір")]
+    r = im.size[0]
+    px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    uvd = me.uv_layers.active.data
+    Wn = np.zeros((r, r), np.float32)
+    for p_ in me.polygons:
+        if p_.material_index != 1:
+            continue
+        c = sum((me.vertices[i].co for i in p_.vertices), Vector()) / len(p_.vertices)
+        w_ = max(0.0, min(1.0, (0.04 - (c - SH_P).dot(SH_N)) / 0.015))
+        if w_ > 0:
+            pts = np.array([[uvd[l].uv.x * r, uvd[l].uv.y * r] for l in p_.loop_indices], np.int32)
+            cv2.fillPoly(Wn, [pts], float(w_))
+    k3 = px[..., :3]
+    ch = k3[..., 0] / np.maximum(k3.sum(2), 1e-4)
+    zr = (Wn > 0.9) & (k3.max(2) > 0.15)
+    ch0 = np.median(ch[zr])
+    chv = np.clip((ch - ch0 - 0.02) / 0.03, 0, 1).astype(np.float32)
+    shk = k3[zr & (chv < 0.1)]
+    Wr = cv2.GaussianBlur(Wn * chv, (0, 0), 5)[..., None]
+    cerv = k3[zr & (chv > 0.5)]
+    if len(shk) > 500 and len(cerv) > 50:
+        # пляма ще й пересвічена: колір і яскравість — шкіри шиї, від плями — лише дрібний рельєф
+        cil = np.median(shk, 0)
+        rozm = cv2.GaussianBlur(k3, (0, 0), 8)
+        px[..., :3] = np.clip(k3 * (1 - Wr) + cil * (k3 / np.maximum(rozm, 1e-3)) * Wr, 0, 1)
+        im.pixels.foreach_set(px.ravel())
+        im.save()
+        log("шия в тон: червоних пікселів %d, ціль %s" % (len(cerv), cil.round(3)))
+    else:
+        log("шия в тон: замало зразків (%d, %d) — без змін" % (len(shk), len(cerv)))
 TON_JAK = arg("--тон-як", str, "")
 if TON_JAK:
     # орки v2/v3 (14.11.2026): шейдер шкіри гри показує голову й тіло різним матеріалом, і

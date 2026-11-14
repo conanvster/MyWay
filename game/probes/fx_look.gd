@@ -5,7 +5,7 @@ extends Node
 ##
 ##     godot --path game res://scenes/fx_look.tscn -- --тека <каталог>
 ##
-## Ліворуч — кастер (орчиха s1303), праворуч — дві цілі (вовки). Знімки:
+## Ліворуч — кастер (орчиха з нуля), праворуч — дві цілі (вовки). Знімки:
 ## 1 каст атаки посередині читання · 2 згусток у польоті · 3 хвиля
 ## «усі-поруч» · 4 баф · 5 лік · 6 звичайний удар · 7 пил смерті ·
 ## 8–10 новий рівень (стовп, кільця, сніп іскор).
@@ -13,7 +13,7 @@ extends Node
 ## середній час кадру під час ефектів.
 
 const AVATARS := "res://models/own/avatary/"
-const CASTER := AVATARS + "ork-s1303-mixamo/ork-s1303-mixamo.glb"
+const CASTER := AVATARS + "orchykha-z-nulia/орчиха-3.glb"
 const BEAST := "res://models/own/вовк.glb"
 
 var _fx: Fx

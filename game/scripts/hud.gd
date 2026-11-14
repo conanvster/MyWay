@@ -1465,6 +1465,7 @@ func _build_map() -> void:
 	_map_view.size = Vector2(MAP_SIDE, MAP_SIDE)
 	_map_view.custom_minimum_size = _map_view.size
 	_map_box.body.add_child(_map_view)
+	_map_view.deaths = _deaths
 
 
 ## Око бога (слово замовника 20.09.2026) — рідкісний артефакт у торбі
@@ -1501,6 +1502,32 @@ func _build_eye() -> void:
 	_eye_view.custom_minimum_size = _eye_view.size
 	_eye_view.follow_me = true
 	_eye_box.body.add_child(_eye_view)
+	_eye_view.deaths = _deaths
+
+
+## Де лягли речі після двох останніх смертей (слово замовника 14.11.2026:
+## «позначка на карті, щоб було видно, де лежать речі останній раз або два
+## рази вбитого»). Один і той самий масив віддано обом картам — велика й
+## «око бога» малюють те саме. Новіша — перша. Старша за строк речей на
+## землі (`Ground.LIFETIME`) не малюється: там уже нічого не лежить.
+const DEATH_MARKS := 2
+var _deaths: Array = []
+
+
+func add_death_mark(at: Vector3, count: int) -> void:
+	_deaths.push_front({"де": at, "скільки": count,
+			"коли": Time.get_ticks_msec()})
+	while _deaths.size() > DEATH_MARKS:
+		_deaths.pop_back()
+	if _map_view != null:
+		_map_view.queue_redraw()
+	if _eye_view != null:
+		_eye_view.queue_redraw()
+
+
+## Скільки позначок смерті зараз тримає HUD — для проби.
+func death_marks() -> Array:
+	return _deaths
 
 
 ## Розгорнути чи згорнути мінікарту. Без артефакта в торбі не робить

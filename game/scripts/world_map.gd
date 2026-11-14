@@ -57,6 +57,9 @@ var follow_me := false
 var dungeons: Dungeons = null
 ## Світ гри — звідти відкриті підземелля й дні до кінця строку (Ф8).
 var world: Node = null
+## Де лягли речі після останніх смертей — масив із HUD (`add_death_mark`),
+## новіша перша: {"де": Vector3, "скільки", "коли": мс}.
+var deaths: Array = []
 
 var _font: Font
 ## Намальований план підземелля: ключ «номер|зерно» -> Texture2D.
@@ -185,6 +188,7 @@ func _draw() -> void:
 	draw_rect(Rect2(land_from, land_to - land_from), EDGE, false, 1.0)
 
 	_draw_open_dungeons()
+	_draw_deaths(-1, Callable())
 	# Гравець — останнім, щоб його не перекрило нічим.
 	if has_me:
 		_draw_me(_spot(me.x, me.z))
@@ -357,6 +361,7 @@ func _draw_sheet() -> void:
 						HORIZONTAL_ALIGNMENT_LEFT, -1, 12, TOWN)
 
 	_draw_open_dungeons()
+	_draw_deaths(-1, Callable())
 	if has_me:
 		_draw_me(_spot(me.x, me.z))
 
@@ -512,6 +517,7 @@ func _draw_dungeon(at: int) -> void:
 			% [plan.title, entry["grade"], Dungeons.level_of(at) + 1,
 			   int(entry.get("depth", 1))],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 13, TOWN)
+	_draw_deaths(at, to_map)
 	_draw_me(to_map.call(me.x, me.z))
 
 
@@ -551,3 +557,68 @@ func _draw_open_dungeons() -> void:
 		y += 15.0
 		draw_string(_font, Vector2(8, y), lines[i],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tones[i])
+
+
+# ── Де лягли речі після смерті (14.11.2026) ─────────────────────────
+#
+# Слово замовника: «позначка на карті, щоб було видно, де лежать речі
+# останній раз або два рази вбитого, щоб легше було знайти місце».
+# Вигляд — пропозиція виконавця: темний хрест у білому обідку, біля нього
+# «речі ×N · скільки хвилин ще лежать»; старша смерть — блідіша.
+
+const DEATH := Color(0.12, 0.1, 0.1)
+const DEATH_RING := Color(1, 1, 1, 0.9)
+const DEATH_TEXT := Color(1.0, 0.82, 0.55)
+const DEATH_ARM := 6.0
+
+
+## `here` — підземелля, план якого зараз на карті (-1 — карта світу);
+## `to_map` — як рахувати точку в ньому. На карті світу смерть у підземеллі
+## стоїть біля його святині: туди треба йти, щоб повернутись по речі.
+func _draw_deaths(here: int, to_map: Callable) -> void:
+	var now := Time.get_ticks_msec()
+	for i in deaths.size():
+		var mark: Dictionary = deaths[i]
+		var left := Ground.LIFETIME - (now - int(mark["коли"])) / 1000.0
+		if left <= 0.0:
+			continue
+		var at: Vector3 = mark["де"]
+		var inside := -1
+		if dungeons != null and is_instance_valid(dungeons):
+			inside = dungeons.index_at(at.x, at.z)
+		var dot: Vector2
+		var where := ""
+		if here >= 0:
+			if inside != here:
+				continue
+			dot = to_map.call(at.x, at.z)
+		elif inside >= 0:
+			var spots: Array = map.get("святині", [])
+			var shrine := Dungeons.shrine_of(inside)
+			if shrine < 0 or shrine >= spots.size():
+				continue
+			var de: Array = spots[shrine].get("де", [0, 0, 0])
+			dot = _spot(float(de[0]), float(de[2]))
+			where = " · у підземеллі"
+		else:
+			dot = _spot(at.x, at.z)
+		var fade := 1.0 if i == 0 else 0.6
+		_draw_cross(dot, fade)
+		# Темний обвід під написом: на світлих полях і в місті без нього
+		# напис зникає (перевірено знімком проби 14.11.2026).
+		var text := "речі ×%d · %d хв%s" % [int(mark["скільки"]),
+				ceili(left / 60.0), where]
+		var from := dot + Vector2(DEATH_ARM + 5.0, 4.0)
+		draw_string_outline(_font, from, text, HORIZONTAL_ALIGNMENT_LEFT,
+				-1, 12, 4, Color(DEATH, 0.9 * fade))
+		draw_string(_font, from, text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
+				Color(DEATH_TEXT, fade))
+
+
+func _draw_cross(dot: Vector2, fade: float) -> void:
+	var a := Vector2(DEATH_ARM, DEATH_ARM)
+	var b := Vector2(DEATH_ARM, -DEATH_ARM)
+	draw_line(dot - a, dot + a, Color(DEATH_RING, fade), 5.0)
+	draw_line(dot - b, dot + b, Color(DEATH_RING, fade), 5.0)
+	draw_line(dot - a, dot + a, Color(DEATH, fade), 2.5)
+	draw_line(dot - b, dot + b, Color(DEATH, fade), 2.5)

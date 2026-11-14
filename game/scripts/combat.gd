@@ -567,6 +567,12 @@ func _kill(me: int, killer: Node, victim: Node, victim_id: int) -> void:
 		for gone: String in gone_all:
 			_link.notice(victim_id, "загублено, лежить на землі: %s" % gone)
 			_link.report(victim_id, "[смерть] %d загубив %s" % [victim_id, gone])
+		# Позначка на карті, де лягли речі (слово замовника 14.11.2026:
+		# «щоб легше було знайти місце, де вбили»). Місце каже сервер —
+		# там, куди `ground` їх справді поклав, а не де клієнт себе бачив.
+		if not gone_all.is_empty():
+			_link.to_one(victim_id, &"client_death_mark",
+					[victim.global_position, gone_all.size()])
 	_link.report(victim_id, "[бій] %d загинув, труп лежатиме %.0f с"
 			% [victim_id, victim.corpse_left])
 	_link.to_watchers(victim_id, &"client_died", [victim_id])

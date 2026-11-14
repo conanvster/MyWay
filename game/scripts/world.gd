@@ -519,6 +519,7 @@ func _process(delta: float) -> void:
 		view.smooth(delta)
 		view.approach(delta)
 		view.demo(delta)
+		view.repeat_held(delta)
 		_preload_step(delta)
 		_since_stream += delta
 		if _since_stream >= 1.0 / STREAM_HZ:
@@ -3902,6 +3903,13 @@ func client_died(id: int) -> void:
 	# знімався й раніше, сам вибір — ні.
 	if id == multiplayer.get_unique_id() and view != null:
 		view.forget_resident()
+
+
+## Де лягли речі, загублені при смерті (14.11.2026) — позначка на карті.
+@rpc("authority", "call_remote", "reliable")
+func client_death_mark(at: Vector3, count: int) -> void:
+	if hud != null:
+		hud.add_death_mark(at, count)
 
 
 @rpc("authority", "call_remote", "reliable")

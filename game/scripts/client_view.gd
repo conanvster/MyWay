@@ -802,9 +802,60 @@ func input(event: InputEvent) -> void:
 			elif event.ctrl_pressed:
 				slot += 7
 			use_slot(slot, event.shift_pressed)
+			_held_key = event.keycode
+			_held_slot = slot
+			_held_shift = event.shift_pressed
+			_held_wait = HOLD_REPEAT
 	elif event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_LEFT:
 		click_at(event.position, event.double_click, event.ctrl_pressed)
+
+
+## Затиснута клавіша панелі повторює дію (слово замовника 14.11.2026:
+## «якщо затиснути кнопку, наприклад 1, — буде робити повтор дії, щоб не
+## натискати багато разів, але це відбувається через 0.3 сек»). Перший
+## раз — одразу при натисканні, далі кожні 0,3 с, доки клавішу тримають.
+## Системний автоповтор (`echo`) не годиться: його затримку й частоту
+## задає ОС, а не гра. Клієнт лише частіше шле той самий намір — відкат,
+## ману й ціль сервер перевіряє, як і на кожне окреме натискання (П-08).
+const HOLD_REPEAT := 0.3
+
+## Яку клавішу тримають (0 — жодну), яку комірку вона тисне й з Shift чи
+## без: комбінацію запам'ятовуємо на момент натискання, щоб відпущений
+## посеред повтору Ctrl не перекинув дію на іншу смугу панелі.
+var _held_key := 0
+var _held_slot := -1
+var _held_shift := false
+var _held_wait := 0.0
+
+
+## Щокадру: тримають клавішу — раз на `HOLD_REPEAT` знову тиснемо комірку.
+## Відпускання беремо не з події, а з `Input`: подія відпускання може
+## дістатись полю чату чи вікну, а не світові, і повтор тоді не зупинився б.
+func repeat_held(delta: float) -> void:
+	if _held_key == 0:
+		return
+	if not Input.is_key_pressed(_held_key) or _typing():
+		_held_key = 0
+		return
+	_held_wait -= delta
+	if _held_wait > 0.0:
+		return
+	_held_wait += HOLD_REPEAT
+	# Ще біжимо до цілі по цю ж дію — `approach` сам ударить, щойно
+	# дістане. Повтор тут лише сипав би «підходжу до цілі» щотретини секунди.
+	if _wait_slot == _held_slot:
+		return
+	use_slot(_held_slot, _held_shift)
+
+
+## Фокус у полі для тексту (чат, кількість) — та сама цифра там пишеться,
+## а не б'є.
+func _typing() -> bool:
+	if _world == null or not _world.is_inside_tree():
+		return false
+	var focus := _world.get_viewport().gui_get_focus_owner()
+	return focus is LineEdit or focus is TextEdit
 
 
 ## Розкладка панелі — П-58; поки просто 1–7 підряд.

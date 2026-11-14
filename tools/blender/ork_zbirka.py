@@ -339,7 +339,14 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
     bpy.ops.object.modifier_apply(modifier=mb.name)
     bpy.data.objects.remove(rizak)
     najbilsha(tilo)
+    H_ = tochky(hol)
+    d_ = (H_ - np.array(SH_P - SH_N * arg("--зріз-голови", float, 0.035))) @ np.array(SH_N)
+    log("голова перед зрізом: вершин %d, над площиною %d (відстань від %.3f до %.3f м)"
+        % (len(H_), int((d_ > 0).sum()), d_.min(), d_.max()))
     vidrizaty(hol, SH_P - SH_N * arg("--зріз-голови", float, 0.035), SH_N, False)
+    if not len(hol.data.vertices):
+        raise SystemExit("[збірка] ‼ зріз по площині шиї не лишив від голови нічого — "
+                         "перевір --горло/--потилиця (spec/аватари-з-нуля.md, крок 5)")
     najbilsha(hol)
     aktyv(tilo)
     hol.select_set(True)
@@ -953,6 +960,32 @@ if "--вирівняти-тон" in A:
         im.save()
     else:
         log("тон голови: замало зразків (%d, %d, %d) — без змін" % (len(zrazky[0]), len(zrazky[1]), len(oblychchia)))
+TON_JAK = arg("--тон-як", str, "")
+if TON_JAK:
+    # орки v2/v3 (14.11.2026): шейдер шкіри гри показує голову й тіло різним матеріалом, і
+    # «рівняти до тону тіла» за текстурою — хибна ціль: у першого орка, де на вигляд тон рівний,
+    # текстура голови в ~1,75 раза світліша за текстуру тіла; з --вирівняти-тон нові голови
+    # темніли до коричневого. Тож ціль — текстура голови моделі, що вже виглядає правильно:
+    # медіана шкіри зводиться до її медіани поканально (множник — деталі лишаються).
+    import cv2
+    im = karty[(mh.name, "колір")]
+    r = im.size[0]
+    px = np.array(im.pixels[:], np.float32).reshape(r, r, 4)
+    mask = maska_uv(1, r) > 0
+    k_ = px[..., :3][mask]
+    k_ = k_[k_.max(1) > 0.12]
+    zr = bpy.data.images.load(os.path.abspath(TON_JAK))
+    rz = zr.size[0]
+    pz = np.array(zr.pixels[:], np.float32).reshape(-1, 4)[:, :3]
+    pz = pz[pz.max(1) > 0.12]
+    cil = np.median(pz, 0)
+    tep = np.median(k_, 0)
+    mn = np.clip(cil / np.maximum(tep, 1e-4), 0.5, 2.0)
+    px[..., :3] = np.where(mask[..., None], np.clip(px[..., :3] * mn, 0, 1), px[..., :3])
+    im.pixels.foreach_set(px.ravel())
+    im.save()
+    log("тон як %s: було %s, ціль %s, множник %s" % (os.path.basename(TON_JAK), tep.round(3),
+                                                     cil.round(3), mn.round(3)))
 VUKHA = arg("--вуха-гостріші", float, 0.0)
 if VUKHA:
     # слово замовника 12.11.2026 (ельфійка): «вуха трохи більш гострі і трошки більш стирчачі».

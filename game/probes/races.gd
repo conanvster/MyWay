@@ -28,16 +28,21 @@ func _go() -> void:
 	print("\n— раси й одяг —")
 	for race: String in ["людина", "ельф", "орк"]:
 		for sex: String in ["чоловік", "жінка"]:
-			await _check(race, sex)
+			# Кожна картка вибору (14.11.2026): у моделей «з нуля» на картку своє
+			# обличчя — окремий файл, і кожен мусить мати рухи й ходу.
+			for variant in range(1, maxi(1, Appearance.ready_variants(race, sex)) + 1):
+				await _check(race, sex, variant)
 	print("  підсумок: %s" % ("усе гаразд" if _bad == 0
 			else "‼ вад: %d" % _bad))
 	quit(1 if _bad > 0 else 0)
 
 
-func _check(race: String, sex: String) -> void:
+func _check(race: String, sex: String, variant := 1) -> void:
 	var hero: Node3D = AVATAR.instantiate()
 	root.add_child(hero)
 	await process_frame
+	hero.appearance = Appearance.preset(race, sex, variant)
+	_variant = variant
 	hero.apply_sex(sex, race)
 	hero.place_at(Vector3(0, 2.0, 0), 0.0)
 	for i in 120:
@@ -135,11 +140,14 @@ func _shown(pieces: Array[MeshInstance3D]) -> Array[String]:
 	return out
 
 
+var _variant := 1
+
+
 func _report(race: String, sex: String, problems: Array[String],
 		moves: int, moved: float, tall: float = 0.0) -> void:
 	if not problems.is_empty():
 		_bad += 1
-	print("  %s %-7s %-8s рухів %d, нога в ході %.2f рад, зріст %.2f м%s"
-			% ["✓" if problems.is_empty() else "✗", race, sex, moves, moved,
+	print("  %s %-7s %-8s картка %d: рухів %d, нога в ході %.2f рад, зріст %.2f м%s"
+			% ["✓" if problems.is_empty() else "✗", race, sex, _variant, moves, moved,
 			   tall, "" if problems.is_empty()
 					else " — ‼ " + "; ".join(problems)])

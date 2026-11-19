@@ -889,6 +889,7 @@ var _sculpt_mats: Array[ShaderMaterial] = []
 
 
 func _prepare_sculpt_skin() -> void:
+	var body_ref := Vector3.ZERO
 	for i in _body_mesh.mesh.get_surface_count():
 		var src := _body_mesh.mesh.surface_get_material(i) as BaseMaterial3D
 		if src == null or not str(src.resource_name).begins_with("шкіра") or src.albedo_texture == null:
@@ -926,6 +927,15 @@ func _prepare_sculpt_skin() -> void:
 		m.set_shader_parameter("skin_tint", ref)
 		_body_mesh.set_surface_override_material(i, m)
 		_sculpt_mats.append(m)
+		if str(src.resource_name) == "шкіра-тіло":
+			body_ref = ref
+	# один опорний тон на всі матеріали — тіла: текстура голови світліша за текстуру тіла
+	# (без вибору шкіри їх зрівнює сам шейдер), і зі своїм тоном вибраний колір шкіри робив
+	# голову темнішою за тіло (людина v2, 19.11.2026)
+	if body_ref != Vector3.ZERO:
+		for m: ShaderMaterial in _sculpt_mats:
+			m.set_shader_parameter("skin_ref", body_ref)
+			m.set_shader_parameter("skin_tint", body_ref)
 
 
 ## Очі MPFB — окрема сітка («high-poly»/«low-poly») зі своєю текстурою:

@@ -771,6 +771,10 @@ func _apply_part_sets(helmet := false) -> void:
 	for k: String in PART_SETS:
 		var want := str(_look.get(k, ""))
 		var vs := _part_set(k)
+		# борода без вибору — повна (19.11.2026: з'явились «вуса» й «коротка», за абеткою
+		# вони перші — і всі вже створені чоловіки без ключа «борода» поміняли б бороду)
+		if want == "" and k == "борода" and find_child(PART_SETS[k] + "повна", true, false) != null:
+			want = "повна"
 		for i in vs.size():
 			var m: MeshInstance3D = vs[i]
 			m.visible = (str(m.name) == PART_SETS[k] + want if want != "" else i == 0) \
@@ -1142,7 +1146,10 @@ func _colour_sculpt(hc: Variant) -> void:
 		m.set_shader_parameter("liner", float(_look.get("підводка", 0.0)))
 		m.set_shader_parameter("hair_mix", 1.0 if hair_on and sc_hair is Color else 0.0)
 		if sc_hair is Color:
-			m.set_shader_parameter("hair_color", Vector3(sc_hair.r, sc_hair.g, sc_hair.b))
+			# шейдер світлить скальп за тінню текстури (шкіра «з нуля» світла) — без
+			# пригасання скальп під темною зачіскою виходив рудішим і світлішим за пасма
+			var hcol: Color = sc_hair
+			m.set_shader_parameter("hair_color", Vector3(hcol.r, hcol.g, hcol.b) * 0.8)
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

@@ -113,6 +113,20 @@ r = subprocess.run([PY, os.path.join(ROOT, "tools", "maski_oblychchia.py"), rend
 log(r.stdout.strip() or r.stderr[-400:])
 F = np.load(tochky)
 Fx, Fz = u_svit(F)
+# ікла орків (19.11.2026): маска губ — увесь контур рота, а ікла стоять поверх губ і фарбувались
+# кольором губ. Ікло — світліше й менш насичене за губи: такі пікселі з маски губ прибрати.
+_kadr = cv2.imread(render)
+_mk = cv2.imread(mk)
+_hsv = cv2.cvtColor(_kadr, cv2.COLOR_BGR2HSV).astype(np.float32)
+_guby = _mk[..., 0] > 128                          # BGR: B — губи
+if _guby.sum() > 50:
+    v0, s0 = np.median(_hsv[..., 2][_guby]), np.median(_hsv[..., 1][_guby])
+    ikla = _guby & (_hsv[..., 2] > v0 - 15) & (_hsv[..., 1] < s0 * 0.6)
+    if ikla.sum() > 0.04 * _guby.sum():
+        ikla = cv2.dilate(ikla.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        _mk[..., 0] = np.where(ikla, 0, _mk[..., 0])
+        cv2.imwrite(mk, _mk)
+        log("ікла: прибрано з маски губ %d пікселів кадру" % int(ikla.sum()))
 
 # ── 3. перед голови й скальп — атрибути вершин ──────────────────────
 yc = float(np.median(H[:, 1]))

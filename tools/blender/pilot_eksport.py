@@ -45,6 +45,13 @@ for o in bpy.data.objects:
             if k.name != "змішано":
                 o.shape_key_remove(k)
         o.shape_key_remove(o.data.shape_keys.key_blocks["змішано"])
+# форм-ключі рис у GLB — з вагою 0: гра вмикає вибрану рису сама; ключі з elf_rysy.py до
+# 19.11.2026 мали вагу 1, і модель без застосованого вигляду показувала всі риси разом
+if Z_FORMAMY:
+    for o in bpy.data.objects:
+        if o.type == "MESH" and o.data.shape_keys:
+            for k in o.data.shape_keys.key_blocks:
+                k.value = 0.0
 ma.perenapravyty(arm)
 os.makedirs(os.path.dirname(KUDY), exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=KUDY, export_format="GLB",

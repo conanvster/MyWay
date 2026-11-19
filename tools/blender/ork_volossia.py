@@ -514,9 +514,14 @@ def uv_vnyz(p):
     return (math.atan2(p.x, -(p.y - C.y)) / (2 * math.pi) * 10.0, -p.z / 0.2)
 
 
-M_KARTKY = material("Волосся-пасма", atlas_volosynok(), True)
-M_DZHGUT = material("Волосся-джгут", volokna(), False)
-MATY = [M_KARTKY, M_DZHGUT]
+LYSHE_BORODY = "--лише-бороди" in A
+if LYSHE_BORODY and "Волосся-пасма" in bpy.data.materials:
+    # бороди до готової моделі (19.11.2026): ті самі матеріали, що й у зачісок, — без копій текстур
+    MATY = [bpy.data.materials["Волосся-пасма"], bpy.data.materials["Волосся-джгут"]]
+else:
+    M_KARTKY = material("Волосся-пасма", atlas_volosynok(), True)
+    M_DZHGUT = material("Волосся-джгут", volokna(), False)
+    MATY = [M_KARTKY, M_DZHGUT]
 
 
 # ── зачіски ──────────────────────────────────────────────────────────
@@ -584,6 +589,61 @@ def boroda(s, n=arg("--борода", int, 2400)):
     s.pidklad(v_boroda, uv_vnyz, porih=0.75)
 
 
+def boroda_korotka(s, n=arg("--борода", int, 2400)):
+    """Коротка борода (19.11.2026, план 15.11 крок 6): та сама зона, що й повна, пасма 1,2–3 см,
+    щільно до шкіри."""
+    for h0, chastka in ((0.0015, 0.45), (0.004, 0.35), (0.007, 0.2)):
+        for p0, n0 in koreni(v_boroda, int(n * chastka)):
+            ln = random.uniform(0.012, 0.03) * (0.6 + 0.4 * v_boroda(p0))
+            pts = rist(p0, n0, pole_borody, ln, lambda t, h0=h0: h0 + 0.004 * t, krok=0.006)
+            s.kartka(pts, random.uniform(0.007, 0.011), husti=True)
+    s.pidklad(v_boroda, uv_vnyz, porih=0.75)
+
+
+def tochky_oblychchia():
+    """Точки обличчя MediaPipe (`maski_z_nulia.py`, кадр 1024², 0,30 м) → світ (x, z)."""
+    if "--точки" not in A:
+        return None
+    G = np.load(A[A.index("--точки") + 1])
+    hi_ = next(i for i, m_ in enumerate(me.materials) if m_ and m_.name == "шкіра-голова")
+    hv = np.zeros(len(P), bool)
+    for f in me.polygons:
+        if f.material_index == hi_:
+            hv[list(f.vertices)] = True
+    cz_ = P[hv, 2].max() - 0.13
+    cx_ = float(np.median(P[hv, 0]))
+    return np.c_[cx_ + (G[:, 0] / 1024 - 0.5) * 0.30, cz_ - (G[:, 1] / 1024 - 0.5) * 0.30]
+
+
+def vusa(s, F, n=900):
+    """Вуса (19.11.2026): між основою носа (точка 2) і верхньою губою (0), до кутиків рота
+    (61, 291) і трохи вниз біля них; лише перед обличчя."""
+    z_nis, z_guba = F[2, 1], F[0, 1]
+    x_kut = (abs(F[61, 0] - F[1, 0]) + abs(F[291, 0] - F[1, 0])) / 2
+    x0, z_kut = F[1, 0], (F[61, 1] + F[291, 1]) / 2
+
+    def zona(p):
+        if p.y > C.y - 0.4 * R:
+            return 0.0
+        ax = abs(p.x - x0)
+        verh = z_nis - 0.003
+        niz = z_guba + 0.001 if ax < x_kut * 0.7 else min(z_guba, z_kut) - 0.010 * (ax / x_kut)
+        if ax > x_kut + 0.006:
+            return 0.0
+        return max(0.0, min(1.0, (verh - p.z) / 0.003, (p.z - niz) / 0.003,
+                            (x_kut + 0.006 - ax) / 0.004))
+
+    def pole_vus(p, t):
+        bik = 1.0 if p.x > x0 else -1.0
+        return Vector((0.55 * bik, -0.25, -0.8)).normalized()
+    for h0, chastka in ((0.0015, 0.5), (0.004, 0.5)):
+        for p0, n0 in koreni(zona, int(n * chastka)):
+            pts = rist(p0, n0, pole_vus, random.uniform(0.012, 0.022), lambda t, h0=h0: h0 + 0.003 * t,
+                       krok=0.005)
+            s.kartka(pts, random.uniform(0.005, 0.008), husti=True)
+    s.pidklad(zona, uv_vnyz, porih=0.6)
+
+
 def dovhe(s, n=arg("--довгих", int, 800)):
     """Довге пряме волосся (орчиха, 12.11.2026): зачесане назад по черепу й вільно вниз по
     спині до лопаток; із скронь — пасма спереду плечей на груди. Нижче плечей тримається грудей."""
@@ -632,6 +692,26 @@ def irokez(s, n=900):
     s.pidklad(smuha, uv_nazad, porih=0.5)
 
 
+if LYSHE_BORODY:
+    # лише нові бороди до готової моделі зі зачісками й рисами (7-риси/*.blend)
+    for o_ in [o_ for o_ in bpy.data.objects if o_.name in ("Борода-коротка", "Борода-вуса")]:
+        bpy.data.objects.remove(o_)
+    s = Sitka()
+    boroda_korotka(s)
+    s.obiekt("Борода-коротка", MATY)
+    F_ = tochky_oblychchia()
+    if F_ is not None:
+        s = Sitka()
+        vusa(s, F_)
+        s.obiekt("Борода-вуса", MATY)
+    bm.free()
+    if me.shape_keys:          # риси вимкнено (ключі з elf_rysy.py до 19.11 мали вагу 1)
+        for k_ in me.shape_keys.key_blocks:
+            k_.value = 0.0
+    rig.data.pose_position = "POSE"
+    bpy.ops.wm.save_as_mainfile(filepath=VYHID)
+    log("→", VYHID)
+    sys.exit(0)
 s = Sitka()
 zachesane(s)
 kosy(s)

@@ -90,6 +90,7 @@ def kliuch(imia, zsuv):
     if me.shape_keys is None:
         tilo.shape_key_add(name="Basis", from_mix=False)
     k = tilo.shape_key_add(name=imia, from_mix=False)
+    k.value = 0.0          # Blender 5: новий ключ увімкнений — у GLB вага 1, і всі риси разом
     loc = (inv.to_3x3() @ np.eye(3)).T if False else None
     m3 = np.array(inv.to_3x3())
     d_loc = zsuv @ m3.T

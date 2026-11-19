@@ -356,6 +356,14 @@ func _fill_choices(scanned: bool) -> void:
 		for b: String in beards:
 			items.append([b, b])
 		_choice_row("Борода", items, "борода")
+	# брови й вії (19.11.2026): сітки MPFB у людини-жінки, картки в моделей «з нуля»
+	for k: String in {"брови": "Брови", "вії": "Вії"}:
+		var set_: Array = o.get("набори", {}).get(k, [])
+		if set_.size() > 1:
+			var its: Array = []
+			for b: String in set_:
+				its.append([str(b).get_slice("-", 1) if "-" in str(b) else b, b])
+			_choice_row({"брови": "Брови", "вії": "Вії"}[k], its, k)
 	if o["маски"]:
 		_choice_row("Очі", pairs.call(Appearance.EYES), "очі", Appearance.EYES)
 		_choice_row("Шкіра", pairs.call(Appearance.SKIN), "шкіра",

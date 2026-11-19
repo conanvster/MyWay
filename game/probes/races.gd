@@ -89,6 +89,11 @@ func _check(race: String, sex: String, variant := 1) -> void:
 		var n := (o["риси"].get(k, []) as Array).size()
 		if n < 3:
 			lack.append("%s — форм %d" % [k, n])
+	# брови ×4 і вії ×3 — як у людини-жінки (MPFB); «з нуля» — картки, 19.11.2026
+	for k: String in {"брови": 4, "вії": 3}:
+		var n := (o["набори"].get(k, []) as Array).size()
+		if n < {"брови": 4, "вії": 3}[k]:
+			lack.append("%s — %d" % [k, n])
 	if not lack.is_empty():
 		problems.append("налаштувань менше, ніж у людини-жінки: " + ", ".join(lack))
 	# Одяг (19.09.2026): без речей модель роздягнена; вдягнене показує
@@ -111,7 +116,8 @@ func _check(race: String, sex: String, variant := 1) -> void:
 				% ", ".join(worn))
 	var hair: Array = skin.find_children("Волосся*", "MeshInstance3D", true,
 			false)
-	if hair.is_empty() or not hair[0].visible:
+	# видима — вибрана зачіска, не обов'язково перша сітка (19.11.2026: «коси» в пресетах)
+	if hair.is_empty() or not hair.any(func(h: MeshInstance3D) -> bool: return h.visible):
 		problems.append("без шолома волосся не видно")
 	hero.wear({"голова": "шолом з кори дуба"}, goods)
 	if not hair.is_empty() and hair[0].visible:

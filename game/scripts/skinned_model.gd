@@ -1132,6 +1132,7 @@ func _colour_sculpt(hc: Variant) -> void:
 	var hair_on := false
 	for hm: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
 		hair_on = hair_on or hm.visible
+	_colour_brows(sc_hair)
 	for m: ShaderMaterial in _sculpt_mats:
 		var ref: Vector3 = m.get_shader_parameter("skin_ref")
 		m.set_shader_parameter("skin_tint", Vector3(sc.r, sc.g, sc.b) if sc is Color else ref)
@@ -1150,6 +1151,30 @@ func _colour_sculpt(hc: Variant) -> void:
 			# пригасання скальп під темною зачіскою виходив рудішим і світлішим за пасма
 			var hcol: Color = sc_hair
 			m.set_shader_parameter("hair_color", Vector3(hcol.r, hcol.g, hcol.b) * 0.8)
+
+
+## Брови-картки моделей «з нуля» (19.11.2026): текстура сіра — колір брів = колір волосся
+## (без зачіски — свій колір зачіски з файла, інакше темно-каштановий). Матеріал — копія
+## на цей примірник: GLB спільний для всіх персонажів однієї моделі.
+func _colour_brows(hair: Variant) -> void:
+	var col: Color = Color(0.2, 0.14, 0.1)
+	if hair is Color:
+		col = hair
+	else:
+		for hm: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+			var mm := hm.get_surface_override_material(0)
+			if mm != null and mm.has_meta("base_albedo"):
+				col = mm.get_meta("base_albedo")
+				break
+	for m: MeshInstance3D in _part_set("брови"):
+		var mat := m.get_surface_override_material(0)
+		if mat == null:
+			var src := m.get_active_material(0)
+			if not (src is BaseMaterial3D):
+				continue
+			mat = src.duplicate()
+			m.set_surface_override_material(0, mat)
+		(mat as BaseMaterial3D).albedo_color = col
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

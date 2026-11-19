@@ -197,8 +197,9 @@ static func clean(raw: Variant) -> Dictionary:
 	var liner := str(d.get("підводка", ""))
 	if liner in names_of(LINER):
 		out["підводка"] = liner
-	# борода (14.11.2026): «немає» чи назва сітки `Борода-<n>-<назва>` (чоловіки з нуля)
-	for key: String in ["зачіска", "борода"] + SHAPES.keys():
+	# борода (14.11.2026): «немає» чи назва сітки `Борода-<n>-<назва>` (чоловіки з нуля);
+	# брови й вії (19.11.2026): назва сітки `Брови-<n>-<назва>` / `Вії-<n>-<назва>`
+	for key: String in ["зачіска", "борода", "брови", "вії"] + SHAPES.keys():
 		var v := str(d.get(key, "")).strip_edges()
 		if v != "" and v.length() <= 32:
 			out[key] = v
@@ -215,8 +216,9 @@ static func to_look(saved: Dictionary) -> Dictionary:
 		look["підводка"] = float(_colour(LINER, str(saved["підводка"])))
 	if saved.has("зачіска"):
 		look["зачіска"] = str(saved["зачіска"])
-	if saved.has("борода"):
-		look["борода"] = str(saved["борода"])
+	for key: String in ["борода", "брови", "вії"]:
+		if saved.has(key):
+			look[key] = str(saved[key])
 	for key: String in SHAPES:
 		if saved.has(key):
 			look[SHAPES[key]] = str(saved[key])

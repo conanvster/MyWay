@@ -76,6 +76,21 @@ func _check(race: String, sex: String, variant := 1) -> void:
 		problems.append("рухів лише %d" % moves)
 	if moved < 0.05:
 		problems.append("ходьба не рушить ногу (%.3f рад)" % moved)
+	# Налаштування зовнішності (19.11.2026, слово замовника 14.11: «таку ж кількість
+	# налаштувань для усих як у жінки людини»): меню створення показує зачіски, кольори
+	# (лише з масками) і по 3 форми носа, губ, очей, вух — як у людини-жінки.
+	var o := skin.look_options()
+	var lack: Array[String] = []
+	if (o["зачіски"] as Array).size() < 3:
+		lack.append("зачісок %d" % (o["зачіски"] as Array).size())
+	if not o["маски"]:
+		lack.append("немає масок (колір очей, губ, підводка)")
+	for k: String in ["ніс", "губи", "очі", "вуха"]:
+		var n := (o["риси"].get(k, []) as Array).size()
+		if n < 3:
+			lack.append("%s — форм %d" % [k, n])
+	if not lack.is_empty():
+		problems.append("налаштувань менше, ніж у людини-жінки: " + ", ".join(lack))
 	# Одяг (19.09.2026): без речей модель роздягнена; вдягнене показує
 	# рівно свої частини, пофарбовані за `вигляд` речі.
 	var pieces := _pieces(skin)

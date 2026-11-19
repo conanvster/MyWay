@@ -750,7 +750,10 @@ func look_options() -> Dictionary:
 				return str(m.name).trim_prefix(PART_SETS[k]))
 			if k == "борода":
 				(nabory[k] as Array).append(NO_PART)
-	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null,
+	var sculpt_masks := false
+	for m: ShaderMaterial in _sculpt_mats:
+		sculpt_masks = sculpt_masks or m.has_meta("has_masks")
+	return {"зачіски": styles, "риси": rysy, "маски": _skin_mat != null or sculpt_masks,
 			"шкіри": _variant_files("шкіра"), "очі_текстури": _variant_files("очі"),
 			"набори": nabory}
 
@@ -906,6 +909,21 @@ func _prepare_sculpt_skin() -> void:
 		if ResourceLoader.exists(PORES):
 			m.set_shader_parameter("pores_tex", load(PORES))
 			m.set_shader_parameter("has_pores", true)
+		# маски обличчя (19.11.2026, `tools/blender/maski_z_nulia.py`): райдужка, підводка,
+		# губи, скальп — тоді діють колір очей, губ, підводка й скальп у тон зачіски, як у
+		# людини MPFB. Тон шкіри (`skin_ref`) — і тілу без масок: колір шкіри діє на все тіло.
+		var masks_path := path.get_basename() + "_маски-" + str(src.resource_name) + ".png"
+		var masks: Texture2D = load(masks_path) if ResourceLoader.exists(masks_path) else null
+		if masks != null:
+			m.set_shader_parameter("masks_tex", masks)
+			m.set_meta("has_masks", true)
+		else:
+			# без масок — порожня прозора: типова чорна текстура шейдера має альфу 1, а альфа —
+			# це скальп, і тіло вважалось скальпом (колір шкіри на нього не діяв)
+			m.set_shader_parameter("masks_tex", _no_masks())
+		var ref := _skin_ref(src.albedo_texture, masks)
+		m.set_shader_parameter("skin_ref", ref)
+		m.set_shader_parameter("skin_tint", ref)
 		_body_mesh.set_surface_override_material(i, m)
 		_sculpt_mats.append(m)
 
@@ -946,7 +964,7 @@ func _prepare_eyes() -> void:
 ## Середній тон шкіри текстури: пікселі поза масками й не порожні.
 static func _skin_ref(albedo: Texture2D, masks: Texture2D) -> Vector3:
 	var img := albedo.get_image()
-	var mi := masks.get_image()
+	var mi: Image = masks.get_image() if masks != null else null
 	if img == null:
 		return Vector3(0.8, 0.68, 0.62)
 	if img.is_compressed():
@@ -1043,6 +1061,7 @@ func customize(look: Dictionary) -> void:
 		# білизна поверх неї зайва
 		for m: MeshInstance3D in find_children("білизна-*", "MeshInstance3D", true, false):
 			m.visible = not st.ends_with("з-одягом")
+	_colour_sculpt(hc)
 	if _eye_mat != null:
 		var ec: Variant = _look.get("колір_очей")
 		_eye_mat.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)
@@ -1066,6 +1085,54 @@ func customize(look: Dictionary) -> void:
 				continue
 			var want := str(_look.get(parts[0].to_lower(), ""))
 			m.set_blend_shape_value(i, 1.0 if want == parts[1] else 0.0)
+
+
+static var _no_masks_tex: ImageTexture
+
+
+static func _no_masks() -> ImageTexture:
+	if _no_masks_tex == null:
+		var img := Image.create(4, 4, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))
+		_no_masks_tex = ImageTexture.create_from_image(img)
+	return _no_masks_tex
+
+
+## Кольори на шкірі моделі «з нуля» (19.11.2026): тон шкіри — тілу й голові; очі, губи,
+## підводка, скальп — де є маски. Скальп під видимою зачіскою — у тон волосся (вибраного
+## чи свого кольору зачіски), як у людини MPFB: між пасмами не світить гола шкіра.
+func _colour_sculpt(hc: Variant) -> void:
+	if _sculpt_mats.is_empty():
+		return
+	var sc: Variant = _look.get("колір_шкіри")
+	var ec: Variant = _look.get("колір_очей")
+	var lc: Variant = _look.get("колір_губ")
+	var sc_hair: Variant = hc
+	if not (hc is Color):
+		for hm: MeshInstance3D in _hair_meshes():
+			var mm := hm.get_surface_override_material(0)
+			if hm.visible and str(hm.name).begins_with("Волосся-") and mm != null \
+					and mm.has_meta("base_albedo"):
+				sc_hair = mm.get_meta("base_albedo")
+				break
+	var hair_on := false
+	for hm: MeshInstance3D in find_children("Волосся-*", "MeshInstance3D", true, false):
+		hair_on = hair_on or hm.visible
+	for m: ShaderMaterial in _sculpt_mats:
+		var ref: Vector3 = m.get_shader_parameter("skin_ref")
+		m.set_shader_parameter("skin_tint", Vector3(sc.r, sc.g, sc.b) if sc is Color else ref)
+		if not m.has_meta("has_masks"):
+			continue
+		m.set_shader_parameter("eye_mix", 1.0 if ec is Color else 0.0)
+		if ec is Color:
+			m.set_shader_parameter("eye_color", Vector3(ec.r, ec.g, ec.b))
+		m.set_shader_parameter("lips_mix", 0.85 if lc is Color else 0.0)
+		if lc is Color:
+			m.set_shader_parameter("lips_color", Vector3(lc.r, lc.g, lc.b))
+		m.set_shader_parameter("liner", float(_look.get("підводка", 0.0)))
+		m.set_shader_parameter("hair_mix", 1.0 if hair_on and sc_hair is Color else 0.0)
+		if sc_hair is Color:
+			m.set_shader_parameter("hair_color", Vector3(sc_hair.r, sc_hair.g, sc_hair.b))
 
 
 ## Добуток масштабів від `node` угору до цієї моделі (не включно).

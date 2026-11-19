@@ -349,6 +349,13 @@ func _fill_choices(scanned: bool) -> void:
 	if not styles.is_empty():
 		_choice_row("Волосся", pairs.call(Appearance.HAIR), "волосся",
 				Appearance.HAIR)
+	# борода (19.11.2026): чоловіки «з нуля» — сітки `Борода-<n>-<назва>` і «немає»
+	var beards: Array = o.get("набори", {}).get("борода", [])
+	if not beards.is_empty():
+		var items: Array = []
+		for b: String in beards:
+			items.append([b, b])
+		_choice_row("Борода", items, "борода")
 	if o["маски"]:
 		_choice_row("Очі", pairs.call(Appearance.EYES), "очі", Appearance.EYES)
 		_choice_row("Шкіра", pairs.call(Appearance.SKIN), "шкіра",

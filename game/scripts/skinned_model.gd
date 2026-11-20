@@ -343,6 +343,15 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 			mesh.material_override = _cloth_on(mesh, _part_look(piece, shown[piece]))
 	_hold_gear(look, goods)
 	_hide_under(shown)
+	# Білизна окремими сітками (людина-жінка MPFB) під бронею не визирає (20.11.2026, слово
+	# замовника: «менш помітну білизну бо виходить не красиво коли виглядає з під броні»):
+	# вдягнено панцир (деталь «тіло-…-наплічники», у жінки — з кірасою) — верху білизни не
+	# видно. Низ лишається: ззаду спідниця сидить низько, без трусиків видно сідниці.
+	var chest_worn := false
+	for piece: String in shown:
+		chest_worn = chest_worn or (piece.begins_with("тіло-") and piece.ends_with("наплічники"))
+	for under: Node in find_children("білизна-верх*", "MeshInstance3D", true, false):
+		under.visible = not chest_worn
 	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
 	# лише обрана зачіска: у моделі зі сканів їх кілька, і «показати
 	# все волосся» вдягало всі зачіски одна на одну.

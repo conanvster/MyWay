@@ -9,7 +9,7 @@ extends SceneTree
 ##
 ## Інша модель на тому самому скелеті (аватар зі скану):
 ##     godot --path game --script res://probes/human_moves.gd -- \
-##         --модель res://models/own/avatary/людина-чоловік-v1.gltf
+##         --модель res://models/own/avatary/lyudyna-cholovik-z-nulia/людина.glb
 ##
 ## Esc — вийти, пробіл — знімок, колесо миші — ближче/далі (до 1,2 м),
 ## ліва чи права кнопка затиснута — крутити камеру й піднімати/опускати, ←/→ —

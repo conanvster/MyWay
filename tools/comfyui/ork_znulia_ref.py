@@ -269,6 +269,18 @@ INSTR = {
         "shape, the skin, the pose and the camera of the first image exactly the same. Plain "
         "light grey studio background, soft even shadowless light, whole body from head to feet "
         "in frame, front view, photorealistic."),
+    # …і червоні штани (20.11.2026, слово замовника: «додай червоні штани як на референсі
+    # броні» — темно-червона тканина зі значка панцира): правка вже вибраного еталона
+    "еталон-штани": (
+        "Add dark red cloth trousers to the person in the first image, the same deep crimson "
+        "cloth as the cloth on the armor in the second image: plain loose-fitting dark red "
+        "trousers covering the thighs and the knees, tucked into the iron greaves and boots, "
+        "visible below the iron plate skirt. Keep all the iron armor, the cuirass, the "
+        "pauldrons, the vambraces, the belt with the square buckle, the plate skirt, the greaves "
+        "and the boots exactly the same. Keep the bare upper arms and the bare hands. Keep the "
+        "face, the bald head, the body, the pose and the camera exactly the same. Plain light "
+        "grey studio background, soft even shadowless light, whole body from head to feet in "
+        "frame, front view, photorealistic."),
     "тіло-ельф-ж": (
         "Turn this elf woman into a clean base body reference for 3D modeling. Strict symmetric "
         "T-pose, front view, arms straight out to the sides at shoulder height, palms down, "

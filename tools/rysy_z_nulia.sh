@@ -8,7 +8,7 @@ set -e
 cd "$(dirname "$0")/.."
 B=~/Програми/blender-5.2.2-linux-x64/blender
 A=game/models/own/avatary
-SPYSOK="lyudyna-cholovik-z-nulia|людина|art/людина-чоловік-з-нуля-2026-11-14/6-волосся/людина.blend|
+SPYSOK="lyudyna-cholovik-z-nulia|людина|art/сет-важкий-людина-2026-11-19/4-зони/людина.blend|--колір-вершин під_одяг
 lyudyna-cholovik-z-nulia|людина-2|art/людина-чоловік-з-нуля-2026-11-14/6-волосся/людина-2.blend|
 lyudyna-cholovik-z-nulia|людина-3|art/людина-чоловік-з-нуля-2026-11-14/6-волосся/людина-3.blend|
 elf-cholovik-z-nulia|ельф|art/ельф-чоловік-з-нуля-2026-11-14/6-волосся/ельф.blend|
@@ -25,6 +25,7 @@ orchykha-z-nulia|орчиха-4|art/орчиха-з-нуля-2026-11-12/6-вол
 orchykha-z-nulia|орчиха-2|art/орчиха-з-нуля-2026-11-12/6-волосся/орчиха-2.blend|"
 echo "$SPYSOK" | while IFS='|' read -r teka model dzherelo kliuchi; do
     [ -n "${1:-}" ] && [[ "$model" != *"$1"* ]] && continue
+    [ -n "${TOCHNO:-}" ] && [ "$model" != "$1" ] && continue   # TOCHNO=1 — лише ця модель
     tochky=art/маски-з-нуля-2026-11-19/$teka-$model/точки.npy
     [ -f "$tochky" ] || { echo "‼ $model: немає $tochky — спершу maski_z_nulia.py"; continue; }
     vyhid=$(dirname "$dzherelo")/../7-риси/$model.blend

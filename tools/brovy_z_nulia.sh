@@ -10,6 +10,7 @@ B=~/Програми/blender-5.2.2-linux-x64/blender
 A=game/models/own/avatary
 sed -n '/^SPYSOK="/,/"$/p' tools/rysy_z_nulia.sh | sed 's/^SPYSOK="//; s/"$//' | while IFS='|' read -r teka model dzherelo kliuchi; do
     [ -n "${1:-}" ] && [[ "$model" != *"$1"* ]] && continue
+    [ -n "${TOCHNO:-}" ] && [ "$model" != "$1" ] && continue   # TOCHNO=1 — лише ця модель
     tochky=art/маски-з-нуля-2026-11-19/$teka-$model/точки.npy
     rysy=$(dirname "$dzherelo")/../7-риси/$model.blend
     vyhid=$(dirname "$dzherelo")/../8-брови/$model.blend

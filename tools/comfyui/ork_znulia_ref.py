@@ -90,6 +90,46 @@ INSTR = {
         "of the first image exactly the same. No loincloth, no belt, no trousers, no cloak. Plain "
         "light grey studio background, soft even shadowless light, both legs and boots fully in "
         "frame, photorealistic, sharp detailed leather, fur and metal."),
+    # людина-чоловік (19.11.2026, слово замовника «так - роби» на димовий прогін одягу): чоботи
+    # з кадру вікі людина-чоловік-v1 на ноги нашої людини з нуля
+    "зона-чоботи-людина": (
+        "Put the boots of the man from the second image on the legs from the first image: tall "
+        "dark brown leather boots reaching just below the knees, with a folded cuff at the top, "
+        "leather straps with iron buckles, visible stitching, thick heels and soles, closed toes. "
+        "Keep the bare thighs and knees, the skin tone, the black briefs, the hands, the pose of "
+        "the legs and the camera of the first image exactly the same. No trousers, no belt, no "
+        "cloak. Plain light grey studio background, soft even shadowless light, both legs and "
+        "boots fully in frame, photorealistic, sharp detailed leather, stitching and metal."),
+    "зона-наручі-людина": (
+        "Put the bracer of the man from the second image on the forearm of the arm from the first "
+        "image: a thick brown leather bracer with tooled patterns, three leather straps with small "
+        "iron buckles, lacing on the side and stitched edges, covering the forearm from the wrist "
+        "to just below the elbow. The elbow, upper arm, hand and fingers keep exactly the same "
+        "bare light skin as in the first image. Keep the pose and the camera of the first image "
+        "exactly the same. No glove, no sleeve, no other armor, no body behind the arm. Plain "
+        "light grey studio background, soft even shadowless light, photorealistic, sharp "
+        "detailed leather, metal and stitching."),
+    "зона-наплічники-людина": (
+        "Put leather shoulder armor in the style of the man from the second image on the bald man "
+        "from the first image: two layered dark brown leather pauldrons with stitched edges and "
+        "small iron rivets covering the shoulders, and one brown leather strap running diagonally "
+        "across the chest from the right shoulder to the left hip, with an iron buckle. Bare "
+        "chest, belly, neck and arms stay visible. No shirt, no vest, no cloak, no cape, no "
+        "helmet, no hair, no beard. Keep the pose, body, bald head, face and camera of the first "
+        "image exactly the same. Plain light grey studio background, soft even shadowless light, "
+        "photorealistic, sharp detailed leather, metal and stitching."),
+    # пояс людини, друга спроба (20.11.2026): у першій генератор лишив чорні труси відкритими й
+    # повісив пластини на ремінцях стегон — у річ пішли труси й клапті шкіри
+    "зона-пояс-людина": (
+        "Replace the black briefs from the first image with a heavy leather battle skirt in the "
+        "style of the man from the second image: a wide dark brown leather belt with a large iron "
+        "buckle at the waist, and below it a skirt of overlapping vertical riveted dark brown "
+        "leather strips hanging all around the hips, front, sides and back, down to the middle of "
+        "the thighs. The skirt fully covers the hips and the groin, no black fabric is visible "
+        "anywhere. No straps around the thighs, no pouches. Keep the bare belly, the bare thighs "
+        "below the skirt, the hands, the skin tone, the pose and the camera of the first image "
+        "exactly the same. Plain light grey studio background, soft even shadowless light, "
+        "photorealistic, sharp detailed leather, rivets and stitching."),
     "зона-наручі-орк": (
         "Put the bracer of the orc from the second image on the forearm of the arm from the first "
         "image: a heavy bracer of dark leather and iron plates with rows of rivets, engraved iron "

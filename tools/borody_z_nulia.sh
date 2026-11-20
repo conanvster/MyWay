@@ -2,20 +2,17 @@
 # Бороди чоловіків «з нуля» (19.11.2026, план 15.11 крок 6): до повної — «коротка» і «вуса»
 # (вуса — за точками обличчя maski_z_nulia.py). Додаються до 7-риси/*.blend (зачіски й риси
 # вже там), далі вивантаження в гру: RYSY_LYSHE_EKSPORT=1 tools/rysy_z_nulia.sh.
-#   tools/borody_z_nulia.sh
+#   tools/borody_z_nulia.sh [фільтр назви моделі]
 set -e
 cd "$(dirname "$0")/.."
 B=~/Програми/blender-5.2.2-linux-x64/blender
-for row in "lyudyna-cholovik-z-nulia|людина|art/людина-чоловік-з-нуля-2026-11-14" \
-           "lyudyna-cholovik-z-nulia|людина-2|art/людина-чоловік-з-нуля-2026-11-14" \
-           "lyudyna-cholovik-z-nulia|людина-3|art/людина-чоловік-з-нуля-2026-11-14" \
-           "elf-cholovik-z-nulia|ельф|art/ельф-чоловік-з-нуля-2026-11-14" \
-           "elf-cholovik-z-nulia|ельф-2|art/ельф-чоловік-з-нуля-2026-11-14" \
-           "elf-cholovik-z-nulia|ельф-3|art/ельф-чоловік-з-нуля-2026-11-14" \
-           "ork-z-nulia|орк|art/сет-важкий-орк-2026-11-12" \
-           "ork-z-nulia|орк-2|art/орк-з-нуля-2026-11-11" \
-           "ork-z-nulia|орк-3|art/орк-з-нуля-2026-11-11"; do
-    IFS='|' read -r teka model art_d <<< "$row"
+# моделі — з таблиці tools/rysy_z_nulia.sh (лише чоловіки); [фільтр назви моделі]
+# (20.11.2026: людина v1 тепер із сетом — 7-риси в теці сету, як орк v1)
+sed -n '/^SPYSOK="/,/"$/p' tools/rysy_z_nulia.sh | sed 's/^SPYSOK="//; s/"$//' | while IFS='|' read -r teka model dzherelo kliuchi; do
+    case $teka in lyudyna-cholovik*|elf-cholovik*|ork-z-nulia) ;; *) continue;; esac
+    [ -n "${1:-}" ] && [[ "$model" != *"$1"* ]] && continue
+    [ -n "${TOCHNO:-}" ] && [ "$model" != "$1" ] && continue   # TOCHNO=1 — лише ця модель
+    art_d=$(dirname "$(dirname "$dzherelo")")
     blend=$art_d/7-риси/$model.blend
     echo "== $model"
     $B -b "$blend" -P tools/blender/ork_volossia.py -- "$PWD/$blend" --лише-бороди \

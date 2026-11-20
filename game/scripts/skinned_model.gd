@@ -447,11 +447,14 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 	if _skeleton == null:
 		return
 	for old: Node in _skeleton.get_children():
-		if str(old.name).begins_with(HELD_PREFIX):
+		if str(old.name).begins_with(HELD_PREFIX) or old.name == GRIP_NODE:
 			_skeleton.remove_child(old)
 			old.queue_free()
 	if goods == null:
 		return
+	var fists: Array = []
+	var shield: Node3D = null
+	var item_scale := 1.0 / _scale_down_to(_skeleton)
 	for slot: String in HELD:
 		if not look.has(slot):
 			continue
@@ -463,12 +466,21 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 			hand = MIXAMO_HANDS.get(bone, "")
 		if hand == "" or _skeleton.find_bone(hand) == -1:
 			continue
+		var thing := WeaponLook.build(base, str(look[slot]))
+		# щит — на передпліччі, руку згинає GripModifier (20.11.2026); без кісток UE — як було
+		if slot == "щит" and _skeleton.find_bone("lowerarm_l") != -1:
+			thing.name = HELD_PREFIX + slot
+			_skeleton.add_child(thing)
+			shield = thing
+			fists.append(hand)
+			continue
 		var grip := BoneAttachment3D.new()
 		grip.name = HELD_PREFIX + slot
 		grip.bone_name = hand
 		_skeleton.add_child(grip)
-		var thing := WeaponLook.build(base, str(look[slot]))
 		var fist := _fist(hand, str(base.get("тип", "")))
+		if fist != Transform3D():
+			fists.append(hand)
 		if slot == "щит":
 			thing.rotation_degrees = SHIELD_TURN
 		elif fist != Transform3D():
@@ -481,6 +493,11 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 		# `_fit`. Ділимо на масштаб від кістяка до самої моделі.
 		thing.scale = Vector3.ONE / _scale_down_to(_skeleton)
 		grip.add_child(thing)
+	if not fists.is_empty() or shield != null:
+		var mod := GripModifier.new()
+		mod.name = GRIP_NODE
+		_skeleton.add_child(mod)
+		mod.setup(_skeleton, fists, shield, item_scale)
 
 
 ## Хват у кулаці з кісток пальців (20.11.2026, слово замовника: «зробити вигляд разом з
@@ -496,7 +513,10 @@ const FIST_FINGERS := {"_r": ["index_01_r", "middle_01_r", "pinky_01_r"],
 				"mixamorig_RightHandPinky1"],
 		"LeftHand": ["mixamorig_LeftHandIndex1", "mixamorig_LeftHandMiddle1",
 				"mixamorig_LeftHandPinky1"]}
-const FIST_DEPTH := 0.8
+const FIST_DEPTH := 0.9
+## Руків'я в кулаці — з боку долоні, на цю частку відстані від зап'ястя до кісточок.
+const FIST_PALM := 0.45
+const GRIP_NODE := "Хват"
 
 
 func _fist(hand: String, kind: String) -> Transform3D:
@@ -525,7 +545,11 @@ func _fist(hand: String, kind: String) -> Transform3D:
 	var x := knuckles
 	var y := along
 	var z := x.cross(y).normalized()
-	return Transform3D(Basis(x, y, z), middle_k * FIST_DEPTH)
+	var at := middle_k * FIST_DEPTH
+	var p := GripModifier.palm(_skeleton, hand)
+	if not p.is_empty():
+		at += to_hand.basis * (p["normal"] as Vector3) * middle_k.length() * FIST_PALM
+	return Transform3D(Basis(x, y, z), at)
 
 
 ## Волосся на пружних кістках (12.10.2026, слово замовника: «перука

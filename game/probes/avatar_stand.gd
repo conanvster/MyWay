@@ -43,6 +43,8 @@ const KADRY := [
 	["зріст ззаду", 3.6, 195.0, -3.0, "тіло", 30.0, "", 0.0],
 	# збоку на весь зріст (20.11.2026): як лежить зброя в кулаці — лише через --лише
 	["зріст збоку", 3.6, 90.0, -3.0, "тіло", 30.0, "", 0.0],
+	["кисть", 0.55, 30.0, -10.0, "кисть", 30.0, "", 0.0],
+	["кисть збоку", 0.55, 100.0, -10.0, "кисть", 30.0, "", 0.0],
 	["ігрова", 5.0, 205.0, -22.0, "тіло", 60.0, "Sprint_Loop", 0.35],
 	["у русі", 2.6, 35.0, -4.0, "тіло", 34.0, "Sprint_Loop", 0.35],
 ]
@@ -204,6 +206,14 @@ func _znaity(chastyna: String, dir := AVATARY) -> String:
 	return ""
 
 
+## Права кисть (кадри «кисть»: як лежить зброя в кулаці, 20.11.2026).
+func _kyst() -> Vector3:
+	var sk: Skeleton3D = _model.find_children("*", "Skeleton3D", true, false)[0]
+	var b := sk.find_bone("hand_r")
+	return sk.global_transform * sk.get_bone_global_pose(b).origin if b != -1 \
+			else Vector3(0, _zrist * 0.5, 0)
+
+
 func _holova() -> Vector3:
 	# очі MPFB — окрема сітка: її середина й є рівень погляду
 	for m: MeshInstance3D in _model.find_children("*", "MeshInstance3D", true, false):
@@ -221,7 +231,8 @@ func _holova() -> Vector3:
 
 
 func _nastavyty(k: Array) -> void:
-	var aim := _holova() if k[4] == "голова" else Vector3(0, _zrist * 0.52, 0)
+	var aim := _holova() if k[4] == "голова" else (_kyst() if k[4] == "кисть"
+			else Vector3(0, _zrist * 0.52, 0))
 	var yaw := deg_to_rad(float(k[2]))
 	var pitch := deg_to_rad(float(k[3]))
 	var off := Vector3(sin(yaw) * cos(pitch), -sin(pitch), cos(yaw) * cos(pitch)) * float(k[1])
@@ -266,7 +277,7 @@ func _arkush(args: PackedStringArray) -> void:
 	for k: Array in KADRY:
 		if not lyshe.is_empty() and not str(k[0]) in lyshe:
 			continue
-		if lyshe.is_empty() and str(k[0]) == "зріст збоку":
+		if lyshe.is_empty() and str(k[0]) in ["зріст збоку", "кисть", "кисть збоку"]:
 			continue
 		var rukh := str(k[6]) if str(k[6]) != "" else spokii
 		if rukh != ostannii:

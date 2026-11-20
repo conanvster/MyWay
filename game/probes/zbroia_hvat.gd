@@ -22,6 +22,30 @@ func _go() -> void:
 	goods.load_from(JSON.parse_string(FileAccess.get_file_as_string("res://data/items.json")))
 	hero.wear({"зброя": "сталевий меч", "щит": "сталевий щит"}, goods)
 	var skin: SkinnedModel = hero.model()
+	var all_sk := skin.find_children("*", "Skeleton3D", true, false)
+	print("скелетів: ", all_sk.size(), " ", all_sk.map(func(x): return str(x.get_path())))
+	for mi: MeshInstance3D in skin.find_children("*", "MeshInstance3D", true, false):
+		if mi.skin != null and str(mi.name).begins_with("Тіло"):
+			print("тіло прив'язане до: ", mi.get_node(mi.skeleton).get_path())
+	var skq: Skeleton3D = all_sk[0]
+	var mod: Node = skq.get_node_or_null("Хват")
+	print("модифікатор: ", mod, " фаланг: ", (mod.get("_curl") as Array).size() if mod else -1,
+			" active=", mod.get("active") if mod else null)
+	var tip := skq.find_bone("index_03_r")
+	var hnd := skq.find_bone("hand_r")
+	for on: bool in [true, false, true]:
+		mod.set("active", on)
+		for i in 5:
+			await process_frame
+		var d := skq.get_bone_global_pose(tip).origin.distance_to(skq.get_bone_global_pose(hnd).origin)
+		var ln := skq.get_bone_global_rest(tip).origin.distance_to(skq.get_bone_global_rest(hnd).origin)
+		print("викликів: ", mod.get("calls"))
+		print("модифікатор %s: кінчик вказівного від кисті %.3f (у спокої %.3f)" % [on, d, ln])
+	var ix := skq.find_bone("index_02_r")
+	for i in 5:
+		await process_frame
+	print("index_02_r поворот (поза, після модифікатора?): ", skq.get_bone_pose_rotation(ix),
+			" спокій: ", skq.get_bone_rest(ix).basis.get_rotation_quaternion())
 	for ruh: String in ["Idle", "Sword_Idle"]:
 		skin.show_move(ruh)
 		for i in 30:

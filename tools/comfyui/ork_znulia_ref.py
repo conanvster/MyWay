@@ -227,6 +227,19 @@ INSTR = {
         "bald head, face and camera of the first image exactly the same. Plain light grey studio "
         "background, soft even shadowless light, photorealistic, sharp detailed leather, metal "
         "and stitching."),
+    # панцир жінки = наплічники + захист грудей (20.11.2026, слово замовника: «якщо для чоловіків
+    # панцир достатньо тільки наплічників то для жінки доцільно зробити … наплічники + захист грудей»)
+    "зона-панцир-людина-жінка": (
+        "Replace the dark grey bandeau top of the bald woman from the first image with leather "
+        "chest armor in the style of the woman from the second image: a fitted cuirass of hardened "
+        "dark brown leather that fully covers the chest and the upper belly down to just below the "
+        "ribs, front, sides and back, shaped to a female figure, with stitched edges, small iron "
+        "rivets and side straps with iron buckles, and two layered dark brown leather pauldrons "
+        "with stitched edges and rivets covering the shoulders. No grey fabric is visible anywhere. "
+        "The lower belly, the navel, the neck and the arms stay bare. No shirt, no sleeves, no "
+        "cloak, no cape, no helmet, no hair, no belt, no skirt. Keep the pose, body, bald head, "
+        "face and camera of the first image exactly the same. Plain light grey studio background, "
+        "soft even shadowless light, photorealistic, sharp detailed leather, metal and stitching."),
     "зона-пояс-людина-жінка": (
         "Replace the dark grey briefs from the first image with a heavy leather battle skirt in "
         "the style of the woman from the second image: a wide dark brown leather belt with a large "

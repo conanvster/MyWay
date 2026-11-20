@@ -11,7 +11,7 @@ A=game/models/own/avatary
 SPYSOK="lyudyna-cholovik-z-nulia|людина|art/сет-важкий-людина-2026-11-19/4-зони/людина.blend|--колір-вершин під_одяг
 lyudyna-cholovik-z-nulia|людина-2|art/людина-чоловік-з-нуля-2026-11-14/6-волосся/людина-2.blend|
 lyudyna-cholovik-z-nulia|людина-3|art/людина-чоловік-з-нуля-2026-11-14/6-волосся/людина-3.blend|
-elf-cholovik-z-nulia|ельф|art/ельф-чоловік-з-нуля-2026-11-14/6-волосся/ельф.blend|
+elf-cholovik-z-nulia|ельф|art/сет-важкий-ельф-2026-11-20/4-зони/ельф.blend|--колір-вершин під_одяг
 elf-cholovik-z-nulia|ельф-2|art/ельф-чоловік-з-нуля-2026-11-14/6-волосся/ельф-2.blend|
 elf-cholovik-z-nulia|ельф-3|art/ельф-чоловік-з-нуля-2026-11-14/6-волосся/ельф-3.blend|
 elfiika-z-nulia|ельфійка|art/ельфійка-з-нуля-2026-11-12/6-волосся/ельфійка.blend|

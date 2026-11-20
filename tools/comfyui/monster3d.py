@@ -22,7 +22,8 @@
         Вивантажити моделі з відеопам'яті ComfyUI.
 
 ComfyUI має вже працювати: `cd ~/ComfyUI && venv/bin/python main.py
---listen 127.0.0.1 --port 8188`. Відеопам'ять має бути вільна (LM Studio:
+--listen 127.0.0.1 --port 8188 --cache-none` (20.11.2026: без `--cache-none` копії Qwen-Edit і
+Pixal3D лишаються в оперативці — понад 20 ГБ з 30, і фонові прогони знімає нестача пам'яті). Відеопам'ять має бути вільна (LM Studio:
 `~/.lmstudio/bin/lms unload --all`).
 """
 import json

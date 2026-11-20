@@ -157,6 +157,46 @@ INSTR = {
         "and the camera of the first image exactly the same. No cloak, no trousers, no boots. "
         "Plain light grey studio background, soft even shadowless light, photorealistic, sharp "
         "detailed leather, metal and stitching."),
+    # важкий сет ельфа-чоловіка v1 (20.11.2026, слово замовника: «вдягай в броню ельф чоловік»):
+    # ті самі речі, що й у людини, на блідому стрункому ельфі; кадр вікі ельф-чоловік-v1
+    "зона-чоботи-ельф": (
+        "Put the boots of the elf from the second image on the legs from the first image: tall "
+        "dark brown leather boots reaching just below the knees, with a folded cuff at the top, "
+        "leather straps with iron buckles, visible stitching, thick heels and soles, closed toes. "
+        "The boots are slim and fit the long thin legs closely. Keep the bare thighs and knees, "
+        "the pale skin tone, the hands, the pose of the legs and the camera of the first image "
+        "exactly the same. No trousers, no belt, no cloak. Plain light grey studio background, "
+        "soft even shadowless light, both legs and boots fully in frame, photorealistic, sharp "
+        "detailed leather, stitching and metal."),
+    "зона-наручі-ельф": (
+        "Put the bracer of the elf from the second image on the forearm of the arm from the first "
+        "image: a thick brown leather bracer with tooled leaf patterns, three leather straps with "
+        "small iron buckles, lacing on the side and stitched edges, covering the forearm from the "
+        "wrist to just below the elbow, fitting the slim forearm closely. The elbow, upper arm, "
+        "hand and fingers keep exactly the same bare pale skin as in the first image. Keep the "
+        "pose and the camera of the first image exactly the same. No glove, no sleeve, no other "
+        "armor, no body behind the arm. Plain light grey studio background, soft even shadowless "
+        "light, photorealistic, sharp detailed leather, metal and stitching."),
+    "зона-наплічники-ельф": (
+        "Put leather shoulder armor in the style of the elf from the second image on the bald elf "
+        "man from the first image: two layered dark brown leather pauldrons with stitched edges "
+        "and small iron rivets covering the shoulders, and one brown leather strap running "
+        "diagonally across the chest from the right shoulder to the left hip, with an iron "
+        "buckle. Bare chest, belly, neck and arms stay visible. No shirt, no vest, no cloak, no "
+        "cape, no helmet, no hair, no belt. Keep the slender body, pale skin, bald head, pointed "
+        "ears, face, pose and camera of the first image exactly the same. Plain light grey studio "
+        "background, soft even shadowless light, photorealistic, sharp detailed leather, metal "
+        "and stitching."),
+    "зона-пояс-ельф": (
+        "Replace the black briefs from the first image with a heavy leather battle skirt in the "
+        "style of the elf from the second image: a wide dark brown leather belt with a large iron "
+        "buckle at the waist, and below it a skirt of overlapping vertical riveted dark brown "
+        "leather strips hanging all around the hips, front, sides and back, down to the middle of "
+        "the thighs. The skirt fully covers the hips and the groin, no black fabric is visible "
+        "anywhere. No straps around the thighs, no pouches. Keep the bare belly, the bare thighs "
+        "below the skirt, the hands, the pale skin tone, the pose and the camera of the first "
+        "image exactly the same. Plain light grey studio background, soft even shadowless light, "
+        "photorealistic, sharp detailed leather, rivets and stitching."),
     # ельфійки (12.11.2026, слово замовника: «зроби ельфійок», кадри вікі ельф-жінка-v1..v3):
     # одне тіло (з v1) і три обличчя; висока тендітна (пам'ятка про пропорції ельфійки)
     "тіло-ельф-ж": (

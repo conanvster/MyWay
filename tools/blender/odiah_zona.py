@@ -88,7 +88,8 @@ VOKSEL = arg("--воксель", float, 0.003)
 ROZMIR = arg("--текстура", int, Z["tex"])
 
 rig = bpy.data.objects["Human.rig"]
-tilo = bpy.data.objects["Тіло"]
+# --тіло <назва> (20.11.2026, людина-жінка пілот Б — MPFB: тіло зветься `Human`)
+tilo = bpy.data.objects[arg("--тіло", str, "Тіло")]
 for pb in rig.pose.bones:
     pb.matrix_basis.identity()
 bpy.context.view_layer.update()
@@ -168,7 +169,18 @@ for v in tilo.data.vertices:
             W[v.index, g.group] = g.weight
 W /= np.maximum(W.sum(1, keepdims=True), 1e-6)
 t_kistka = np.array([hrupy[i] for i in W.argmax(1)])
-ss = vvesty(os.path.abspath(arg("--сітка", str, "")))
+# без --сітка (модель не з референсу, а з MPFB): поза скульпту — це поза спокою самого тіла,
+# кадр зони — рендер моделі (tools/blender/kadr_tila.py)
+if "--сітка" in A:
+    ss = vvesty(os.path.abspath(arg("--сітка", str, "")))
+else:
+    ss = tilo.copy()
+    ss.data = tilo.data.copy()
+    ss.data.transform(tilo.matrix_world)
+    ss.matrix_world.identity()
+    bpy.context.scene.collection.objects.link(ss)
+    ss.parent = None
+    ss.modifiers.clear()
 tm = ss.data
 BV = np.array([v.co[:] for v in tm.vertices])
 if len(BV) != len(BR):

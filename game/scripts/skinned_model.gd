@@ -468,8 +468,11 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 		grip.bone_name = hand
 		_skeleton.add_child(grip)
 		var thing := WeaponLook.build(base, str(look[slot]))
+		var fist := _fist(hand, str(base.get("тип", "")))
 		if slot == "щит":
 			thing.rotation_degrees = SHIELD_TURN
+		elif fist != Transform3D():
+			thing.transform = fist
 		elif bone == "hand_l":
 			thing.rotation_degrees = LEFT_GRIP_TURN
 		else:
@@ -478,6 +481,51 @@ func _hold_gear(look: Dictionary, goods: ItemBook) -> void:
 		# `_fit`. Ділимо на масштаб від кістяка до самої моделі.
 		thing.scale = Vector3.ONE / _scale_down_to(_skeleton)
 		grip.add_child(thing)
+
+
+## Хват у кулаці з кісток пальців (20.11.2026, слово замовника: «зробити вигляд разом з
+## наприклад чоловік людина щоб впевнитись що він правильно тримається»; сталий GRIP_TURN
+## ставив меч горизонтально назад). У просторі кістки кисті, у позі спокою:
+## уздовж зброї (+Y) — поперек кулака від мізинця до вказівного; кромка, лезо сокири
+## (+X) — туди, куди дивляться кісточки пальців; тятива лука — до стрільця (−X);
+## руків'я — у кулаці, на 0,8 шляху від зап'ястя до кісточок. Немає пальців — порожньо
+## (тоді сталий кут, як було).
+const FIST_FINGERS := {"_r": ["index_01_r", "middle_01_r", "pinky_01_r"],
+		"_l": ["index_01_l", "middle_01_l", "pinky_01_l"],
+		"RightHand": ["mixamorig_RightHandIndex1", "mixamorig_RightHandMiddle1",
+				"mixamorig_RightHandPinky1"],
+		"LeftHand": ["mixamorig_LeftHandIndex1", "mixamorig_LeftHandMiddle1",
+				"mixamorig_LeftHandPinky1"]}
+const FIST_DEPTH := 0.8
+
+
+func _fist(hand: String, kind: String) -> Transform3D:
+	var names: Array = []
+	for k: String in FIST_FINGERS:
+		if hand.ends_with(k):
+			names = FIST_FINGERS[k]
+	var h := _skeleton.find_bone(hand)
+	if names.is_empty() or h == -1:
+		return Transform3D()
+	var to_hand := _skeleton.get_bone_global_rest(h).affine_inverse()
+	var pts: Array[Vector3] = []
+	for n: String in names:
+		var b := _skeleton.find_bone(n)
+		if b == -1:
+			return Transform3D()
+		pts.append(to_hand * _skeleton.get_bone_global_rest(b).origin)
+	var index_k: Vector3 = pts[0]
+	var middle_k: Vector3 = pts[1]
+	var pinky_k: Vector3 = pts[2]
+	var along := (index_k - pinky_k).normalized()
+	var knuckles := middle_k.normalized()
+	knuckles = (knuckles - along * knuckles.dot(along)).normalized()
+	if kind == "лук":
+		knuckles = -knuckles
+	var x := knuckles
+	var y := along
+	var z := x.cross(y).normalized()
+	return Transform3D(Basis(x, y, z), middle_k * FIST_DEPTH)
 
 
 ## Волосся на пружних кістках (12.10.2026, слово замовника: «перука

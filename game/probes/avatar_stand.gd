@@ -41,6 +41,8 @@ const KADRY := [
 	["потилиця", 1.0, 180.0, -4.0, "голова", 28.0, "", 0.0],
 	["зріст", 3.6, 15.0, -3.0, "тіло", 30.0, "", 0.0],
 	["зріст ззаду", 3.6, 195.0, -3.0, "тіло", 30.0, "", 0.0],
+	# збоку на весь зріст (20.11.2026): як лежить зброя в кулаці — лише через --лише
+	["зріст збоку", 3.6, 90.0, -3.0, "тіло", 30.0, "", 0.0],
 	["ігрова", 5.0, 205.0, -22.0, "тіло", 60.0, "Sprint_Loop", 0.35],
 	["у русі", 2.6, 35.0, -4.0, "тіло", 34.0, "Sprint_Loop", 0.35],
 ]
@@ -263,6 +265,8 @@ func _arkush(args: PackedStringArray) -> void:
 	var ostannii := "?"
 	for k: Array in KADRY:
 		if not lyshe.is_empty() and not str(k[0]) in lyshe:
+			continue
+		if lyshe.is_empty() and str(k[0]) == "зріст збоку":
 			continue
 		var rukh := str(k[6]) if str(k[6]) != "" else spokii
 		if rukh != ostannii:

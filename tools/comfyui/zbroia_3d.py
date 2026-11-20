@@ -11,7 +11,8 @@
     blender -b -P tools/blender/zbroia_zbirka.py -- [назва …]
     ~/Програми/cv-venv/bin/python -u tools/comfyui/zbroia_3d.py аркуш [назва …]
 
-Без назв — усі 49 речей зі слотами «зброя» і «щит» у `data/items.json`.
+Без назв — усі 49 речей зі слотами «зброя» і «щит» у `data/items.json`. Назва «типи» — сім
+реалістичних моделей «тип-<тип>», по одній на тип (20.11.2026, `TYPY_REAL`).
 
   кадр  — значок 64×64 (є для E…B) вирізається на сіре тло, збільшується до
           1024 і FLUX перемальовує його з шумом `SHUM`: силует і кольори
@@ -59,6 +60,31 @@ TYPY = {
     "щит": "a single ornate fantasy round shield seen from the front, raised "
            "central boss and decorated rim",
 }
+# Один реалістичний вигляд на тип (20.11.2026, слово замовника: «для кожного типу зброї … більш
+# реалістичний вигляд, для початку один вигляд для усих типів»): назви «тип-<тип>», без значка,
+# FLUX з тексту; у грі — `models/own/zbroia/тип-<тип>.glb` для всіх речей цього типу.
+TYPY_REAL = {
+    "меч": "a single realistic medieval arming sword, straight double-edged steel blade with a "
+           "shallow fuller, simple steel cross guard, grip wrapped in dark brown leather, round "
+           "steel pommel",
+    "кинджал": "a single realistic medieval dagger, short double-edged steel blade, small simple "
+               "steel cross guard, wooden grip wrapped in leather, round pommel",
+    "сокира": "a single realistic medieval battle axe, one forged steel axe head with a curved "
+              "cutting edge on a straight ash wood haft, leather grip at the lower end",
+    "спис": "a single realistic medieval spear, leaf-shaped forged steel spearhead with a socket "
+            "on a long straight ash wood shaft, small iron butt cap",
+    "лук": "a single realistic medieval wooden longbow, one piece of yew wood with a leather "
+           "wrapped grip in the middle and a taut linen bowstring",
+    "посох": "a single realistic wooden quarterstaff walking staff, long straight gnarled oak "
+             "shaft with iron bands at both ends and a leather wrapped grip",
+    "щит": "a single realistic medieval round wooden shield seen from the front, planks covered "
+           "with painted leather, iron rim and central iron boss",
+}
+OPYS_REAL = ("Product photo of %s. Historically accurate, plain and functional, worn but well "
+             "kept, no ornament, no gems, no glow, no magic. The whole object fully visible, "
+             "centered and straight, nothing cropped, isolated on a plain uniform light grey "
+             "studio background, soft even lighting, no shadow, sharp focus, photorealistic. "
+             "Only one object, no hands, no text.")
 # Матеріал — за першим словом назви (кора дуба, залізо, сталь …).
 MATERIALY = [
     ("кори дуба", "made of hardened dark oak wood and bark, bronze rivets and "
@@ -99,6 +125,8 @@ def rechi():
 
 
 def promt(nazva, rich):
+    if nazva.startswith("тип-"):
+        return OPYS_REAL % TYPY_REAL[rich["тип"]]
     mat = next((t for k, t in MATERIALY if k in nazva), "")
     return OPYS % (TYPY[rich["тип"]], mat)
 
@@ -179,6 +207,9 @@ def main():
         sys.exit(__doc__)
     krok, nazvy = sys.argv[1], sys.argv[2:]
     vsi = rechi()
+    vsi.update({"тип-" + t: {"тип": t} for t in TYPY_REAL})
+    if nazvy == ["типи"]:
+        nazvy = ["тип-" + t for t in TYPY_REAL]
     nazvy = nazvy or list(vsi)
     VYHID.mkdir(parents=True, exist_ok=True)
     if krok == "кадр":

@@ -38,7 +38,11 @@ static func build(base: Dictionary, name: String = "") -> Node3D:
 	var root := Node3D.new()
 	root.name = "Річ-" + kind
 	var file := MODELS % name
-	if name != "" and ResourceLoader.exists(file):
+	# один реалістичний вигляд на тип (20.11.2026): `тип-<тип>.glb` — для всіх речей типу,
+	# доки в самої речі немає своєї моделі
+	if name == "" or not ResourceLoader.exists(file):
+		file = MODELS % ("тип-" + kind)
+	if ResourceLoader.exists(file):
 		var made: Node3D = (load(file) as PackedScene).instantiate()
 		root.add_child(made)
 		return root

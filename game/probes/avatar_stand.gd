@@ -45,6 +45,10 @@ const KADRY := [
 	["зріст збоку", 3.6, 90.0, -3.0, "тіло", 30.0, "", 0.0],
 	["кисть", 0.55, 30.0, -10.0, "кисть", 30.0, "", 0.0],
 	["кисть збоку", 0.55, 100.0, -10.0, "кисть", 30.0, "", 0.0],
+	# зброя в руці з обох боків (20.11.2026, слово замовника: «поверни аватар таким чином щоб
+	# було гарно видно зброю в руці з двох сторін») — ціль між кистями
+	["зброя зліва", 2.6, 70.0, -12.0, "руки", 30.0, "", 0.0],
+	["зброя справа", 2.6, -70.0, -12.0, "руки", 30.0, "", 0.0],
 	["ігрова", 5.0, 205.0, -22.0, "тіло", 60.0, "Sprint_Loop", 0.35],
 	["у русі", 2.6, 35.0, -4.0, "тіло", 34.0, "Sprint_Loop", 0.35],
 ]
@@ -214,6 +218,17 @@ func _kyst() -> Vector3:
 			else Vector3(0, _zrist * 0.5, 0)
 
 
+## Середина між кистями (кадри «зброя …»).
+func _ruky() -> Vector3:
+	var sk: Skeleton3D = _model.find_children("*", "Skeleton3D", true, false)[0]
+	var r := sk.find_bone("hand_r")
+	var l := sk.find_bone("hand_l")
+	if r == -1 or l == -1:
+		return Vector3(0, _zrist * 0.5, 0)
+	return sk.global_transform * ((sk.get_bone_global_pose(r).origin
+			+ sk.get_bone_global_pose(l).origin) * 0.5)
+
+
 func _holova() -> Vector3:
 	# очі MPFB — окрема сітка: її середина й є рівень погляду
 	for m: MeshInstance3D in _model.find_children("*", "MeshInstance3D", true, false):
@@ -232,7 +247,7 @@ func _holova() -> Vector3:
 
 func _nastavyty(k: Array) -> void:
 	var aim := _holova() if k[4] == "голова" else (_kyst() if k[4] == "кисть"
-			else Vector3(0, _zrist * 0.52, 0))
+			else (_ruky() if k[4] == "руки" else Vector3(0, _zrist * 0.52, 0)))
 	var yaw := deg_to_rad(float(k[2]))
 	var pitch := deg_to_rad(float(k[3]))
 	var off := Vector3(sin(yaw) * cos(pitch), -sin(pitch), cos(yaw) * cos(pitch)) * float(k[1])
@@ -277,7 +292,8 @@ func _arkush(args: PackedStringArray) -> void:
 	for k: Array in KADRY:
 		if not lyshe.is_empty() and not str(k[0]) in lyshe:
 			continue
-		if lyshe.is_empty() and str(k[0]) in ["зріст збоку", "кисть", "кисть збоку"]:
+		if lyshe.is_empty() and str(k[0]) in ["зріст збоку", "кисть", "кисть збоку",
+				"зброя справа", "зброя зліва"]:
 			continue
 		var rukh := str(k[6]) if str(k[6]) != "" else spokii
 		if rukh != ostannii:

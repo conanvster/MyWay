@@ -252,6 +252,23 @@ INSTR = {
         "photorealistic, sharp detailed leather, rivets and stitching."),
     # ельфійки (12.11.2026, слово замовника: «зроби ельфійок», кадри вікі ельф-жінка-v1..v3):
     # одне тіло (з v1) і три обличчя; висока тендітна (пам'ятка про пропорції ельфійки)
+    # Еталон важкого сету (20.11.2026, слово замовника: «зроби референс. взагалі я очікую що
+    # зброя одного типу у різних рас та полів буде виглядати однотипно а не нова кожного
+    # разу»): одна будова лат для всіх рас і статей — за значками речей (залізний панцир,
+    # рукавиці, пояс, чоботи; друга картинка — їхній колаж). Кисті голі — у них зброя.
+    "еталон-важка": (
+        "Dress the person from the first image in the iron plate armor shown in the second "
+        "image. The armor: a polished dark iron cuirass covering the chest, belly and back, with "
+        "a raised rim at the neck and rivets along the edges; on each shoulder a rounded iron "
+        "pauldron of three overlapping plates; plain iron vambraces covering the forearms from "
+        "the elbow to the wrist, the hands stay bare; a wide dark brown leather belt with a large "
+        "square iron buckle and a short skirt of overlapping iron plates over the hips down to "
+        "mid-thigh; iron plate greaves with knee caps and plated iron boots up to just below the "
+        "knees. The upper arms and the thighs between the skirt and the knees stay bare. No "
+        "cape, no cloak, no helmet, no weapon, no shield. Keep the face, the bald head, the body "
+        "shape, the skin, the pose and the camera of the first image exactly the same. Plain "
+        "light grey studio background, soft even shadowless light, whole body from head to feet "
+        "in frame, front view, photorealistic."),
     "тіло-ельф-ж": (
         "Turn this elf woman into a clean base body reference for 3D modeling. Strict symmetric "
         "T-pose, front view, arms straight out to the sides at shoulder height, palms down, "

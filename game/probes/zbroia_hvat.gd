@@ -39,7 +39,6 @@ func _go() -> void:
 			await process_frame
 		var d := skq.get_bone_global_pose(tip).origin.distance_to(skq.get_bone_global_pose(hnd).origin)
 		var ln := skq.get_bone_global_rest(tip).origin.distance_to(skq.get_bone_global_rest(hnd).origin)
-		print("викликів: ", mod.get("calls"))
 		print("модифікатор %s: кінчик вказівного від кисті %.3f (у спокої %.3f)" % [on, d, ln])
 	var ix := skq.find_bone("index_02_r")
 	for i in 5:

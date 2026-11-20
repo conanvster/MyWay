@@ -86,6 +86,31 @@ static func palm(skel: Skeleton3D, hand: String) -> Dictionary:
 	return {"finger": f, "normal": n, "across": across.normalized(), "knuckle": mid}
 
 
+## Середина петлі, яку робить зігнутий середній палець (у просторі скелета, поза спокою):
+## тут проходить руків'я. Згин — ті самі кути `CURL`, що їх ставить модифікатор, тож точка
+## однакова для кулака будь-якої довжини пальців (орк — довгі, людина — короткі). Немає
+## кісток — `Vector3.INF`.
+static func fist_hole(skel: Skeleton3D, hand: String) -> Vector3:
+	var p := palm(skel, hand)
+	var side := "_l" if hand.ends_with("_l") else "_r"
+	var ids: Array[int] = []
+	for k in 3:
+		ids.append(skel.find_bone("middle_0%d%s" % [k + 1, side]))
+	if p.is_empty() or ids.has(-1):
+		return Vector3.INF
+	var j: Array[Vector3] = []
+	for b in ids:
+		j.append(skel.get_bone_global_rest(b).origin)
+	# кінчик — за останньою фалангою, завдовжки з середню
+	j.append(j[2] + (j[2] - j[1]).normalized() * (j[2] - j[1]).length() * 0.9)
+	var axis := (j[1] - j[0]).normalized().cross(p["normal"] as Vector3).normalized()
+	for k in 3:
+		var q := Basis(axis, deg_to_rad(CURL[k]))
+		for i in range(k + 1, j.size()):
+			j[i] = j[k] + q * (j[i] - j[k])
+	return (j[0] + j[1] + j[2] + j[3]) * 0.25
+
+
 func _curl_hand(skel: Skeleton3D, hand: String) -> void:
 	var p := palm(skel, hand)
 	if p.is_empty():
@@ -109,15 +134,11 @@ func _curl_hand(skel: Skeleton3D, hand: String) -> void:
 					deg_to_rad(kuty[k])])
 
 
-var calls := 0
-
-
 func _process_modification_with_delta(_delta: float) -> void:
 	_modify()
 
 
 func _modify() -> void:
-	calls += 1
 	var skel := get_skeleton()
 	if skel == null:
 		return

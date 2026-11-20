@@ -330,7 +330,12 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 		var base: Dictionary = goods.base_of(look[slot]) if goods != null \
 				else {}
 		var vyhl: Dictionary = base.get("вигляд", {})
-		var parts: Array = sets.get(slot, {}).get(str(base.get("тип", "")), [])
+		var by_kind: Dictionary = sets.get(slot, {})
+		var parts: Array = by_kind.get(str(base.get("тип", "")), [])
+		# свого типу в моделі ще немає (легка, магічна) — наявний набір цієї комірки
+		# (20.11.2026, слово замовника: «коли вдягаєш бронь нічого не вдягається»)
+		if parts.is_empty() and not by_kind.is_empty():
+			parts = by_kind.get("важка", by_kind.values()[0])
 		if parts.is_empty():
 			parts = PIECES.get(slot, [])
 		for piece: String in parts:
@@ -344,14 +349,19 @@ func wear(look: Dictionary, goods: ItemBook) -> void:
 	_hold_gear(look, goods)
 	_hide_under(shown)
 	# Білизна окремими сітками (людина-жінка MPFB) під бронею не визирає (20.11.2026, слово
-	# замовника: «менш помітну білизну бо виходить не красиво коли виглядає з під броні»):
-	# вдягнено панцир (деталь «тіло-…-наплічники», у жінки — з кірасою) — верху білизни не
-	# видно. Низ лишається: ззаду спідниця сидить низько, без трусиків видно сідниці.
+	# замовника: «менш помітну білизну бо виходить не красиво коли виглядає з під броні»,
+	# «вцілому я підтримую прибрати білизну коли щось вдягнене»): панцир (деталь
+	# «тіло-…-наплічники», у жінки — з кірасою) ховає верх, пояс-спідниця («тіло-…-пояс»,
+	# ззаду підтягнута до талії) — низ.
 	var chest_worn := false
+	var hips_worn := false
 	for piece: String in shown:
 		chest_worn = chest_worn or (piece.begins_with("тіло-") and piece.ends_with("наплічники"))
+		hips_worn = hips_worn or (piece.begins_with("тіло-") and piece.ends_with("пояс"))
 	for under: Node in find_children("білизна-верх*", "MeshInstance3D", true, false):
-		under.visible = not chest_worn
+		under.visible = under.visible and not chest_worn
+	for under: Node in find_children("білизна-низ*", "MeshInstance3D", true, false):
+		under.visible = under.visible and not hips_worn
 	# Волосся (19.09.2026) — під шоломом його не видно. Без шолома —
 	# лише обрана зачіска: у моделі зі сканів їх кілька, і «показати
 	# все волосся» вдягало всі зачіски одна на одну.
@@ -431,7 +441,14 @@ const UNDERWEAR := {"білизна-верх": 0, "білизна-низ": 1}
 
 func _hide_under(shown: Dictionary) -> void:
 	var hide := Vector4.ZERO
+	# лише під деталлю, яка в моделі є (20.11.2026, слово замовника: «у людини розірвана
+	# рука» — рукавиці без своєї сітки ховали шкіру передпліччя, а наруча не було)
+	var exists := {}
+	for mesh: MeshInstance3D in find_children(PIECE_PREFIX + "*", "MeshInstance3D", true, false):
+		exists[str(mesh.name).trim_prefix(PIECE_PREFIX)] = true
 	for piece: String in shown:
+		if not exists.has(piece):
+			continue
 		var ch: int = HIDE_CHANNEL.get(piece, HIDE_DETAIL.get(piece.get_slice("-",
 				piece.get_slice_count("-") - 1), -1))
 		if ch >= 0:
@@ -554,11 +571,72 @@ func _fist(hand: String, kind: String) -> Transform3D:
 	var x := knuckles
 	var y := along
 	var z := x.cross(y).normalized()
+	# руків'я — у петлі зігнутого середнього пальця (20.11.2026: «у орка зброя не в руці» —
+	# сталі частки від зап'ястя пасували людині, а в орка пальці довші)
+	var hole := _mesh_fist(hand)
+	if hole == Vector3.INF:
+		hole = GripModifier.fist_hole(_skeleton, hand)
+	if hole != Vector3.INF:
+		return Transform3D(Basis(x, y, z), to_hand * hole)
 	var at := middle_k * FIST_DEPTH
 	var p := GripModifier.palm(_skeleton, hand)
 	if not p.is_empty():
 		at += to_hand.basis * (p["normal"] as Vector3) * middle_k.length() * FIST_PALM
 	return Transform3D(Basis(x, y, z), at)
+
+
+## Кулак, виліплений у сітці (20.11.2026, моделі «з нуля»: пальці сітки не прив'язані до
+## кісток пальців — вершин з вагою > 0,5 на них немає, кулак стиснутий уже в скульпті, а кістки
+## пальців стоять деінде; руків'я, поставлене за ними, висіло на 30–50 см нижче руки). Тоді
+## руків'я — у середині вершин тіла, що належать кисті (простір скелета, поза спокою). Пальці
+## сітки на своїх кістках (людина-жінка MPFB) — `Vector3.INF`: там кулак стискає модифікатор.
+func _mesh_fist(hand: String) -> Vector3:
+	var key := "mesh_fist_" + hand
+	if has_meta(key):
+		return get_meta(key)
+	var side := hand.right(2)
+	var sum := Vector3.ZERO
+	var cnt := 0
+	var on_fingers := 0
+	for mi: MeshInstance3D in find_children("*", "MeshInstance3D", true, false):
+		if mi.skin == null or mi.mesh == null or not mi.visible:
+			continue
+		var hand_binds := {}
+		var finger_binds := {}
+		for i in mi.skin.get_bind_count():
+			var bn := mi.skin.get_bind_name(i)
+			if bn == "" and mi.skin.get_bind_bone(i) >= 0:
+				bn = _skeleton.get_bone_name(mi.skin.get_bind_bone(i))
+			if bn == hand:
+				hand_binds[i] = true
+			elif bn.ends_with(side) and bn.get_slice("_", 0) in GripModifier.FINGERS + ["thumb"]:
+				finger_binds[i] = true
+		if hand_binds.is_empty():
+			continue
+		for si in mi.mesh.get_surface_count():
+			var a := mi.mesh.surface_get_arrays(si)
+			var vs: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+			if a[Mesh.ARRAY_BONES] == null or vs.is_empty():
+				continue
+			var bs: PackedInt32Array = a[Mesh.ARRAY_BONES]
+			var ws: PackedFloat32Array = a[Mesh.ARRAY_WEIGHTS]
+			var per := bs.size() / vs.size()
+			for v in vs.size():
+				for k in per:
+					var w := ws[v * per + k]
+					if w <= 0.5:
+						continue
+					var bi := bs[v * per + k]
+					if finger_binds.has(bi):
+						on_fingers += 1
+					elif hand_binds.has(bi):
+						sum += vs[v]      # прив'язка = спокій: простір сітки й є простір скелета
+						cnt += 1
+	var res := Vector3.INF
+	if cnt > 50 and on_fingers < cnt / 5:
+		res = sum / cnt
+	set_meta(key, res)
+	return res
 
 
 ## Волосся на пружних кістках (12.10.2026, слово замовника: «перука

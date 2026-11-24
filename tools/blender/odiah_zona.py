@@ -325,11 +325,33 @@ for dzerkalo, bik in varianty:
     P += [tsx - (P[:, 0].max() + P[:, 0].min()) / 2,
           np.median(khmara[:, 1]) - np.median(P[:, 1]), z_nyz - P[:, 2].min()]
     ish = np.nonzero(shkira)[0]
-    ish = ish[rng.choice(len(ish), min(8000, len(ish)), replace=False)]
+    ish = ish[rng.choice(len(ish), min(8000, len(ish)), replace=False)] if len(ish) else ish
+    # --рамка x0 x1 y0 y1 z0 z1 (м, поза скульпту; 25.11.2026, П-288, спосіб Б): скульпт зроблено
+    # з наших же кадрів (`kadry_4.py`), тож де він стоїть — відомо: межі сітки ↔ межі постаті на
+    # кадрах. Суміщення за шкірою не потрібне (з металом, схожим на шкіру, воно хибило).
+    RAMKA = [float(A[A.index("--рамка") + 1 + q]) for q in range(6)] if "--рамка" in A else None
     # у кадрі буває зайве (бік тулуба поруч із рукою) — центр кадру не збігається з центром
     # кінцівки; тож суміщення пробується з кількох зсувів по X, лишається найщільніше
     najkr = None
-    for zsuv in ((0.0, -0.08, 0.08, -0.16, 0.16) if Z["kadr"] is not None else (0.0,)):
+    if RAMKA:
+        lo_, hi_ = P_SYRE.min(0), P_SYRE.max(0)
+        Pr = np.stack([RAMKA[2 * q] + (P_SYRE[:, q] - lo_[q]) / max(hi_[q] - lo_[q], 1e-9)
+                       * (RAMKA[2 * q + 1] - RAMKA[2 * q]) for q in range(3)], 1)
+        # глибину Hunyuan ставить зі зсувом: дотягнути по Y (і трохи по X) за головою — вона гола й
+        # однакова на скульпті й на тілі
+        gol = Pr[Pr[:, 2] > Pr[:, 2].max() - 0.15 * (Pr[:, 2].max() - Pr[:, 2].min())]
+        gol = gol[rng.choice(len(gol), min(1500, len(gol)), replace=False)]
+        bvh_cile = BVHTree.FromPolygons([Vector(p) for p in BV], [tuple(p.vertices) for p in tm.polygons])
+        def med(dx, dy):
+            return np.median([bvh_cile.find_nearest(Vector(q + (dx, dy, 0)))[3] for q in gol])
+        dy = min(np.linspace(-0.2, 0.2, 41), key=lambda d: med(0.0, d))
+        dy = min(np.linspace(dy - 0.01, dy + 0.01, 11), key=lambda d: med(0.0, d))
+        dx = min(np.linspace(-0.03, 0.03, 13), key=lambda d: med(d, dy))
+        Pr = Pr + (dx, dy, 0)
+        log("рамка: дотягнуто за головою dx %+.3f, dy %+.3f м, медіана голови до тіла %.1f мм"
+            % (dx, dy, med(0, 0) * 1000 if False else med(0.0, 0.0) * 0 + np.median([bvh_cile.find_nearest(Vector(q + (dx, dy, 0)))[3] for q in gol]) * 1000))
+        najkr = (0, Pr, 0.0)
+    for zsuv in (() if RAMKA else ((0.0, -0.08, 0.08, -0.16, 0.16) if Z["kadr"] is not None else (0.0,))):
         Pz = P + [zsuv, 0, 0]
         masht = 1.0
         for mezha in [0.08] * 10 + [0.04] * 15 + [0.02] * 20 + [0.01] * 20:
@@ -354,7 +376,7 @@ for dzerkalo, bik in varianty:
     if Z["kadr"] is not None:
         log("початковий зсув по X: %+.2f м" % najkr[2])
     C = tsentry(P)
-    vid = np.array([bvh_k.find_nearest(Vector(q))[3] for q in C[ish]])
+    vid = np.array([bvh_k.find_nearest(Vector(q))[3] for q in C[ish]]) if len(ish) else np.zeros(1)
     log("%sсуміщення за шкірою: пар %d з %d, медіана %.1f мм, 90 %%: %.1f мм"
         % ("дзеркало, " if dzerkalo else "", len(X), len(ish), np.median(vid) * 1000, np.percentile(vid, 90) * 1000))
     if Z.get("pidhin") == "шкіра":
@@ -417,6 +439,21 @@ for dzerkalo, bik in varianty:
     # лише за кольором: відстань до нашого тіла тут не ознака — стегна й живіт вдягненого скульпту
     # місцями відстоять від наших на 2–4 см, і «далеке» тягло в річ клапті шкіри
     kandydat = ~shk_m | (~shk2 & (dist > 0.012))
+    # --річ-за-відстанню d (25.11.2026, спосіб Б): скульпт стоїть точно на нашому тілі, тож річ —
+    # усе, що відстоїть від шкіри далі за d; колір не потрібен. Кришка знизу (Hunyuan замикає
+    # сітку по краю кадру) — геть: грань біля самого низу скульпту, повернута донизу.
+    if "--річ-за-відстанню" in A:
+        D_ = arg("--річ-за-відстанню", float, 0.006)
+        nz = np.array([p.normal[2] for p in sm.polygons])
+        # …і все біля самого низу кадру (смуга 6 % висоти скульпту): там Hunyuan розкльошує край
+        kryshka = ((C[:, 2] < P[:, 2].min() + 0.02) & (np.abs(nz) > 0.7)) \
+            | (C[:, 2] < P[:, 2].min() + 0.06 * (P[:, 2].max() - P[:, 2].min()))
+        # кірасу генератор малює щільно по тілу, а відблиски металу буркотять у шкіру — тож річ:
+        # далі за D_ від тіла АБО не шкіра за кольором. На руках відстань не ознака: руки
+        # скульпту стоять в іншій позі, ніж наші, — там лише колір (наплічники — метал)
+        ruka = np.array([k.startswith(("upperarm_", "lowerarm_", "hand_")) for k in kist])
+        kandydat = (((dist > D_) & ~ruka) | ~shk_m) & ~kryshka
+        log("річ за відстанню > %.0f мм: граней %d (кришки геть %d)" % (D_ * 1000, int((kandydat & vydno).sum()), int(kryshka.sum())))
     u_zoni = np.array([k.startswith(Z["kistky"]) for k in kist])
     # грань речі має лежати біля кісток зони (вага > 0,15): генератор буває перемальовує шкіру
     # поза зоною (плече над наручем стало рожевим) — це «не шкіра», але й не річ

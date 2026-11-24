@@ -323,6 +323,28 @@ INSTR = {
         "the first image exactly the same. No straps around the thighs, no pouches. Plain light "
         "grey studio background, soft even shadowless light, photorealistic, sharp detailed "
         "iron, leather and cloth."),
+    # Спосіб Б порівняння (24.11.2026): ті самі лати на кадрах тіла зі спини й збоку — для
+    # Hunyuan3D-2mv. Перша картинка — наше тіло з того боку, друга — еталон спереду.
+    "еталон-наплічники-ззаду": (
+        "The first image shows a bald person from behind. Put on this person the same iron "
+        "armor as on the person in the second image, seen from behind: a polished dark iron "
+        "backplate covering the whole back from the neck down to the waist, with a raised rim "
+        "at the neck and rivets along the edges, joined to the breastplate at the sides, and on "
+        "each shoulder the back of a rounded iron pauldron of three overlapping plates. The "
+        "upper arms below the pauldrons, the forearms, the hands and the neck stay bare. No "
+        "belt, no cloak, no cape, no helmet, no hair. Keep the back view, the body, the bald "
+        "head, the pose and the camera of the first image exactly the same. Plain light grey "
+        "studio background, soft even shadowless light, photorealistic, sharp detailed iron."),
+    "еталон-наплічники-збоку": (
+        "The first image shows a bald person in side view. Put on this person the same iron "
+        "armor as on the person in the second image, seen from the side: a polished dark iron "
+        "cuirass of a breastplate and a backplate covering the chest, the belly down to the "
+        "waist and the back, shaped to the body, with rivets along the edges and the side "
+        "joint, and on the shoulder a rounded iron pauldron of three overlapping plates. The "
+        "upper arm below the pauldron, the forearm, the hand and the neck stay bare. No belt, "
+        "no cloak, no cape, no helmet, no hair. Keep the side view, the body, the bald head, "
+        "the pose and the camera of the first image exactly the same. Plain light grey studio "
+        "background, soft even shadowless light, photorealistic, sharp detailed iron."),
     "тіло-ельф-ж": (
         "Turn this elf woman into a clean base body reference for 3D modeling. Strict symmetric "
         "T-pose, front view, arms straight out to the sides at shoulder height, palms down, "

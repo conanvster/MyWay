@@ -256,6 +256,72 @@ def bez_vidrostkiv(ob, tip):
     bm.free()
 
 
+## Тятива лука (24.11.2026: генератор відтягнув її в прямокутну рамку — «тятива рамкою» на
+## стенді зброї). Після `rozstavyty` лук стоїть уздовж Z, руків'я в нулі, тятива на +X: усе, що
+## на своїй висоті далі за TIATYVA_VID м від плеча (найменший X), — стара тятива й рамка, геть;
+## нова — тонкий циліндр між точками кріплення (крайні висоти старої тятиви), колір — її ж
+## текстура.
+TIATYVA_VID = 0.03
+TIATYVA_R = 0.0025
+
+
+def nova_tiatyva(ob, tip):
+    if tip != "лук":
+        return
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    uvl = bm.loops.layers.uv.active
+    zs = [v.co.z for v in bm.verts]
+    z0 = min(zs)
+    krok = 0.02
+    plech = {}
+    for v in bm.verts:
+        k = int((v.co.z - z0) / krok)
+        plech[k] = min(plech.get(k, 9.0), v.co.x)
+    # Рамка тятиви стоїть далі за плечі: межа — найдальша точка плеча на середніх 70 % довжини
+    # (там найменший X на висоті — саме плече; біля кінчиків, де плече загинається, — ні) плюс
+    # TIATYVA_VID. Біля кінчиків від рамки лишаються короткі обрубки до плеча.
+    z1 = max(zs)
+    ser = [x for k, x in plech.items() if abs(z0 + (k + 0.5) * krok) < 0.35 * (z1 - z0)]
+    mezha = max(ser) + TIATYVA_VID
+    stara = {v for v in bm.verts if v.co.x > mezha}
+    if len(stara) < 20:
+        print("[зброя] тятива: старої не знайдено", flush=True)
+        bm.free()
+        return
+    uv = None
+    for f in bm.faces:
+        if all(v in stara for v in f.verts):
+            uv = f.loops[0][uvl].uv.copy()
+            break
+    zt = max(v.co.z for v in stara)
+    zb = min(v.co.z for v in stara)
+    bmesh.ops.delete(bm, geom=list(stara), context="VERTS")
+    def kriplennia(z):
+        blyzko = [v.co for v in bm.verts if abs(v.co.z - z) < 0.03]
+        return max(blyzko, key=lambda c: c.x).copy()
+    a, b = kriplennia(zt), kriplennia(zb)
+    vis = (a - b).normalized()
+    r = vis.orthogonal().normalized()
+    q = vis.cross(r).normalized()
+    n = 8
+    kil = []
+    for kinec in (b, a):
+        kil.append([bm.verts.new(kinec + (r * math.cos(2 * math.pi * i / n)
+                                          + q * math.sin(2 * math.pi * i / n)) * TIATYVA_R)
+                    for i in range(n)])
+    for i in range(n):
+        f = bm.faces.new((kil[0][i], kil[0][(i + 1) % n], kil[1][(i + 1) % n], kil[1][i]))
+        if uv is not None:
+            for l in f.loops:
+                l[uvl].uv = uv
+    bm.to_mesh(ob.data)
+    ob.data.update()
+    print("[зброя] тятива: старої вершин %d, нова %.2f м між z %.2f і %.2f"
+          % (len(stara), (a - b).length, zb, zt), flush=True)
+    bm.free()
+
+
 def sproshchennia(ob):
     bpy.context.view_layer.objects.active = ob
     if len(ob.data.polygons) > HRANEI:
@@ -318,6 +384,7 @@ def zibraty(nazva, tip):
     rozstavyty(ob, tip)
     bez_vidrostkiv(ob, tip)
     sproshchennia(ob)
+    nova_tiatyva(ob, tip)
     kudy = os.path.join(GRA, nazva + ".glb")
     vyvesty(ob, kudy)
     rendr(ob, os.path.join(SYRI, nazva, "rendr.png"))

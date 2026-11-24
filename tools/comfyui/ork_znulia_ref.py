@@ -281,6 +281,48 @@ INSTR = {
         "face, the bald head, the body, the pose and the camera exactly the same. Plain light "
         "grey studio background, soft even shadowless light, whole body from head to feet in "
         "frame, front view, photorealistic."),
+    # Зони з еталона важкого сету (П-288, 21.11.2026, слово замовника: «так, бери пару s9704,
+    # роби зони людини»): одна інструкція на зону для всіх рас і статей, друга картинка — еталон
+    # (`art/еталон-важка-2026-11-20/штани-людина[-жінка]-s9704.png`), не кадр вікі. Кожна зона —
+    # лише своя річ; решта тіла гола, бо за шкірою зону суміщують із моделлю.
+    "еталон-чоботи": (
+        "Put the iron plate boots of the person from the second image on the legs from the first "
+        "image: polished dark iron greaves with round knee caps and riveted straps, covering the "
+        "shins and the knees, and plated iron boots with thick soles and closed toes. Keep the "
+        "bare thighs above the knee caps, the skin tone, the underwear, the hands, the pose of the "
+        "legs and the camera of the first image exactly the same. No trousers, no cloth, no "
+        "skirt. Plain light grey studio background, soft even shadowless light, both legs and "
+        "boots fully in frame, photorealistic, sharp detailed iron, rivets and leather straps."),
+    "еталон-наручі": (
+        "Put the iron vambrace of the person from the second image on the forearm of the arm from "
+        "the first image: a polished dark iron vambrace with a flared cuff and rows of rivets, two "
+        "narrow leather straps, covering the forearm from the wrist to just below the elbow. The "
+        "elbow, upper arm, hand and fingers keep exactly the same bare skin as in the first "
+        "image: no glove, no gauntlet, bare fingers. Keep the pose and the camera of the first "
+        "image exactly the same. No sleeve, no other armor, no body behind the arm. Plain light "
+        "grey studio background, soft even shadowless light, photorealistic, sharp detailed "
+        "iron, rivets and leather."),
+    "еталон-наплічники": (
+        "Put the iron cuirass and pauldrons of the person from the second image on the bald "
+        "person from the first image: a polished dark iron cuirass covering the chest, the belly "
+        "down to the waist and the back, shaped to the body, with a raised rim at the neck and "
+        "rivets along the edges, and on each shoulder a rounded iron pauldron of three "
+        "overlapping plates. The upper arms below the pauldrons, the forearms, the hands and the "
+        "neck stay bare. No belt, no skirt, no trousers, no cloak, no cape, no helmet, no hair, "
+        "no beard. Keep the pose, the body, the bald head, the face and the camera of the first "
+        "image exactly the same. Plain light grey studio background, soft even shadowless light, "
+        "photorealistic, sharp detailed iron and rivets."),
+    "еталон-пояс": (
+        "Replace the underwear from the first image with the belt, the plate skirt and the "
+        "trousers of the person from the second image: a wide dark brown leather belt with a "
+        "large square iron buckle at the waist, below it a short skirt of overlapping polished "
+        "dark iron plates with rivets all around the hips, front, sides and back, down to the "
+        "upper thighs, and deep crimson dark red cloth trousers covering the hips and the thighs "
+        "down to the knees. No underwear is visible anywhere. Keep the bare belly above the belt, "
+        "the bare shins below the knees, the hands, the skin tone, the pose and the camera of "
+        "the first image exactly the same. No straps around the thighs, no pouches. Plain light "
+        "grey studio background, soft even shadowless light, photorealistic, sharp detailed "
+        "iron, leather and cloth."),
     "тіло-ельф-ж": (
         "Turn this elf woman into a clean base body reference for 3D modeling. Strict symmetric "
         "T-pose, front view, arms straight out to the sides at shoulder height, palms down, "

@@ -173,6 +173,89 @@ def rozstavyty(ob, tip):
     ob.data.update()
 
 
+## Відірвані шматки, що стирчать убік від древка далі за VIDROSTOK м (24.11.2026: у посоха
+## генератор приліпив окремий тонкий шип поперек древка) — геть. Лише древкова зброя: у меча
+## гарда й у щита умбон теж бувають окремими шматками, але вони на своєму місці.
+VIDROSTOK = 0.06
+
+
+def bez_vidrostkiv(ob, tip):
+    if tip not in ("посох", "спис"):
+        return
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    bach, shmatky = set(), []
+    for v in bm.verts:
+        if v in bach:
+            continue
+        st, sh = [v], []
+        bach.add(v)
+        while st:
+            u = st.pop()
+            sh.append(u)
+            for e in u.link_edges:
+                w = e.other_vert(u)
+                if w not in bach:
+                    bach.add(w)
+                    st.append(w)
+        shmatky.append(sh)
+    geth = []
+    for sh in shmatky:
+        c = sum((u.co for u in sh), Vector()) / len(sh)
+        bik = max(math.hypot(u.co.x, u.co.y) for u in sh)
+        if math.hypot(c.x, c.y) > VIDROSTOK or bik > VIDROSTOK * 2.5:
+            geth.extend(sh)
+    # …і обрубки, що лишились на самому древку: вершина далі за 3,5 см від середини древка на
+    # своїй висоті (древко буває хвилясте), окрім головки — верхніх 12 % довжини
+    gs = set(geth)
+    zs = [v.co.z for v in bm.verts]
+    z0, z1 = min(zs), max(zs)
+    koshyky = {}
+    for v in bm.verts:
+        if v not in gs:
+            koshyky.setdefault(int((v.co.z - z0) / 0.03), []).append(v.co)
+    serediny = {k: (sorted(c.x for c in cs)[len(cs) // 2], sorted(c.y for c in cs)[len(cs) // 2])
+                for k, cs in koshyky.items()}
+    obrubky = []
+    for v in bm.verts:
+        if v in gs or v.co.z > z1 - 0.12 * (z1 - z0):
+            continue
+        mx, my = serediny[int((v.co.z - z0) / 0.03)]
+        if math.hypot(v.co.x - mx, v.co.y - my) > 0.035:
+            obrubky.append(v)
+    geth.extend(obrubky)
+    if geth:
+        bmesh.ops.delete(bm, geom=geth, context="VERTS")
+        bm.to_mesh(ob.data)
+        ob.data.update()
+    # після зрізання — крихти (острівці до 60 вершин; головка й наконечник — теж окремі шматки, більші)
+    bm.verts.ensure_lookup_table()
+    bach, krykhty = set(), []
+    for v in bm.verts:
+        if v in bach:
+            continue
+        st, sh = [v], []
+        bach.add(v)
+        while st:
+            u = st.pop()
+            sh.append(u)
+            for e in u.link_edges:
+                w = e.other_vert(u)
+                if w not in bach:
+                    bach.add(w)
+                    st.append(w)
+        if len(sh) < 60:
+            krykhty.extend(sh)
+    if krykhty:
+        bmesh.ops.delete(bm, geom=krykhty, context="VERTS")
+        bm.to_mesh(ob.data)
+        ob.data.update()
+    print("[зброя] відростки: шматків %d, прибрано вершин %d (з них обрубків %d), крихт %d"
+          % (len(shmatky), len(geth), len(obrubky), len(krykhty)), flush=True)
+    bm.free()
+
+
 def sproshchennia(ob):
     bpy.context.view_layer.objects.active = ob
     if len(ob.data.polygons) > HRANEI:
@@ -233,6 +316,7 @@ def zibraty(nazva, tip):
     ob["tip"] = tip
     povernuty(ob, tip)
     rozstavyty(ob, tip)
+    bez_vidrostkiv(ob, tip)
     sproshchennia(ob)
     kudy = os.path.join(GRA, nazva + ".glb")
     vyvesty(ob, kudy)

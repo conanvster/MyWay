@@ -721,15 +721,27 @@ def skinning(r, k=6):
         ww = (1 / d) / (1 / d).sum()
         Wr[i] = (WB[ids[[x[1] for x in nb]]] * ww[:, None]).sum(0)
     Wr[:, ~kist] = 0
-    # пластина металу не гнеться: острівець наплічника — одна спільна вага на весь шматок;
-    # дрібні острівці (ремінці, заклепки) — як найближча вершина великого
+    # корпус кіраси — залізо, що не гнеться за рукою: лише хребет, таз, шия (і стегна для
+    # набедреників), без ключиць і плечей — інакше бік під пахвою вигинається з рукою
+    korpus_ok = np.array([n.startswith(("spine", "pelvis", "neck", "thigh")) for n in NAZVY])
+    # наплічник — жорстка пластина, що йде за рукою: увесь острівець — плече своєї руки
+    # (з малою часткою ключиці, щоб верх не врізався в комір)
+    CH_KL = arg("--наплічник-ключиця", 0.15)
     if OSTROVY is not None:
         cnt = OSTROVY[1]
         velyki = cnt >= 0.01 * cnt.sum()
-        for o_ in range(1, len(cnt)):
+        for o_ in range(0, len(cnt)):
             q = nom == o_
-            if velyki[o_] and (wp[q] > 0.01).any():
-                Wr[q] = Wr[q].mean(0)
+            if not velyki[o_]:
+                continue
+            if o_ > 0 and (wp[q] > 0.01).mean() > 0.3:
+                cx_ = V[q, 0].mean()
+                bik = "_r" if np.sign(SUHL3["upperarm_r"][0] - CX) == np.sign(cx_ - CX) else "_l"
+                Wr[q] = 0
+                Wr[q, NAZVY.index("upperarm" + bik)] = 1 - CH_KL
+                Wr[q, NAZVY.index("clavicle" + bik)] = CH_KL
+            else:
+                Wr[np.ix_(q, ~korpus_ok)] = 0
         dribni = np.nonzero(~velyki[nom])[0]
         vel = np.nonzero(velyki[nom])[0]
         if len(dribni):

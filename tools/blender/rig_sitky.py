@@ -217,6 +217,48 @@ polys = [tuple(p.vertices) for p in me.polygons if all(tilo[i] for i in p.vertic
 bvh = BVHTree.FromPolygons([tuple(v) for v in POZ], polys)
 log("поза основи — як у сітки")
 
+# ── 2а. файл для суглобів (`--до-суглобів <вихід.blend>`, 25.11.2026) ────
+# Слово замовника: «на етапі тіло-4 ще не виставляли точки прив'язок — перестворити з нього».
+# Тут зупинка перед вагами: тіло як є (руки опущені, без скелета) і скелет гри, поставлений
+# у ту саму позу; поза стає спокоєм — суглоби правляться в режимі редагування. Спокій
+# основи (А-поза гри) і поза зберігаються у властивостях скелета — далі ваги рахуються
+# з опущеними руками, а тіло переходить у спокій гри зворотним скінінгом.
+if "--до-суглобів" in A:
+    import json
+    VYKH_S = A[A.index("--до-суглобів") + 1]
+    gm.vertices.foreach_set("co", GV.ravel())
+    gm.update()
+    gen.name = "Тіло"
+    gen.data.name = "Тіло"
+    rig["спокій_основи"] = json.dumps({b.name: [list(r) for r in b.matrix_local] for b in rig.data.bones})
+    rig["поза_основи"] = json.dumps({pb.name: [list(r) for r in pb.matrix_basis] for pb in rig.pose.bones})
+    for o in list(bpy.data.objects):
+        if o not in (rig, gen):
+            bpy.data.objects.remove(o)
+    bpy.ops.object.mode_set(mode="OBJECT") if bpy.context.object and bpy.context.object.mode != "OBJECT" else None
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    bpy.context.view_layer.objects.active = rig
+    rig.select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    rig.data.pose_position = "REST"
+    rig.data.display_type = "STICK"
+    rig.data.show_names = True
+    rig.show_in_front = True
+    gen.hide_select = True
+    for scr in bpy.data.screens:
+        for ar in scr.areas:
+            if ar.type == "VIEW_3D":
+                for sp in ar.spaces:
+                    if sp.type == "VIEW_3D":
+                        sp.shading.show_xray = True
+                        sp.shading.xray_alpha = 0.5
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(VYKH_S))
+    log("→ файл для суглобів:", VYKH_S)
+    sys.exit(0)
+
 # ── 3. ваги з основи ─────────────────────────────────────────────────
 VW = {}
 for v in me.vertices:

@@ -58,7 +58,7 @@ def main():
     # x_вх = c1 + (x_г − c2)·k ; y_вх = t1 + (y_г − t2)·k → зворотне для перетягування
     inv = (1 / k, 0, c2 - c1 / k, 0, 1 / k, t2 - t1 / k)
     out = g_img.transform((a.shape[1], a.shape[0]), Image.AFFINE, inv, Image.BICUBIC,
-                          fillcolor=tuple(int(v) for v in np.median(g[:6].reshape(-1, 3), 0)))
+                          fillcolor=tuple(int(v) for v in np.median(a[:6].reshape(-1, 3), 0)))
     out.save(sys.argv[3])
     print("[звести] масштаб %.3f (голова %d→%d px, ширина %d→%d), маківка %d→%d"
           % (k, s2 - t2, s1 - t1, w2, w1, t2, t1))

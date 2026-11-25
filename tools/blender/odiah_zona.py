@@ -337,19 +337,22 @@ for dzerkalo, bik in varianty:
         lo_, hi_ = P_SYRE.min(0), P_SYRE.max(0)
         Pr = np.stack([RAMKA[2 * q] + (P_SYRE[:, q] - lo_[q]) / max(hi_[q] - lo_[q], 1e-9)
                        * (RAMKA[2 * q + 1] - RAMKA[2 * q]) for q in range(3)], 1)
-        # глибину Hunyuan ставить зі зсувом: дотягнути по Y (і трохи по X) за головою — вона гола й
-        # однакова на скульпті й на тілі
-        gol = Pr[Pr[:, 2] > Pr[:, 2].max() - 0.15 * (Pr[:, 2].max() - Pr[:, 2].min())]
-        gol = gol[rng.choice(len(gol), min(1500, len(gol)), replace=False)]
+        if dzerkalo:                         # одна кінцівка в кадрі — друга дзеркалом довкола тіла
+            cxb = (BV[:, 0].max() + BV[:, 0].min()) / 2
+            Pr[:, 0] = 2 * cxb - Pr[:, 0]
+        # глибину Hunyuan ставить зі зсувом: дотягнути (Y, трохи X і Z) так, щоб сітка найщільніше
+        # лягла на наше тіло — більша її частина й є тіло (шкіра навколо речі)
+        vyb = Pr[rng.choice(len(Pr), min(3000, len(Pr)), replace=False)]
         bvh_cile = BVHTree.FromPolygons([Vector(p) for p in BV], [tuple(p.vertices) for p in tm.polygons])
-        def med(dx, dy):
-            return np.median([bvh_cile.find_nearest(Vector(q + (dx, dy, 0)))[3] for q in gol])
+        def med(dx, dy, dz=0.0):
+            return np.median([bvh_cile.find_nearest(Vector(q + (dx, dy, dz)))[3] for q in vyb])
         dy = min(np.linspace(-0.2, 0.2, 41), key=lambda d: med(0.0, d))
         dy = min(np.linspace(dy - 0.01, dy + 0.01, 11), key=lambda d: med(0.0, d))
         dx = min(np.linspace(-0.03, 0.03, 13), key=lambda d: med(d, dy))
-        Pr = Pr + (dx, dy, 0)
-        log("рамка: дотягнуто за головою dx %+.3f, dy %+.3f м, медіана голови до тіла %.1f мм"
-            % (dx, dy, med(0, 0) * 1000 if False else med(0.0, 0.0) * 0 + np.median([bvh_cile.find_nearest(Vector(q + (dx, dy, 0)))[3] for q in gol]) * 1000))
+        dz = min(np.linspace(-0.02, 0.02, 9), key=lambda d: med(dx, dy, d))
+        Pr = Pr + (dx, dy, dz)
+        log("рамка: дотягнуто dx %+.3f dy %+.3f dz %+.3f м, медіана сітки до тіла %.1f мм"
+            % (dx, dy, dz, med(0, 0) * 1000))
         najkr = (0, Pr, 0.0)
     for zsuv in (() if RAMKA else ((0.0, -0.08, 0.08, -0.16, 0.16) if Z["kadr"] is not None else (0.0,))):
         Pz = P + [zsuv, 0, 0]

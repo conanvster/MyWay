@@ -368,6 +368,35 @@ INSTR = {
 }
 
 
+# Спосіб Б (25.11.2026, П-288): кадр УСЬОГО нашого тіла з одного боку (`kadry_4.py`), на ньому —
+# лише своя річ з еталона (друга картинка). Голова лишається — за нею кадр зводять до масштабу.
+_RICH = {
+    "чоботи": "iron plate greaves with round knee caps and riveted straps covering the shins "
+              "and the knees, and plated iron boots with thick soles",
+    "наручі": "polished dark iron vambraces with a flared cuff and rows of rivets on both "
+              "forearms, from the wrist to just below the elbow; the hands and fingers stay bare",
+    "наплічники": "a polished dark iron cuirass covering the chest, the belly down to the waist "
+                  "and the back, with a raised rim at the neck and rivets along the edges, and on "
+                  "each shoulder a rounded iron pauldron of three overlapping plates",
+    "пояс": "a wide dark brown leather belt with a large square iron buckle at the waist, a short "
+            "skirt of overlapping dark iron plates all around the hips, and deep crimson dark red "
+            "cloth trousers covering the hips and the thighs down to the knees instead of the "
+            "underwear",
+}
+_VYD = {"": ("front view", ""),
+        "-ззаду": ("back view", "The first image shows the person from behind. "),
+        "-збоку": ("side view", "The first image shows the person in side view. ")}
+for _z, _r in _RICH.items():
+    for _k, (_v, _pre) in _VYD.items():
+        INSTR["повне-%s%s" % (_z, _k)] = (
+            _pre + "Put on the person in the first image only this armor piece from the person "
+            "in the second image: " + _r + ". Nothing else changes: the rest of the body stays "
+            "bare with the same skin, the same underwear, the bald head, the pose and the camera "
+            "of the first image exactly the same, " + _v + ", whole body from head to feet in "
+            "frame. No other armor, no cloak, no helmet, no weapon. Plain light grey studio "
+            "background, soft even shadowless light, photorealistic, sharp detailed iron.")
+
+
 def arg(k, typ, d):
     return typ(sys.argv[sys.argv.index(k) + 1]) if k in sys.argv else d
 

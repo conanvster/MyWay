@@ -33,6 +33,9 @@ bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 me = ob.data
 P = np.array([v.co[:] for v in me.vertices])
 lo, hi = P.min(0), P.max(0)
+# межі по X і Y — без смуг біля верху й низу (там Hunyuan розкльошує кришку по краю кадру)
+_ser = P[(P[:, 2] > lo[2] + 0.04 * (hi[2] - lo[2])) & (P[:, 2] < hi[2] - 0.04 * (hi[2] - lo[2]))]
+lo[:2], hi[:2] = np.percentile(_ser[:, :2], 0.5, axis=0), np.percentile(_ser[:, :2], 99.5, axis=0)
 print("[проекція] вершин %d, рамка %s…%s" % (len(P), lo.round(3), hi.round(3)))
 
 def zchytaty(shliakh):
@@ -41,10 +44,32 @@ def zchytaty(shliakh):
     a = np.array(img.pixels[:]).reshape(h, w, 4)[::-1, :, :3]   # рядок 0 — верх
     tlo = np.median(np.concatenate([a[:6].reshape(-1, 3), a[:, :6].reshape(-1, 3),
                                     a[:, -6:].reshape(-1, 3)]), 0)
-    maska = np.abs(a - tlo).sum(2) > 0.09
+    # тло двох барв: край, залитий при зведенні (`zvesty_kadr.py`), і тло самого Qwen трохи всередині
+    hh, ww = a.shape[:2]
+    kil = np.concatenate([a[int(hh * 0.1):int(hh * 0.9), int(ww * 0.12)].reshape(-1, 3),
+                          a[int(hh * 0.1):int(hh * 0.9), int(ww * 0.88)].reshape(-1, 3)])
+    tlo2 = np.median(kil, 0)
+    maska = (np.abs(a - tlo).sum(2) > 0.09) & (np.abs(a - tlo2).sum(2) > 0.09)
     ys, xs = np.nonzero(maska)
     return a, maska, (xs.min(), xs.max(), ys.min(), ys.max())
 
+# --рамка x0 x1 y0 y1 z0 z1 --кадр <тіло-4/зріст.txt> --вирізи "спереду:x0:y0:w:h,…" (25.11.2026):
+# сітку спершу ставимо в координати тіла тією ж рамкою, що й `odiah_zona --рамка`, а колір
+# беремо точною камерою `kadry_4.py` — усі кадри зведено до неї, тож відповідність точна.
+TOCHNO = "--рамка" in A and "--кадр" in A
+if TOCHNO:
+    j_ = A.index("--рамка")
+    RM = [float(A[j_ + 1 + q]) for q in range(6)]
+    lo0, hi0 = P.min(0), P.max(0)
+    PW = np.stack([RM[2 * q] + (P[:, q] - lo0[q]) / max(hi0[q] - lo0[q], 1e-9) * (RM[2 * q + 1] - RM[2 * q])
+                   for q in range(3)], 1)
+    KH, KZ0, KCX, KCY = [float(x) for x in open(arg("--кадр", "")).read().split()[:4]]
+    KS = KH / 0.93
+    VYRIZY = {}
+    for e in arg("--вирізи", "").split(","):
+        b_, *c_ = e.split(":")
+        VYRIZY["--" + b_] = [int(x) for x in c_]
+    KUTY = {"--спереду": 0, "--ззаду": 180, "--зліва": 90, "--справа": -90}
 # Blender після імпорту glTF: угору — Z; «спереду» — з −Y (як у kadry_4.py)
 VYDY = {"--спереду": (Vector((0, -1, 0)), 0, 1), "--ззаду": (Vector((0, 1, 0)), 0, -1),
         "--зліва": (Vector((1, 0, 0)), 1, -1), "--справа": (Vector((-1, 0, 0)), 1, 1)}
@@ -73,16 +98,57 @@ for k, (d, os_u, znak, a, maska, (x0, x1, y0, y1)) in kadry.items():
     ulo, uhi = min(ulo, uhi), max(ulo, uhi)
     px = x0 + (uu - ulo) / max(uhi - ulo, 1e-6) * (x1 - x0)
     py = y0 + (hi[2] - P[:, 2]) / max(hi[2] - lo[2], 1e-6) * (y1 - y0)
+    if TOCHNO:
+        a_ = np.radians(KUTY[k])
+        pr = np.array([np.cos(a_), np.sin(a_), 0.0])
+        u_ = (PW - [KCX, KCY, 0]) @ pr
+        vx, vy, vw, vh = VYRIZY[k]
+        px = (512 + u_ / KS * 1024 - vx) / vw * w
+        py = (512 + (KZ0 + KH / 2 - PW[:, 2]) / KS * 1024 - vy) / vh * h
+    # уточнення: масштаб і зсув кадру, за яких силует сітки найкраще ліг на силует постаті (IoU
+    # на сітці 160 px) — межі «сітка ↔ кадр» грубі (тіні під ногами, кришка по краю кадру)
+    K = 160.0 / max(w, h)
+    mk = np.zeros((int(h * K) + 2, int(w * K) + 2), bool)
+    ys_, xs_ = np.nonzero(maska)
+    mk[(ys_ * K).astype(int), (xs_ * K).astype(int)] = True
+    cxp, cyp = px.mean(), py.mean()
+    def iou(s_, ox, oy):
+        qx = ((cxp + (px - cxp) * s_ + ox) * K).astype(int)
+        qy = ((cyp + (py - cyp) * s_ + oy) * K).astype(int)
+        ok = (qx >= 0) & (qy >= 0) & (qx < mk.shape[1]) & (qy < mk.shape[0])
+        sil = np.zeros_like(mk)
+        sil[qy[ok], qx[ok]] = True
+        return (sil & mk).sum() / max((sil | mk).sum(), 1)
+    naikr = (iou(1.0, 0, 0), 1.0, 0.0, 0.0)
+    for s_ in (() if TOCHNO else np.linspace(0.85, 1.15, 13)):
+        for ox in np.linspace(-0.08 * w, 0.08 * w, 13):
+            for oy in np.linspace(-0.08 * h, 0.08 * h, 13):
+                v_ = iou(s_, ox, oy)
+                if v_ > naikr[0]:
+                    naikr = (v_, s_, ox, oy)
+    _, s_, ox, oy = naikr
+    px = cxp + (px - cxp) * s_ + ox
+    py = cyp + (py - cyp) * s_ + oy
+    print("[проекція] %s: уточнено масштаб %.3f, зсув %+.0f %+.0f px, IoU %.3f" % (k, s_, ox, oy, naikr[0]))
+    rej_ray = rej_mask = 0
     for i in np.nonzero(dn > bal)[0]:
-        o = Vector(P[i]) + d * (diag * 0.002)
+        o = Vector(P[i]) + d * (diag * 0.012)   # сітка Hunyuan зубчаста: ближче — чіпляє сусідні грані
         if bvh.ray_cast(o, d, diag * 2)[0] is not None:
+            rej_ray += 1
             continue
         yy, xx = int(np.clip(py[i], 0, h - 1)), int(np.clip(px[i], 0, w - 1))
         if not maska[yy, xx]:          # тло — кадри зведено неточно; колір дасть інший бік
+            rej_mask += 1
             continue
         bal[i] = dn[i]
         kol[i] = a[yy, xx]
+    if "--діагностика" in A:
+        print("[проекція] %s: відкинуто — промінь %d, тло %d" % (k, rej_ray, rej_mask))
 print("[проекція] без кольору вершин: %d" % int((bal < -5).sum()))
+if "--діагностика" in A:
+    for k, (d, *_r) in kadry.items():
+        m_ = (bal > -5) & (np.abs((N @ np.array(d[:])) - (bal + (2.0 if ZAPAS and k in ("--зліва", "--справа") else 0))) < 1e-6)
+        print("[проекція] %s: вершин %d, середній колір %s" % (k, int(m_.sum()), kol[m_].mean(0).round(3) if m_.any() else None))
 # дірки — колір найближчого сусіда з кольором
 if (bal < -5).any():
     from mathutils import kdtree

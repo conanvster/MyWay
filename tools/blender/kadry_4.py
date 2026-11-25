@@ -19,6 +19,10 @@ if SHLIAKH.endswith(".glb"):
     bpy.ops.import_scene.gltf(filepath=os.path.abspath(SHLIAKH))
 else:
     bpy.ops.wm.open_mainfile(filepath=os.path.abspath(SHLIAKH))
+    # модель з MPFB (людина-жінка): поза спокою = поза скульпту (як kadr_tila.py)
+    for rig in [o for o in bpy.data.objects if o.type == "ARMATURE"]:
+        for pb in rig.pose.bones:
+            pb.matrix_basis.identity()
 sc = bpy.context.scene
 for o in bpy.data.objects:
     if o.type == "MESH" and o.name.startswith(("Волосся", "Борода", "Одяг-", "Брови-", "Вії-")):
@@ -63,4 +67,5 @@ for nazva, kut in (("спереду", 0), ("ззаду", 180), ("зліва", 90
     lt.rotation_euler = (0.9, 0, a + 0.3)
     sc.render.filepath = os.path.join(TEKA, nazva + ".png")
     bpy.ops.render.render(write_still=True)
+open(os.path.join(TEKA, "зріст.txt"), "w").write("%.4f %.4f %.4f %.4f\n" % (H, zmin, cx, cy))
 print("[кадри] зріст %.3f м, низ %.3f → %s" % (H, zmin, TEKA))

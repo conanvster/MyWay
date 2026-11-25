@@ -64,7 +64,10 @@ log("нормалі тіла %s" % ("назовні" if ZNAK_T > 0 else "все�
 log("тіло %s: %d вершин, зріст %.3f" % (tilo.name, len(VB), H))
 # головна кістка вершини → маска рук; суглоби → висоти (частки зросту)
 RUKA = None
+HOLOVNA = None
 SUHL = {}
+SUHL_X = {}
+SUHL3 = {}
 if tilo.vertex_groups:
     nazvy = [g.name for g in tilo.vertex_groups]
     W = np.zeros((len(tilo.data.vertices), len(nazvy)))
@@ -73,10 +76,13 @@ if tilo.vertex_groups:
             W[v.index, g.group] = g.weight
     holovna = np.array(nazvy)[W.argmax(1)]
     RUKA = np.array([any(k in h for k in ("upperarm", "lowerarm", "hand")) for h in holovna])
+    HOLOVNA = holovna
     arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
     if arm:
         for b in arm.data.bones:
             SUHL[b.name] = ((arm.matrix_world @ b.head_local).z - z0) / H
+            SUHL_X[b.name] = (arm.matrix_world @ b.head_local).x
+            SUHL3[b.name] = np.array((arm.matrix_world @ b.head_local)[:])
     log("ваги: рук %d вершин; суглоби %s" % (RUKA.sum(), {k: round(SUHL[k], 3) for k in
         ("thigh_r", "spine_01", "spine_03", "neck_01") if k in SUHL}))
 
@@ -170,6 +176,273 @@ def vpysaty_tulub(r, nyz, verh, m=0.022):
     r.data.update()
     log("масштаб x%.3f y%.3f z%.3f (талія тіла %.3f, груди %.3f)" % (sx, sy, sz, w_t, d_t))
 
+def rozdut(r, m=0.006, kvantyl=80.0):
+    """Без виштовхування поверхні (воно мне наплічники й край під пахвою): річ роздувається
+    цілою в X і Y навколо осі тулуба. Для кожної вершини тулуба (не рук) між стегном і шиєю —
+    горизонтальний промінь ззовні до осі: перше влучання в річ — її зовнішня поверхня;
+    потрібне роздуття = (радіус шкіри + m) / радіус поверхні. Береться квантиль — решту
+    (м'язи, що випинають) ховає `під_одяг`. Нормалі сітки TRELLIS ненадійні — тут не потрібні."""
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    rb = BVHTree.FromPolygons([Vector(v) for v in V], [p.vertices[:] for p in me.polygons])
+    cy = float(np.median(V[:, 1]))
+    za, zb = z0 + (SUHL.get("thigh_r", 0.52) + 0.06) * H, z0 + (SUHL.get("neck_01", 0.85) - 0.04) * H
+    m_ = (VB[:, 2] > za) & (VB[:, 2] < zb)
+    if RUKA is not None:
+        m_ &= ~RUKA
+    idx = np.nonzero(m_)[0][::3]
+    potr = []
+    for i in idx:
+        b_ = VB[i]
+        d2 = np.array([b_[0] - CX, b_[1] - cy])
+        rb_ = np.linalg.norm(d2)
+        if rb_ < 1e-4:
+            continue
+        u = d2 / rb_
+        o = Vector((CX + u[0] * 1.5, cy + u[1] * 1.5, b_[2]))
+        hit = rb.ray_cast(o, Vector((-u[0], -u[1], 0.0)), 1.5)[0]
+        if hit is None:
+            continue
+        ri = np.hypot(hit.x - CX, hit.y - cy)
+        potr.append((rb_ + m) / max(ri, 1e-4))
+    potr = np.array(potr)
+    k = float(np.clip(np.percentile(potr, kvantyl), 1.0, 1.1))
+    log("роздуття: потрібно (медіана %.3f, %d-й квантиль %.3f) → %.3f; пробито при ньому %.1f %%"
+        % (np.median(potr), kvantyl, np.percentile(potr, kvantyl), k, 100.0 * (potr > k).mean()))
+    V[:, 0] = CX + (V[:, 0] - CX) * k
+    V[:, 1] = cy + (V[:, 1] - cy) * k
+    me.vertices.foreach_set("co", V.ravel()); me.update()
+
+def vaha_naplichnyka(V, bik):
+    """0 — кіраса, 1 — наплічник цього боку (за відстанню від осі до плечового суглоба)."""
+    J = SUHL3["upperarm" + bik]
+    jx = J[0] - CX
+    zn = np.sign(jx)
+    t = np.clip(((V[:, 0] - CX) * zn - 0.45 * abs(jx)) / (0.4 * abs(jx)), 0, 1)
+    t *= np.clip((V[:, 2] - (J[2] - 0.12 * H)) / (0.05 * H), 0, 1)
+    return t * t * (3 - 2 * t)
+
+def pole_rozduttia(r, m=0.008, kutiv=48, krok=0.02):
+    """Роздуття тулуба кіраси полем: сітка «кут навколо осі × висота»; у клітинці —
+    потрібне (радіус шкіри + m) / радіус зовнішньої поверхні речі (промінь ззовні до осі).
+    Поле розширене на сусідні клітинки й згладжене — пластина роздувається плавно, без
+    зморшок; наплічники (вага > 0) не чіпаються. Лише ≥ 1: де річ і так ширша — без змін."""
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    rb = BVHTree.FromPolygons([Vector(v) for v in V], [p.vertices[:] for p in me.polygons])
+    cy = float(np.median(V[:, 1]))
+    za, zb = z0 + (SUHL.get("thigh_r", 0.52) + 0.03) * H, z0 + (SUHL.get("neck_01", 0.85) - 0.01) * H
+    zh = np.arange(za, zb + krok, krok)
+    G = np.ones((len(zh), kutiv))
+    m_ = (VB[:, 2] > za) & (VB[:, 2] < zb)
+    if RUKA is not None:
+        m_ &= ~RUKA
+    for i in np.nonzero(m_)[0]:
+        b_ = VB[i]
+        d2 = np.array([b_[0] - CX, b_[1] - cy]); rr = np.linalg.norm(d2)
+        if rr < 1e-3:
+            continue
+        u = d2 / rr
+        hit = rb.ray_cast(Vector((CX + u[0] * 1.5, cy + u[1] * 1.5, b_[2])), Vector((-u[0], -u[1], 0.0)), 1.5)[0]
+        if hit is None:
+            continue
+        ri = np.hypot(hit.x - CX, hit.y - cy)
+        th = int(((np.arctan2(u[1], u[0]) + np.pi) / (2 * np.pi) * kutiv)) % kutiv
+        zi = int(np.clip(round((b_[2] - za) / krok), 0, len(zh) - 1))
+        G[zi, th] = max(G[zi, th], (rr + m) / max(ri, 1e-3))
+    G = np.clip(G, 1.0, 1.35)
+    for _ in range(2):                         # розширити (макс по сусідах)
+        G = np.maximum.reduce([G, np.roll(G, 1, 1), np.roll(G, -1, 1),
+                               np.vstack([G[:1], G[:-1]]), np.vstack([G[1:], G[-1:]])])
+    for _ in range(4):                         # згладити
+        G = (G * 4 + np.roll(G, 1, 1) + np.roll(G, -1, 1) + np.vstack([G[:1], G[:-1]]) + np.vstack([G[1:], G[-1:]])) / 8
+    th_v = (np.arctan2(V[:, 1] - cy, V[:, 0] - CX) + np.pi) / (2 * np.pi) * kutiv
+    zf = (V[:, 2] - za) / krok
+    t0 = np.floor(th_v).astype(int) % kutiv; t1 = (t0 + 1) % kutiv; ft = th_v - np.floor(th_v)
+    z0i = np.clip(np.floor(zf).astype(int), 0, len(zh) - 1); z1i = np.clip(z0i + 1, 0, len(zh) - 1)
+    fz = np.clip(zf - np.floor(zf), 0, 1)
+    k = ((G[z0i, t0] * (1 - ft) + G[z0i, t1] * ft) * (1 - fz) + (G[z1i, t0] * (1 - ft) + G[z1i, t1] * ft) * fz)
+    poza = np.clip(np.maximum(za - V[:, 2], V[:, 2] - zb) / 0.04, 0, 1)    # за смугою — плавно до 1
+    k = 1 + (k - 1) * (1 - poza)
+    wp = np.zeros(len(V))
+    if "upperarm_r" in SUHL3:
+        wp = np.maximum(vaha_naplichnyka(V, "_r"), vaha_naplichnyka(V, "_l"))
+    k = 1 + (k - 1) * (1 - wp)
+    V[:, 0] = CX + (V[:, 0] - CX) * k
+    V[:, 1] = cy + (V[:, 1] - cy) * k
+    me.vertices.foreach_set("co", V.ravel()); me.update()
+    log("поле роздуття: клітинок %dx%d, найбільше %.3f, середнє %.3f" % (len(zh), kutiv, G.max(), G.mean()))
+
+def naplichnyky(r, m=0.008, kvantyl=85.0):
+    """Наплічник кожного боку — окремо: роздути навколо плечового суглоба (голова
+    upperarm), доки дельта й трапеція майже не пробивають. Вага спадає до тулуба плавно,
+    щоб пластина не відірвалась від кіраси. Решту ховає `під_одяг`."""
+    if "upperarm_r" not in SUHL3:
+        return
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    for bik in ("_r", "_l"):
+        J = SUHL3["upperarm" + bik]
+        w = vaha_naplichnyka(V, bik)
+        rb = BVHTree.FromPolygons([Vector(v) for v in V], [p.vertices[:] for p in me.polygons])
+        hol = np.array([any(k in h for k in ("upperarm" + bik, "clavicle" + bik)) for h in HOLOVNA])
+        sel = np.nonzero(hol & (VB[:, 2] > J[2] - 0.02 * H))[0][::2]   # верх дельти й трапеція
+        potr = []
+        for i in sel:
+            d = VB[i] - J
+            rr = np.linalg.norm(d)
+            if rr < 0.02:
+                continue
+            u = d / rr
+            hit = rb.ray_cast(Vector(J + u * 1.0), Vector(-u), 1.0)[0]
+            if hit is None:
+                continue
+            potr.append((rr + m) / max(np.linalg.norm(np.array(hit[:]) - J), 1e-4))
+        if not potr:
+            continue
+        potr = np.array(potr)
+        k = float(np.clip(np.percentile(potr, kvantyl), 1.0, 1.35))
+        V = V + (w * (k - 1))[:, None] * (V - J)
+        log("наплічник%s: роздуття %.3f (медіана потреби %.3f), вершин під вагою %d"
+            % (bik, k, np.median(potr), int((w > 0.01).sum())))
+    me.vertices.foreach_set("co", V.ravel()); me.update()
+
+def zalataty(r, z_do_svit):
+    """Дірки сітки (TRELLIS лишає отвір на підйомі стопи) — залатати; верхній отвір халяви
+    (найбільший край угорі) лишається. Межа — у координатах речі до вписування: латаємо всі
+    отвори, крім найвищого."""
+    bm = bmesh.new(); bm.from_mesh(r.data)
+    kraj = [e for e in bm.edges if e.is_boundary]
+    # зв'язні петлі країв
+    bachene, petli = set(), []
+    for e in kraj:
+        if e.index in bachene:
+            continue
+        st, pl = [e], []
+        bachene.add(e.index)
+        while st:
+            g = st.pop(); pl.append(g)
+            for v in g.verts:
+                for e2 in v.link_edges:
+                    if e2.is_boundary and e2.index not in bachene:
+                        bachene.add(e2.index); st.append(e2)
+        petli.append(pl)
+    if len(petli) > 1:
+        vys = [np.mean([v.co.z for e in pl for v in e.verts]) for pl in petli]
+        verkh = int(np.argmax(vys))
+        lat = [e for i, pl in enumerate(petli) if i != verkh for e in pl]
+        res = bmesh.ops.holes_fill(bm, edges=lat, sides=0)
+        log("латки: петель країв %d, залатано %d граней (верхній отвір лишився)" % (len(petli), len(res["faces"])))
+    bm.to_mesh(r.data); bm.free(); r.data.update()
+
+def vpysaty_nohu(r, znak, m=0.010):
+    """Чобіт уздовж осі ноги: на кожній висоті вище кісточки центр речі — у центр гомілки
+    (ноги в А-позі навскіс); масштаб у X і Y — один на всю халяву (наколінник не плющиться);
+    стопа — від п'яти до носка тіла з запасом."""
+    bik = "_r" if (SUHL_X.get("thigh_r", -1) - CX) * znak > 0 else "_l"
+    V = np.array([v.co[:] for v in r.data.vertices])
+    lo, hi = V.min(0), V.max(0)
+    koliano = z0 + SUHL["calf" + bik] * H
+    kist = z0 + SUHL["foot" + bik] * H
+    verh = koliano + 0.035 * H
+    noh = np.isin(HOLOVNA, ["thigh" + bik, "calf" + bik])
+    stopa = np.isin(HOLOVNA, ["foot" + bik, "ball" + bik])
+    PN, PS = VB[noh], VB[stopa]
+    # підйом стопи: найвища висота, де глибина (Y) ще > 1,5 мінімальної глибини гомілки
+    def pidiom(P, z_lo, z_hi):
+        zz = np.linspace(z_lo, z_lo + 0.45 * (z_hi - z_lo), 60)
+        dl = []
+        for z in zz:
+            q = P[np.abs(P[:, 2] - z) < 0.006 * (z_hi - z_lo) / 0.5]
+            dl.append(np.percentile(q[:, 1], 97) - np.percentile(q[:, 1], 3) if len(q) > 10 else np.nan)
+        dl = np.array(dl)
+        dmin = np.nanmin(dl[len(dl) // 3:])
+        vysoki = np.nonzero(dl > 1.5 * dmin)[0]
+        return zz[vysoki.max()] if len(vysoki) else z_lo + 0.12 * (z_hi - z_lo)
+    # висота — один масштаб (пропорції речі: стопа не розтягується до підйому тіла)
+    sz = (verh - z0 + 0.003) / (hi[2] - lo[2])
+    Z = z0 - 0.003 + (V[:, 2] - lo[2]) * sz
+    shary = np.arange(kist, verh + 0.011, 0.01)
+    def tsentry(P, Zp):
+        c = np.full((len(shary), 4), np.nan)
+        for i, z in enumerate(shary):
+            q = P[np.abs(Zp - z) < 0.008]
+            if len(q) > 10:
+                a0, a1 = np.percentile(q[:, 0], [3, 97]); b0, b1 = np.percentile(q[:, 1], [3, 97])
+                c[i] = [(a0 + a1) / 2, (b0 + b1) / 2, a1 - a0, b1 - b0]
+        for k in range(4):                    # дірки — найближчим
+            ok = ~np.isnan(c[:, k])
+            c[:, k] = np.interp(shary, shary[ok], c[ok, k])
+        return c
+    cb, ci = tsentry(PN, PN[:, 2]), tsentry(V, Z)
+    hal = (shary > kist + 0.06) & (shary < koliano - 0.05)
+    # переріз халяви — одним масштабом за ширшою з потреб, не далі ±30 % від висотного:
+    # що лишилось у металі (литка, коліно), ховає `під_одяг`
+    s_w = max(np.median((cb[hal, 2] + 2 * m) / ci[hal, 2]), np.median((cb[hal, 3] + 2 * m) / ci[hal, 3]))
+    sx = sy = float(np.clip(s_w, 0.9 * sz, 1.3 * sz))
+    zi = np.clip(Z, shary[0], shary[-1])
+    X = np.interp(zi, shary, cb[:, 0]) + (V[:, 0] - np.interp(zi, shary, ci[:, 0])) * sx
+    Yh = np.interp(zi, shary, cb[:, 1]) + (V[:, 1] - np.interp(zi, shary, ci[:, 1])) * sy
+    # стопа: лише якщо стопа тіла довша — Y речі нижче кісточки дотягти до носка й п'яти
+    nyz = Z < kist
+    iy0, iy1 = Yh[nyz].min(), Yh[nyz].max()
+    by0, by1 = min(PS[:, 1].min() - 1.5 * m, iy0), max(PS[:, 1].max() + m, iy1)
+    Yf = by0 + (Yh - iy0) * (by1 - by0) / (iy1 - iy0)
+    w = np.clip((kist + 0.03 - Z) / 0.06, 0, 1)    # плавний перехід халява → стопа
+    w = w * w * (3 - 2 * w)
+    Y = Yh * (1 - w) + Yf * w
+    # стопа вшир: якщо стопа тіла ширша за носок речі — розширити низ навколо осі стопи
+    ix0, ix1 = np.percentile(X[nyz], [2, 98])
+    bx0, bx1 = PS[:, 0].min() - m, PS[:, 0].max() + m
+    kx = 1.0          # стопа тіла під чоботом схована — носок не розширюємо
+    cxf = (bx0 + bx1) / 2
+    X = X + w * ((cxf + (X - (ix0 + ix1) / 2) * kx) - X)
+    log("чобіт: стопа вшир x%.2f" % kx)
+    # поле роздуття халяви навколо осі ноги (кут × висота), як у кіраси: литка й коліно
+    # більші, ніж у речі, — метал розширюється плавно рівно там, де треба
+    axx_f = lambda z: np.interp(np.clip(z, shary[0], shary[-1]), shary, cb[:, 0])
+    axy_f = lambda z: np.interp(np.clip(z, shary[0], shary[-1]), shary, cb[:, 1])
+    FI = [p.vertices[:] for p in r.data.polygons]
+    rb = BVHTree.FromPolygons([Vector(v) for v in np.stack([X, Y, Z], 1)], FI)
+    kutiv, krok = 36, 0.02
+    za, zb = kist + 0.02, verh - 0.01
+    zh = np.arange(za, zb + krok, krok)
+    G = np.ones((len(zh), kutiv))
+    for b_ in PN[(PN[:, 2] > za) & (PN[:, 2] < zb)]:
+        cx_, cy_ = axx_f(b_[2]), axy_f(b_[2])
+        d2 = np.array([b_[0] - cx_, b_[1] - cy_]); rr = np.linalg.norm(d2)
+        if rr < 1e-3:
+            continue
+        u = d2 / rr
+        hit = rb.ray_cast(Vector((cx_ + u[0] * 0.6, cy_ + u[1] * 0.6, b_[2])), Vector((-u[0], -u[1], 0.0)), 0.6)[0]
+        if hit is None:
+            continue
+        ri = np.hypot(hit.x - cx_, hit.y - cy_)
+        th = int((np.arctan2(u[1], u[0]) + np.pi) / (2 * np.pi) * kutiv) % kutiv
+        zi_ = int(np.clip(round((b_[2] - za) / krok), 0, len(zh) - 1))
+        G[zi_, th] = max(G[zi_, th], (rr + 0.006) / max(ri, 1e-3))
+    G = np.clip(G, 1.0, 1.6)
+    for _ in range(3):
+        G = np.maximum.reduce([G, np.roll(G, 1, 1), np.roll(G, -1, 1), np.vstack([G[:1], G[:-1]]), np.vstack([G[1:], G[-1:]])])
+    for _ in range(10):                      # халява гладка, без горбів по м'язах
+        G = (G * 4 + np.roll(G, 1, 1) + np.roll(G, -1, 1) + np.vstack([G[:1], G[:-1]]) + np.vstack([G[1:], G[-1:]])) / 8
+    AX, AY = axx_f(Z), axy_f(Z)
+    th_v = (np.arctan2(Y - AY, X - AX) + np.pi) / (2 * np.pi) * kutiv
+    zf = (Z - za) / krok
+    t0 = np.floor(th_v).astype(int) % kutiv; t1 = (t0 + 1) % kutiv; ft = th_v - np.floor(th_v)
+    z0i = np.clip(np.floor(zf).astype(int), 0, len(zh) - 1); z1i = np.clip(z0i + 1, 0, len(zh) - 1)
+    fz = np.clip(zf - np.floor(zf), 0, 1)
+    kk = ((G[z0i, t0] * (1 - ft) + G[z0i, t1] * ft) * (1 - fz) + (G[z1i, t0] * (1 - ft) + G[z1i, t1] * ft) * fz)
+    poza = np.clip(np.maximum(za - Z, Z - zb) / 0.03, 0, 1)
+    kk = 1 + (kk - 1) * (1 - poza)
+    X = AX + (X - AX) * kk
+    Y = AY + (Y - AY) * kk
+    log("чобіт: поле роздуття найбільше %.3f, середнє %.3f" % (G.max(), G.mean()))
+    log("чобіт: висота x%.3f, переріз x%.3f (за шириною треба %.3f)" % (sz, sx, s_w))
+    r.data.vertices.foreach_set("co", np.stack([X, Y, Z], 1).ravel()); r.data.update()
+    log("чобіт%s: масштаб халяви x%.3f y%.3f, стопа %.3f м (тіла %.3f)"
+        % (bik, sx, sy, by1 - by0, PS[:, 1].max() - PS[:, 1].min()))
+
 def nablyzh(V):
     d = np.zeros(len(V)); n = np.zeros((len(V), 3)); q = np.zeros((len(V), 3))
     for i, p in enumerate(V):
@@ -215,7 +488,7 @@ def chystka(r):
     log("геть: всередині тіла %d, внутрішня стінка %d, дрібних %d; лишилось граней %d"
         % (vseredyni.sum(), (vnutr & ~vseredyni).sum(), len(dribni), len(me.polygons)))
 
-def vyshtovkhnuty(r, krokiv=4, zhladzh=12):
+def vyshtovkhnuty(r, krokiv=4, zhladzh=12, z_do=None, vidstup=None):
     me = r.data
     V = np.array([v.co[:] for v in me.vertices])
     E = np.array([e.vertices[:] for e in me.edges])
@@ -225,7 +498,9 @@ def vyshtovkhnuty(r, krokiv=4, zhladzh=12):
         if k == 0:
             NV = np.array([v.normal[:] for v in me.vertices])
             zovn = (NV * n).sum(1) > 0.0     # внутрішня стінка (дивиться на тіло) лишається: її не видно
-        D = (np.maximum(0.0, VIDSTUP - d) * zovn)[:, None] * n
+            if z_do is not None:             # лише нижня смуга (підйом стопи гладкий — не мнеться);
+                zovn = V[:, 2] < z_do        # стопа чобота суцільна — нормалі TRELLIS ненадійні, не питаємо
+        D = (np.maximum(0.0, (vidstup or VIDSTUP) - d) * zovn)[:, None] * n
         for _ in range(zhladzh):       # поле зсувів гладке: пластина зсувається цілою
             S = np.zeros_like(D)
             np.add.at(S, E[:, 0], D[E[:, 1]]); np.add.at(S, E[:, 1], D[E[:, 0]])
@@ -244,17 +519,21 @@ if ZONA == "кіраса":
     NYZ = SUHL["thigh_r"] - 0.045 if "thigh_r" in SUHL else arg("--низ", 0.50)
     log("кіраса: частки зросту %.3f…%.3f" % (NYZ, VERH))
     r = zavantazhyty_rich()
-    vpysaty_tulub(r, NYZ, VERH)
+    vpysaty_tulub(r, NYZ, VERH, m=0.022)
     "--чистка" in A and chystka(r)
-    vyshtovkhnuty(r)
+    if "--виштовхнути" in A:
+        vyshtovkhnuty(r)
+    else:
+        pole_rozduttia(r)
+        naplichnyky(r)
     rechi.append(r)
 elif ZONA == "чобіт":
     for znak, dz in ((-1, False), (1, True)):
-        P = noha(0.0, 0.30, znak)
         r = zavantazhyty_rich(dzerkalo=dz)
-        vpysaty(r, P, 0.012, 0.022, z0 - 0.003, z0 + SUHL.get("calf_r", 0.28) * H + 0.035 * H)
-        "--чистка" in A and chystka(r)
-        vyshtovkhnuty(r)
+        vpysaty_nohu(r, znak)
+        # стопа (foot_, ball_) під чоботом у грі ховається завжди (`odiah_zona`: zavzhdy) —
+        # носок не підганяється й не виштовхується, лишається як у речі
+        "--виштовхнути" in A and vyshtovkhnuty(r)
         rechi.append(r)
 for r in rechi:
     r.name = "Одяг-%s" % ZONA
@@ -282,6 +561,27 @@ if OHLIAD:
         L.rotation_euler = [math.radians(a) for a in k]
         sc.collection.objects.link(L)
     c = (lo + hi) / 2
+    # тіло під річчю сховати, як `під_одяг` у грі: вершина, від якої по нормалі назовні
+    # (або вона вже зовні речі) до речі ближче 8 см
+    from mathutils.bvhtree import BVHTree as _B
+    rb = []
+    for r in rechi:
+        mw = r.matrix_world
+        rb.append(_B.FromPolygons([mw @ v.co for v in r.data.vertices], [p.vertices[:] for p in r.data.polygons]))
+    NBv = np.array([v.normal[:] for v in tilo.data.vertices]) * ZNAK_T
+    vydno = []
+    for i, p in enumerate(VB):
+        o_ = Vector(p); n_ = Vector(NBv[i])
+        skh = any(b.ray_cast(o_ - n_ * 0.002, n_, 0.08)[0] is not None for b in rb)
+        if ZONA == "чобіт" and HOLOVNA is not None and HOLOVNA[i].startswith(("foot_", "ball_")):
+            skh = True                 # як у грі: стопа під чоботом схована завжди
+        if not skh:
+            vydno.append(i)
+    g = tilo.vertex_groups.new(name="видно")
+    g.add(vydno, 1.0, "REPLACE")
+    mk = tilo.modifiers.new("під_одяг", "MASK")
+    mk.vertex_group = "видно"
+    log("огляд: сховано під річчю %d вершин тіла" % (len(VB) - len(vydno)))
     kadry = []
     for i, (kut, lyshe) in enumerate([(0, False), (35, True), (110, True), (180, False)]):
         tilo.hide_render = lyshe

@@ -367,7 +367,7 @@ def rivnyi_korpus(r, m=0.010, kvantyl=98.0):
     m_ = (VB[:, 2] > za) & (VB[:, 2] < zb)
     if RUKA is not None:
         m_ &= ~RUKA
-    px, py = [], []
+    px, py, pxz = [], [], []
     for i in np.nonzero(m_)[0][::2]:
         b_ = VB[i]
         d2 = np.array([b_[0] - CX, b_[1] - cy]); rr = np.linalg.norm(d2)
@@ -379,13 +379,79 @@ def rivnyi_korpus(r, m=0.010, kvantyl=98.0):
             continue
         k = (rr + m) / max(np.hypot(hit.x - CX, hit.y - cy), 1e-3)
         (px if abs(u[0]) > 0.7 else py).append(k) if (abs(u[0]) > 0.7 or abs(u[1]) > 0.7) else None
+        if abs(u[0]) > 0.7:
+            pxz.append(b_[2])
     kx = float(np.clip(np.percentile(px, kvantyl), 0.85, 1.4))
     ky = float(np.clip(np.percentile(py, kvantyl), 0.85, 1.4))
+    # глибина: річ TRELLIS посередині глибша за тіло (спереду зазор 4–6 см) — один множник
+    # не допомагає (його тримає талія). Множник глибини — плавний по висоті: у шарі —
+    # найменший, за якого переднє полотно на m попереду грудей/живота, заднє на m позаду
+    # спини (промені спереду й ззаду по сітці тулуба); огинаюча згладжена — пластина гладка.
+    # Зсув уперед-назад — один на всю річ.
+    shary, zz = [], np.arange(za, zb, 0.01)
+    for z in zz:
+        q = VB[m_ & (np.abs(VB[:, 2] - z) < 0.006)]
+        yf, yb, sf, sb = [], [], [], []
+        if len(q) >= 20:
+            hw = 0.5 * (np.percentile(q[:, 0], 99) - np.percentile(q[:, 0], 1))
+            for x in np.linspace(CX - 0.4 * hw, CX + 0.4 * hw, 9):     # середина: краї грудей — полем
+                for napr, rib, rs in ((1.0, yf, sf), (-1.0, yb, sb)):
+                    o_ = Vector((x, cy - napr * 1.5, z)); d_ = Vector((0, napr, 0))
+                    hr = rb.ray_cast(o_, d_, 3.0)[0]; hb = bvh.ray_cast(o_, d_, 3.0)[0]
+                    if hr is not None and hb is not None:
+                        rib.append(hr.y); rs.append(hb.y)
+        shary.append(tuple(map(np.array, (yf, yb, sf, sb))))
+    vse_sf = np.concatenate([s_[2] for s_ in shary if len(s_[2])]); vse_sb = np.concatenate([s_[3] for s_ in shary if len(s_[3])])
+    a_ = float((np.median(vse_sf) + np.median(vse_sb)) / 2)       # середина тіла по глибині
+    kz = np.full(len(zz), np.nan)
+    for i, (yf, yb, sf, sb) in enumerate(shary):
+        if len(yf) < 4 or len(yb) < 4:
+            continue
+        kf = (a_ - sf + m) / np.maximum(cy - yf, 1e-3)        # перед: a + k(yf − cy) ≤ sf − m
+        kb = (sb + m - a_) / np.maximum(yb - cy, 1e-3)        # зад:   a + k(yb − cy) ≥ sb + m
+        kz[i] = np.percentile(np.concatenate([kf, kb]), kvantyl)
+    ok = ~np.isnan(kz)
+    kz = np.interp(np.arange(len(zz)), np.nonzero(ok)[0], kz[ok])
+    for _ in range(4):                                         # огинаюча: максимум сусідів
+        kz = np.maximum.reduce([kz, np.r_[kz[:1], kz[:-1]], np.r_[kz[1:], kz[-1:]]])
+    for _ in range(12):                                        # згладити
+        kz = (2 * kz + np.r_[kz[:1], kz[:-1]] + np.r_[kz[1:], kz[-1:]]) / 4
+    kz = np.clip(kz, 0.7, 1.5)
+    ky_v = np.interp(V[:, 2], zz, kz)                          # поза смугою — крайні значення
+    log("корпус: глибина по висоті y%.3f…%.3f (талія %.3f), зсув %.1f мм (від осі було б y%.3f)"
+        % (kz.min(), kz.max(), kz[0], (a_ - cy) * 1000, ky))
+    ky = ky_v
+    # ширина — теж плавно по висоті (інакше талію розносить під ширину пахви)
+    px_, pz_ = np.array(px), np.array(pxz)
+    kxz = np.full(len(zz), np.nan)
+    for i, z in enumerate(zz):
+        q = px_[np.abs(pz_ - z) < 0.01]
+        if len(q) >= 4:
+            kxz[i] = np.percentile(q, kvantyl)
+    ok = ~np.isnan(kxz)
+    if ok.sum() >= 3:
+        kxz = np.interp(np.arange(len(zz)), np.nonzero(ok)[0], kxz[ok])
+        for _ in range(4):
+            kxz = np.maximum.reduce([kxz, np.r_[kxz[:1], kxz[:-1]], np.r_[kxz[1:], kxz[-1:]]])
+        for _ in range(12):
+            kxz = (2 * kxz + np.r_[kxz[:1], kxz[:-1]] + np.r_[kxz[1:], kxz[-1:]]) / 4
+        kxz = np.clip(kxz, 0.7, 1.5)
+        log("корпус: ширина по висоті x%.3f…%.3f (один множник був би x%.3f)" % (kxz.min(), kxz.max(), kx))
+        kx = np.interp(V[:, 2], zz, kxz)
+        # пластини наплічника — не ширина пахви, а середній множник (накрити плече їх
+        # потім розширює `naplichnyky`): інакше вони «розлітаються» від коміра
+        if OSTROVY is not None and "upperarm_r" in SUHL3:
+            nom, cnt = OSTROVY
+            wp = np.maximum(vaha_naplichnyka(V, "_r"), vaha_naplichnyka(V, "_l"))
+            for o_ in range(1, len(cnt)):
+                q = nom == o_
+                if (wp[q] > 0.01).mean() > 0.3:
+                    kx[q] = float(np.median(kxz))
     V[:, 0] = CX + (V[:, 0] - CX) * kx
-    V[:, 1] = cy + (V[:, 1] - cy) * ky
+    V[:, 1] = a_ + (V[:, 1] - cy) * ky
     me.vertices.foreach_set("co", V.ravel()); me.update()
-    log("корпус рівно: x%.3f y%.3f (боки: медіана %.3f, макс %.3f; перед/зад: медіана %.3f, макс %.3f)"
-        % (kx, ky, np.median(px), max(px), np.median(py), max(py)))
+    log("корпус рівно: x%.3f y%.3f…%.3f (боки: медіана %.3f, макс %.3f; перед/зад: медіана %.3f, макс %.3f)"
+        % (np.max(kx), np.min(ky), np.max(ky), np.median(px), max(px), np.median(py), max(py)))
 
 CHASTKA_KUTA = arg("--частка-кута", 0.8)
 
@@ -721,6 +787,7 @@ if ZONA == "кіраса":
             pole_rozduttia(r)
         else:
             rivnyi_korpus(r)
+            pole_rozduttia(r)       # лише там, де шкіра ще пробиває (краї грудей), плавно
         if arg("--дамп", ""):
             np.savez(arg("--дамп", ""), V=np.array([v.co[:] for v in r.data.vertices]), VB=VB,
                      HOL=HOLOVNA, J=np.array([SUHL3["upperarm_r"], SUHL3["upperarm_l"]]), CX=CX, H=H, z0=z0)

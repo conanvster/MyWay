@@ -217,14 +217,63 @@ def rozdut(r, m=0.006, kvantyl=80.0):
 
 V0_NAPL, SH_NAPL = arg("--наплічник-від", 0.55), arg("--наплічник-перехід", 0.2)
 
+OSTROVY = None      # острівець сітки кожної вершини (TRELLIS ліпить пластини наплічника окремо)
+
+def ostrovy(r):
+    """Номер зв'язного острівця для кожної вершини; 0 — найбільший (корпус кіраси)."""
+    me = r.data
+    E = np.array([e.vertices[:] for e in me.edges])
+    n = len(me.vertices)
+    bat = np.arange(n)
+    def kor(i):
+        while bat[i] != i:
+            bat[i] = bat[bat[i]]
+            i = bat[i]
+        return i
+    for a, b in E:
+        ra, rb_ = kor(a), kor(b)
+        if ra != rb_:
+            bat[ra] = rb_
+    k = np.array([kor(i) for i in range(n)])
+    _, inv, cnt = np.unique(k, return_inverse=True, return_counts=True)
+    poriadok = np.argsort(-cnt)
+    nomer = np.empty_like(poriadok); nomer[poriadok] = np.arange(len(poriadok))
+    return nomer[inv], cnt[poriadok]
+
 def vaha_naplichnyka(V, bik):
-    """0 — кіраса, 1 — наплічник цього боку (за відстанню від осі до плечового суглоба)."""
+    """0 — кіраса, 1 — наплічник цього боку. Корпус кіраси (найбільший острівець) — завжди 0:
+    стінка під пахвою не повертається з рукою (інакше вона вивертається назовні й пахва
+    «ламається»). Пластини наплічника — окремі острівці збоку над пахвою: вага плавно від
+    коміра до краю плеча; дрібні острівці (заклепки, ремінці) — як найближча пластина."""
     J = SUHL3["upperarm" + bik]
     jx = J[0] - CX
     zn = np.sign(jx)
     t = np.clip(((V[:, 0] - CX) * zn - V0_NAPL * abs(jx)) / (SH_NAPL * abs(jx)), 0, 1)
     t *= np.clip((V[:, 2] - (J[2] - 0.12 * H)) / (0.05 * H), 0, 1)
-    return t * t * (3 - 2 * t)
+    t = t * t * (3 - 2 * t)
+    if OSTROVY is None:
+        return t
+    nom, cnt = OSTROVY
+    velyki = cnt >= 0.01 * cnt.sum()
+    w = np.zeros(len(V))
+    for i in range(1, len(cnt)):
+        q = nom == i
+        if not velyki[i]:
+            continue
+        c = V[q].mean(0)
+        if (c[0] - CX) * zn > V0_NAPL * abs(jx) and c[2] > J[2] - 0.12 * H:
+            w[q] = t[q]
+    dribni = ~velyki[nom] & (nom > 0)
+    if dribni.any():
+        from mathutils.kdtree import KDTree
+        vel = np.nonzero(velyki[nom])[0]
+        kd = KDTree(len(vel))
+        for j, i in enumerate(vel):
+            kd.insert(Vector(V[i]), j)
+        kd.balance()
+        for i in np.nonzero(dribni)[0]:
+            w[i] = w[vel[kd.find(Vector(V[i]))[1]]]
+    return w
 
 def pole_rozduttia(r, m=0.008, kutiv=48, krok=0.02):
     """Роздуття тулуба кіраси полем: сітка «кут навколо осі × висота»; у клітинці —
@@ -332,6 +381,61 @@ def naplichnyky(r, m=0.010, kvantyl=95.0):
         log("наплічник%s: роздуття %.3f (медіана потреби %.3f), вершин під вагою %d"
             % (bik, k, np.median(potr), int((w > 0.01).sum())))
     me.vertices.foreach_set("co", V.ravel()); me.update()
+
+def pidniaty_plechi(r, m=0.012, krok=0.02, naibilshe=0.07):
+    """Трапеція й верх плеча, що стирчать над кірасою (орк: шия низько, трапеція горбом),
+    — верх кіраси підняти полем «x × y» над плечима: у клітинці — на скільки шкіра + m вища
+    за верхню поверхню речі (промінь згори вниз). Поле розширене й згладжене, донизу
+    згасає до нуля на рівні пахви — пластини піднімаються цілими, без горбів."""
+    if HOLOVNA is None or "upperarm_r" not in SUHL3:
+        return
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    rb = BVHTree.FromPolygons([Vector(v) for v in V], [p.vertices[:] for p in me.polygons])
+    Jz = (SUHL3["upperarm_r"][2] + SUHL3["upperarm_l"][2]) / 2
+    shyia = HOLOVNA == "neck_01"
+    zs = z0 + SUHL["neck_01"] * H + 0.03 * H
+    q = VB[shyia & (np.abs(VB[:, 2] - zs) < 0.01)]
+    r_shyi = np.percentile(np.abs(q[:, 0] - CX), 95) if len(q) > 10 else 0.06
+    plechi = np.isin(HOLOVNA, ["clavicle_r", "clavicle_l", "spine_03", "neck_01", "upperarm_r", "upperarm_l"])
+    sel = np.nonzero(plechi & (VB[:, 2] > Jz - 0.03 * H) & (np.abs(VB[:, 0] - CX) > r_shyi + 0.01))[0]
+    x0, x1 = V[:, 0].min() - krok, V[:, 0].max() + krok
+    y0, y1 = V[:, 1].min() - krok, V[:, 1].max() + krok
+    nx, ny = int((x1 - x0) / krok) + 2, int((y1 - y0) / krok) + 2
+    G = np.zeros((nx, ny))
+    for i in sel:
+        b_ = VB[i]
+        hit = rb.ray_cast(Vector((b_[0], b_[1], b_[2] + 0.5)), Vector((0, 0, -1)), 0.5 + 0.08)[0]
+        if hit is None:
+            continue
+        potr = b_[2] + m - hit.z
+        if potr > 0:
+            ix, iy = int((b_[0] - x0) / krok), int((b_[1] - y0) / krok)
+            G[ix, iy] = max(G[ix, iy], potr)
+    vymir = G.max()
+    G = np.minimum(G, naibilshe)
+    # над шиєю точок немає — місток між боками на кожному ряду Y (комір піднімається рівно,
+    # без «рогів» над трапецією)
+    xc = x0 + (np.arange(nx) + 0.5) * krok
+    sh = np.abs(xc - CX) < r_shyi + 0.03
+    li, pr = np.nonzero((xc < CX) & ~sh)[0], np.nonzero((xc > CX) & ~sh)[0]
+    if len(li) and len(pr):
+        for j in range(ny):
+            a = G[li[-6:], j].max(); b = G[pr[:6], j].max()
+            G[sh, j] = np.maximum(G[sh, j], min(a, b))
+    for _ in range(2):
+        G = np.maximum.reduce([G, np.roll(G, 1, 0), np.roll(G, -1, 0), np.roll(G, 1, 1), np.roll(G, -1, 1)])
+    for _ in range(6):
+        G = (G * 4 + np.roll(G, 1, 0) + np.roll(G, -1, 0) + np.roll(G, 1, 1) + np.roll(G, -1, 1)) / 8
+    fx, fy = (V[:, 0] - x0) / krok, (V[:, 1] - y0) / krok
+    i0 = np.clip(np.floor(fx).astype(int), 0, nx - 2); j0 = np.clip(np.floor(fy).astype(int), 0, ny - 2)
+    ax, ay = np.clip(fx - i0, 0, 1), np.clip(fy - j0, 0, 1)
+    dz = (G[i0, j0] * (1 - ax) + G[i0 + 1, j0] * ax) * (1 - ay) + (G[i0, j0 + 1] * (1 - ax) + G[i0 + 1, j0 + 1] * ax) * ay
+    t = np.clip((V[:, 2] - (Jz - 0.10 * H)) / (0.08 * H), 0, 1)
+    V[:, 2] += dz * t * t * (3 - 2 * t)
+    me.vertices.foreach_set("co", V.ravel()); me.update()
+    log("плечі: шкіра над кірасою до %.1f мм (точок %d), підйом поля до %.1f мм; шия r=%.3f"
+        % (vymir * 1000, len(sel), dz.max() * 1000, r_shyi))
 
 def zalataty(r, z_do_svit):
     """Дірки сітки (TRELLIS лишає отвір на підйомі стопи) — залатати; верхній отвір халяви
@@ -545,13 +649,19 @@ if ZONA == "кіраса":
     NYZ = SUHL["thigh_r"] - 0.045 if "thigh_r" in SUHL else arg("--низ", 0.50)
     log("кіраса: частки зросту %.3f…%.3f" % (NYZ, VERH))
     r = zavantazhyty_rich()
+    OSTROVY = ostrovy(r)
+    log("острівці: %d, найбільші %s" % (len(OSTROVY[1]), OSTROVY[1][:6].tolist()))
     vpysaty_tulub(r, NYZ, VERH, m=0.022)
     "--чистка" in A and chystka(r)
     if "--виштовхнути" in A:
         vyshtovkhnuty(r)
     else:
         pole_rozduttia(r)
+        if arg("--дамп", ""):
+            np.savez(arg("--дамп", ""), V=np.array([v.co[:] for v in r.data.vertices]), VB=VB,
+                     HOL=HOLOVNA, J=np.array([SUHL3["upperarm_r"], SUHL3["upperarm_l"]]), CX=CX, H=H, z0=z0)
         naplichnyky(r)
+        pidniaty_plechi(r)
     rechi.append(r)
 elif ZONA == "чобіт":
     for znak, dz in ((-1, False), (1, True)):

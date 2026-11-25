@@ -68,6 +68,7 @@ HOLOVNA = None
 SUHL = {}
 SUHL_X = {}
 SUHL3 = {}
+KINETS = {}
 if tilo.vertex_groups:
     nazvy = [g.name for g in tilo.vertex_groups]
     W = np.zeros((len(tilo.data.vertices), len(nazvy)))
@@ -83,6 +84,7 @@ if tilo.vertex_groups:
             SUHL[b.name] = ((arm.matrix_world @ b.head_local).z - z0) / H
             SUHL_X[b.name] = (arm.matrix_world @ b.head_local).x
             SUHL3[b.name] = np.array((arm.matrix_world @ b.head_local)[:])
+            KINETS[b.name] = np.array((arm.matrix_world @ b.tail_local)[:])
     log("ваги: рук %d вершин; суглоби %s" % (RUKA.sum(), {k: round(SUHL[k], 3) for k in
         ("thigh_r", "spine_01", "spine_03", "neck_01") if k in SUHL}))
 
@@ -213,12 +215,14 @@ def rozdut(r, m=0.006, kvantyl=80.0):
     V[:, 1] = cy + (V[:, 1] - cy) * k
     me.vertices.foreach_set("co", V.ravel()); me.update()
 
+V0_NAPL, SH_NAPL = arg("--наплічник-від", 0.55), arg("--наплічник-перехід", 0.2)
+
 def vaha_naplichnyka(V, bik):
     """0 — кіраса, 1 — наплічник цього боку (за відстанню від осі до плечового суглоба)."""
     J = SUHL3["upperarm" + bik]
     jx = J[0] - CX
     zn = np.sign(jx)
-    t = np.clip(((V[:, 0] - CX) * zn - 0.45 * abs(jx)) / (0.4 * abs(jx)), 0, 1)
+    t = np.clip(((V[:, 0] - CX) * zn - V0_NAPL * abs(jx)) / (SH_NAPL * abs(jx)), 0, 1)
     t *= np.clip((V[:, 2] - (J[2] - 0.12 * H)) / (0.05 * H), 0, 1)
     return t * t * (3 - 2 * t)
 
@@ -273,7 +277,9 @@ def pole_rozduttia(r, m=0.008, kutiv=48, krok=0.02):
     me.vertices.foreach_set("co", V.ravel()); me.update()
     log("поле роздуття: клітинок %dx%d, найбільше %.3f, середнє %.3f" % (len(zh), kutiv, G.max(), G.mean()))
 
-def naplichnyky(r, m=0.008, kvantyl=85.0):
+CHASTKA_KUTA = arg("--частка-кута", 0.8)
+
+def naplichnyky(r, m=0.010, kvantyl=95.0):
     """Наплічник кожного боку — окремо: роздути навколо плечового суглоба (голова
     upperarm), доки дельта й трапеція майже не пробивають. Вага спадає до тулуба плавно,
     щоб пластина не відірвалась від кіраси. Решту ховає `під_одяг`."""
@@ -284,9 +290,29 @@ def naplichnyky(r, m=0.008, kvantyl=85.0):
     for bik in ("_r", "_l"):
         J = SUHL3["upperarm" + bik]
         w = vaha_naplichnyka(V, bik)
+        # наплічник іде за рукою: у кадрі речі рука опущена (трохи назовні), у тілі — як
+        # кістка плеча (А-поза ~45°). Поворот навколо суглоба на частку кута; вага плавна —
+        # біля коміра пластина лишається на кірасі
+        zn = np.sign(J[0] - CX)
+        ref = np.array([zn * np.sin(np.radians(12)), 0.0, -np.cos(np.radians(12))])
+        kist_d = KINETS["upperarm" + bik] - J
+        kist_d /= np.linalg.norm(kist_d)
+        os_ = np.cross(ref, kist_d)
+        sn = np.linalg.norm(os_)
+        if sn > 1e-4:
+            os_ /= sn
+            kut = np.arctan2(sn, np.dot(ref, kist_d)) * CHASTKA_KUTA
+            K_ = np.array([[0, -os_[2], os_[1]], [os_[2], 0, -os_[0]], [-os_[1], os_[0], 0]])
+            for q in np.nonzero(w > 0.01)[0]:
+                a_ = kut * w[q]
+                R_ = np.eye(3) + np.sin(a_) * K_ + (1 - np.cos(a_)) * K_ @ K_
+                V[q] = J + R_ @ (V[q] - J)
+            log("наплічник%s: поворот за рукою %.1f° (кут руки %.1f°)" % (bik, np.degrees(kut), np.degrees(kut / CHASTKA_KUTA)))
         rb = BVHTree.FromPolygons([Vector(v) for v in V], [p.vertices[:] for p in me.polygons])
         hol = np.array([any(k in h for k in ("upperarm" + bik, "clavicle" + bik)) for h in HOLOVNA])
-        sel = np.nonzero(hol & (VB[:, 2] > J[2] - 0.02 * H))[0][::2]   # верх дельти й трапеція
+        # верх дельти й трапеція + плече під наплічником (до 12 см від суглоба: наплічник
+        # уже повернуто за рукою, тож плече під ним — частина того, що він має накрити)
+        sel = np.nonzero(hol & ((VB[:, 2] > J[2] - 0.02 * H) | (np.linalg.norm(VB - J, axis=1) < 0.12)))[0][::2]
         potr = []
         for i in sel:
             d = VB[i] - J
@@ -572,7 +598,9 @@ if OHLIAD:
     vydno = []
     for i, p in enumerate(VB):
         o_ = Vector(p); n_ = Vector(NBv[i])
-        skh = any(b.ray_cast(o_ - n_ * 0.002, n_, 0.08)[0] is not None for b in rb)
+        skh = "--ховати" in A and any(b.ray_cast(o_ - n_ * 0.002, n_, 0.08)[0] is not None for b in rb)
+        if skh and RUKA is not None and RUKA[i]:
+            skh = False                # руку не ховати: у грі вона рухається з-під наплічника
         if ZONA == "чобіт" and HOLOVNA is not None and HOLOVNA[i].startswith(("foot_", "ball_")):
             skh = True                 # як у грі: стопа під чоботом схована завжди
         if not skh:

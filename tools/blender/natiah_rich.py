@@ -95,7 +95,10 @@ if tilo.vertex_groups:
         for g in v.groups:
             W[v.index, g.group] = g.weight
     holovna = np.array(nazvy)[W.argmax(1)]
-    RUKA = np.array([any(k in h for k in ("upperarm", "lowerarm", "hand")) for h in holovna])
+    # рука — і складка пахви: будь-яка помітна вага кісток руки (з опущеною рукою ці вершини
+    # між рукою й тулубом — інакше кіраса роздувається під пахвою «бочкою»)
+    _ruchni = np.array([any(k in n for k in ("upperarm", "lowerarm", "hand")) for n in nazvy])
+    RUKA = ((W[:, _ruchni].sum(1) > 0.1) & ("--поза-речі" in A)) | np.array([any(k in h for k in ("upperarm", "lowerarm", "hand")) for h in holovna])
     HOLOVNA = holovna
     arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
     if arm:
@@ -345,6 +348,44 @@ def pole_rozduttia(r, m=0.008, kutiv=48, krok=0.02):
     V[:, 1] = cy + (V[:, 1] - cy) * k
     me.vertices.foreach_set("co", V.ravel()); me.update()
     log("поле роздуття: клітинок %dx%d, найбільше %.3f, середнє %.3f" % (len(zh), kutiv, G.max(), G.mean()))
+
+def rivnyi_korpus(r, m=0.010, kvantyl=98.0):
+    """Корпус кіраси — залізо: не роздувається місцями (поле давало «бочку» під пахвою),
+    а масштабується цілим навколо осі тулуба — один множник по X (боки) і один по Y
+    (груди/спина). Потреба — променем ззовні до осі для кожної вершини тулуба від талії до
+    пахви: (радіус шкіри + m) / радіус корпусу; боки → X, перед і зад → Y; береться квантиль
+    (решту ховає `під_одяг`)."""
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    korp = (OSTROVY[0] == 0) if OSTROVY is not None else np.ones(len(V), bool)
+    idx_f = np.nonzero(np.all(korp[np.array([p.vertices[:3] for p in me.polygons])], 1))[0]
+    pol = [me.polygons[i].vertices[:] for i in idx_f]
+    rb = BVHTree.FromPolygons([Vector(v) for v in V], pol)
+    cy = float(np.median(V[korp, 1]))
+    Jz = (SUHL3["upperarm_r"][2] + SUHL3["upperarm_l"][2]) / 2 if "upperarm_r" in SUHL3 else z0 + 0.8 * H
+    za, zb = z0 + (SUHL.get("spine_01", 0.59) - 0.02) * H, Jz - 0.03 * H
+    m_ = (VB[:, 2] > za) & (VB[:, 2] < zb)
+    if RUKA is not None:
+        m_ &= ~RUKA
+    px, py = [], []
+    for i in np.nonzero(m_)[0][::2]:
+        b_ = VB[i]
+        d2 = np.array([b_[0] - CX, b_[1] - cy]); rr = np.linalg.norm(d2)
+        if rr < 1e-3:
+            continue
+        u = d2 / rr
+        hit = rb.ray_cast(Vector((CX + u[0] * 1.5, cy + u[1] * 1.5, b_[2])), Vector((-u[0], -u[1], 0.0)), 1.5)[0]
+        if hit is None:
+            continue
+        k = (rr + m) / max(np.hypot(hit.x - CX, hit.y - cy), 1e-3)
+        (px if abs(u[0]) > 0.7 else py).append(k) if (abs(u[0]) > 0.7 or abs(u[1]) > 0.7) else None
+    kx = float(np.clip(np.percentile(px, kvantyl), 0.85, 1.4))
+    ky = float(np.clip(np.percentile(py, kvantyl), 0.85, 1.4))
+    V[:, 0] = CX + (V[:, 0] - CX) * kx
+    V[:, 1] = cy + (V[:, 1] - cy) * ky
+    me.vertices.foreach_set("co", V.ravel()); me.update()
+    log("корпус рівно: x%.3f y%.3f (боки: медіана %.3f, макс %.3f; перед/зад: медіана %.3f, макс %.3f)"
+        % (kx, ky, np.median(px), max(px), np.median(py), max(py)))
 
 CHASTKA_KUTA = arg("--частка-кута", 0.8)
 
@@ -676,7 +717,10 @@ if ZONA == "кіраса":
     if "--виштовхнути" in A:
         vyshtovkhnuty(r)
     else:
-        pole_rozduttia(r)
+        if "--поле" in A or not POZA:      # без пози речі — як у схваленого орка (25.11)
+            pole_rozduttia(r)
+        else:
+            rivnyi_korpus(r)
         if arg("--дамп", ""):
             np.savez(arg("--дамп", ""), V=np.array([v.co[:] for v in r.data.vertices]), VB=VB,
                      HOL=HOLOVNA, J=np.array([SUHL3["upperarm_r"], SUHL3["upperarm_l"]]), CX=CX, H=H, z0=z0)
@@ -726,15 +770,17 @@ def skinning(r, k=6):
     korpus_ok = np.array([n.startswith(("spine", "pelvis", "neck", "thigh")) for n in NAZVY])
     # наплічник — жорстка пластина, що йде за рукою: увесь острівець — плече своєї руки
     # (з малою часткою ключиці, щоб верх не врізався в комір)
-    CH_KL = arg("--наплічник-ключиця", 0.15)
+    CH_KL = arg("--наплічник-ключиця", 0.0)
     if OSTROVY is not None:
         cnt = OSTROVY[1]
         velyki = cnt >= 0.01 * cnt.sum()
+        napl = np.zeros(len(cnt), bool)
         for o_ in range(0, len(cnt)):
             q = nom == o_
             if not velyki[o_]:
                 continue
             if o_ > 0 and (wp[q] > 0.01).mean() > 0.3:
+                napl[o_] = True
                 cx_ = V[q, 0].mean()
                 bik = "_r" if np.sign(SUHL3["upperarm_r"][0] - CX) == np.sign(cx_ - CX) else "_l"
                 Wr[q] = 0
@@ -742,15 +788,28 @@ def skinning(r, k=6):
                 Wr[q, NAZVY.index("clavicle" + bik)] = CH_KL
             else:
                 Wr[np.ix_(q, ~korpus_ok)] = 0
-        dribni = np.nonzero(~velyki[nom])[0]
-        vel = np.nonzero(velyki[nom])[0]
-        if len(dribni):
+        # дрібні: ремінці й заклепки в зоні наплічника — до найближчої пластини наплічника
+        # (а не до корпусу, інакше лишаються смужками на піднятій руці); решта — до найближчого
+        for zona, kandydaty in ((True, napl[nom]), (False, velyki[nom])):
+            dr = np.zeros(len(V), bool)
+            for o_ in np.nonzero(~velyki)[0]:
+                q = nom == o_
+                if ((wp[q] > 0.01).mean() > 0.3) == zona:
+                    dr |= q
+            vel = np.nonzero(kandydaty)[0]
+            if not dr.any() or not len(vel):
+                continue
             kd = KDTree(len(vel))
             for j, i in enumerate(vel):
                 kd.insert(Vector(V[i]), j)
             kd.balance()
-            for i in dribni:
+            for i in np.nonzero(dr)[0]:
                 Wr[i] = Wr[vel[kd.find(Vector(V[i]))[1]]]
+    # вершина корпусу, що мала лише вагу ключиці/плеча, після фільтра — порожня: кістка грудей
+    porozhni = Wr.sum(1) < 1e-6
+    if porozhni.any() and "spine_03" in NAZVY:
+        Wr[porozhni, NAZVY.index("spine_03")] = 1.0
+        log("скінінг: %d вершин без ваги → spine_03" % porozhni.sum())
     # лишити 4 найбільші, нормувати
     o = np.argsort(-Wr, 1)[:, 4:]
     np.put_along_axis(Wr, o, 0, 1)

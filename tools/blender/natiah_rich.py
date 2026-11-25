@@ -47,6 +47,25 @@ for o in sitky:
     if o is not tilo:
         o.hide_render = True
         o.hide_viewport = True
+# --поза-речі: тіло зі скелетом спершу ставиться в позу кадру речі (руки опущені, трохи
+# назовні) — річ сідає так само, як на тіло з опущеними руками; потім ваги кісток із тіла
+# і зворотний скінінг повертають річ у позу спокою скелета (А-поза)
+POZA = "--поза-речі" in A
+KUT_RUKY = arg("--кут-руки", 12.0)
+ARM = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
+if POZA and ARM:
+    from mathutils import Matrix
+    for bik in ("_r", "_l"):
+        pb = ARM.pose.bones["upperarm" + bik]
+        aw = ARM.matrix_world
+        h, t = aw @ pb.head, aw @ pb.tail
+        zn = 1.0 if h.x > 0 else -1.0
+        tsil = Vector((zn * math.sin(math.radians(KUT_RUKY)), 0.0, -math.cos(math.radians(KUT_RUKY))))
+        q = (t - h).normalized().rotation_difference(tsil)
+        Rw = Matrix.Translation(h) @ q.to_matrix().to_4x4() @ Matrix.Translation(-h)
+        pb.matrix = aw.inverted() @ Rw @ aw @ pb.matrix
+        bpy.context.view_layer.update()
+        log("поза речі: рука%s → %.0f° від вертикалі (повернуто на %.1f°)" % (bik, KUT_RUKY, math.degrees(q.angle)))
 dg = bpy.context.evaluated_depsgraph_get()
 te = tilo.evaluated_get(dg)
 tm = te.to_mesh()
@@ -80,11 +99,12 @@ if tilo.vertex_groups:
     HOLOVNA = holovna
     arm = next((o for o in bpy.data.objects if o.type == "ARMATURE"), None)
     if arm:
-        for b in arm.data.bones:
-            SUHL[b.name] = ((arm.matrix_world @ b.head_local).z - z0) / H
-            SUHL_X[b.name] = (arm.matrix_world @ b.head_local).x
-            SUHL3[b.name] = np.array((arm.matrix_world @ b.head_local)[:])
-            KINETS[b.name] = np.array((arm.matrix_world @ b.tail_local)[:])
+        for b in arm.pose.bones:          # у поточній позі (без --поза-речі — це спокій)
+            SUHL[b.name] = ((arm.matrix_world @ b.head).z - z0) / H
+            SUHL_X[b.name] = (arm.matrix_world @ b.head).x
+            SUHL3[b.name] = np.array((arm.matrix_world @ b.head)[:])
+            KINETS[b.name] = np.array((arm.matrix_world @ b.tail)[:])
+    WB, NAZVY = W, nazvy
     log("ваги: рук %d вершин; суглоби %s" % (RUKA.sum(), {k: round(SUHL[k], 3) for k in
         ("thigh_r", "spine_01", "spine_03", "neck_01") if k in SUHL}))
 
@@ -343,7 +363,7 @@ def naplichnyky(r, m=0.010, kvantyl=95.0):
         # кістка плеча (А-поза ~45°). Поворот навколо суглоба на частку кута; вага плавна —
         # біля коміра пластина лишається на кірасі
         zn = np.sign(J[0] - CX)
-        ref = np.array([zn * np.sin(np.radians(12)), 0.0, -np.cos(np.radians(12))])
+        ref = np.array([zn * np.sin(np.radians(KUT_RUKY)), 0.0, -np.cos(np.radians(KUT_RUKY))])
         kist_d = KINETS["upperarm" + bik] - J
         kist_d /= np.linalg.norm(kist_d)
         os_ = np.cross(ref, kist_d)
@@ -671,6 +691,86 @@ elif ZONA == "чобіт":
         # носок не підганяється й не виштовхується, лишається як у речі
         "--виштовхнути" in A and vyshtovkhnuty(r)
         rechi.append(r)
+def skinning(r, k=6):
+    """Ваги кісток для речі — з найближчих вершин тіла (у позі, де річ сідала). Корпус
+    кіраси (острівець 0) бере ваги лише з вершин тулуба — стінка під пахвою не їде з рукою;
+    пластини наплічника — з усіх (плече, ключиця). Потім зворотний скінінг: позиція в позі →
+    позиція в спокої скелета, і річ отримує модифікатор скелета, як тіло."""
+    from mathutils.kdtree import KDTree
+    me = r.data
+    V = np.array([v.co[:] for v in me.vertices])
+    kist = np.array([n in ARM.pose.bones for n in NAZVY])
+    vsi = np.arange(len(VB))
+    tulub_ = np.nonzero(~RUKA)[0]
+    def kd_z(ids):
+        kd = KDTree(len(ids))
+        for j, i in enumerate(ids):
+            kd.insert(Vector(VB[i]), j)
+        kd.balance()
+        return kd, ids
+    kd_t, kd_v = kd_z(tulub_), kd_z(vsi)
+    nom = OSTROVY[0] if OSTROVY is not None else np.zeros(len(V), int)
+    wp = np.zeros(len(V))
+    if "upperarm_r" in SUHL3 and OSTROVY is not None:
+        wp = np.maximum(vaha_naplichnyka(V, "_r"), vaha_naplichnyka(V, "_l"))
+    Wr = np.zeros((len(V), len(NAZVY)))
+    for i, p in enumerate(V):
+        kd, ids = kd_v if (nom[i] > 0 and wp[i] > 0.01) else kd_t
+        nb = kd.find_n(Vector(p), k)
+        d = np.array([x[2] for x in nb]) + 1e-4
+        ww = (1 / d) / (1 / d).sum()
+        Wr[i] = (WB[ids[[x[1] for x in nb]]] * ww[:, None]).sum(0)
+    Wr[:, ~kist] = 0
+    # пластина металу не гнеться: острівець наплічника — одна спільна вага на весь шматок;
+    # дрібні острівці (ремінці, заклепки) — як найближча вершина великого
+    if OSTROVY is not None:
+        cnt = OSTROVY[1]
+        velyki = cnt >= 0.01 * cnt.sum()
+        for o_ in range(1, len(cnt)):
+            q = nom == o_
+            if velyki[o_] and (wp[q] > 0.01).any():
+                Wr[q] = Wr[q].mean(0)
+        dribni = np.nonzero(~velyki[nom])[0]
+        vel = np.nonzero(velyki[nom])[0]
+        if len(dribni):
+            kd = KDTree(len(vel))
+            for j, i in enumerate(vel):
+                kd.insert(Vector(V[i]), j)
+            kd.balance()
+            for i in dribni:
+                Wr[i] = Wr[vel[kd.find(Vector(V[i]))[1]]]
+    # лишити 4 найбільші, нормувати
+    o = np.argsort(-Wr, 1)[:, 4:]
+    np.put_along_axis(Wr, o, 0, 1)
+    Wr /= np.maximum(Wr.sum(1, keepdims=True), 1e-8)
+    # зворотний скінінг
+    aw = ARM.matrix_world
+    D = {}
+    for j, n in enumerate(NAZVY):
+        if kist[j]:
+            pb = ARM.pose.bones[n]
+            D[j] = np.array(aw @ pb.matrix @ pb.bone.matrix_local.inverted() @ aw.inverted())
+    V2 = np.zeros_like(V)
+    for i, p in enumerate(V):
+        S = np.zeros((4, 4))
+        for j in np.nonzero(Wr[i] > 0)[0]:
+            S += Wr[i, j] * D[j]
+        V2[i] = (np.linalg.inv(S) @ np.append(p, 1.0))[:3]
+    me.vertices.foreach_set("co", V2.ravel()); me.update()
+    for j, n in enumerate(NAZVY):
+        if kist[j] and Wr[:, j].max() > 0:
+            g = r.vertex_groups.new(name=n)
+            for i in np.nonzero(Wr[:, j] > 0)[0]:
+                g.add([int(i)], float(Wr[i, j]), "REPLACE")
+    md = r.modifiers.new("скелет", "ARMATURE")
+    md.object = ARM
+    r.parent = ARM
+    r.matrix_parent_inverse = ARM.matrix_world.inverted()
+    log("скінінг: груп %d; зсув у спокій до %.1f см" % (len(r.vertex_groups), 100 * np.linalg.norm(V2 - V, axis=1).max()))
+
+if POZA and ARM:
+    for r in rechi:
+        skinning(r)
 for r in rechi:
     r.name = "Одяг-%s" % ZONA
 bpy.ops.wm.save_as_mainfile(filepath=VYHID)
@@ -720,23 +820,30 @@ if OHLIAD:
     mk = tilo.modifiers.new("під_одяг", "MASK")
     mk.vertex_group = "видно"
     log("огляд: сховано під річчю %d вершин тіла" % (len(VB) - len(vydno)))
-    kadry = []
-    for i, (kut, lyshe) in enumerate([(0, False), (35, True), (110, True), (180, False)]):
-        tilo.hide_render = lyshe
-        a = math.radians(kut)
-        cam.location = (c[0] + math.sin(a) * 10, c[1] - math.cos(a) * 10, c[2])
-        cam.rotation_euler = (math.pi / 2, 0, a)
-        sc.render.filepath = OHLIAD + ".%d.png" % i
-        bpy.ops.render.render(write_still=True)
-        kadry.append(sc.render.filepath)
-    ark = np.zeros((900, 3600, 4), np.float32)
-    for i, f in enumerate(kadry):
-        im = bpy.data.images.load(f)
-        ark[:, i * 900:(i + 1) * 900] = np.array(im.pixels[:], np.float32).reshape(900, 900, 4)
-        os.remove(f)
-    im = bpy.data.images.new("ark", 3600, 900)
-    im.pixels = ark.ravel()
-    im.filepath_raw = OHLIAD
-    im.file_format = "PNG"
-    im.save()
-    log("огляд →", OHLIAD)
+    def znimky(OHLIAD):
+        kadry = []
+        for i, (kut, lyshe) in enumerate([(0, False), (35, True), (110, True), (180, False)]):
+            tilo.hide_render = lyshe
+            a = math.radians(kut)
+            cam.location = (c[0] + math.sin(a) * 10, c[1] - math.cos(a) * 10, c[2])
+            cam.rotation_euler = (math.pi / 2, 0, a)
+            sc.render.filepath = OHLIAD + ".%d.png" % i
+            bpy.ops.render.render(write_still=True)
+            kadry.append(sc.render.filepath)
+        ark = np.zeros((900, 3600, 4), np.float32)
+        for i, f in enumerate(kadry):
+            im = bpy.data.images.load(f)
+            ark[:, i * 900:(i + 1) * 900] = np.array(im.pixels[:], np.float32).reshape(900, 900, 4)
+            os.remove(f)
+        im = bpy.data.images.new("ark", 3600, 900)
+        im.pixels = ark.ravel()
+        im.filepath_raw = OHLIAD
+        im.file_format = "PNG"
+        im.save()
+        log("огляд →", OHLIAD)
+    znimky(OHLIAD)
+    if POZA and ARM:            # та сама річ у позі спокою скелета (А-поза) — через ваги
+        for pb in ARM.pose.bones:
+            pb.matrix_basis.identity()
+        bpy.context.view_layer.update()
+        znimky(OHLIAD.replace('.png', '-спокій.png'))

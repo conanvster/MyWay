@@ -99,7 +99,64 @@ for b in ("_r", "_l"):
     W[:, chuzhi] -= perenos
     W[:, iu] += zm
     zminy += int((zm > 0.05).sum())
+    # і навпаки: бік тулуба нижче пахви (найширший м'яз спини, ребра), що має вагу руки, —
+    # у Т-позі тягнеться «крилом» від пояса до ліктя. Ближче вздовж сітки до тулуба й нижче
+    # пахви — вага руки переходить хребту (spine_03, нижче — spine_02)
+    ft = np.clip((d_r - d_t) / 0.06, 0, 1)
+    ft = ft * ft * (3 - 2 * ft)
+    z_pakhvy = h[2] - 0.04
+    ft *= np.clip((z_pakhvy - P[:, 2]) / 0.04, 0, 1)
+    ruchni = np.array([nm.startswith(("upperarm" + b, "lowerarm" + b)) for nm in nazvy])
+    vid = W[:, ruchni] * ft[:, None]
+    zv = vid.sum(1)
+    W[:, ruchni] -= vid
+    z_s2 = float((aw @ arm.pose.bones["spine_03"].head).z)
+    ks = np.where(P[:, 2] > z_s2, nazvy.index("spine_03"), nazvy.index("spine_02"))
+    np.add.at(W, (np.arange(n), ks), zv)
+    log("рука%s: бік тулуба нижче пахви — вагу руки знято з %d вершин (до %.2f)" % (b, (zv > 0.05).sum(), zv.max()))
     log("рука%s: джерел руки %d, вершин із перенесеною вагою > 0,05: %d (до %.2f)" % (b, len(ruka_dz), (zm > 0.05).sum(), zm.max()))
+# нижче пахви рука прилягає до тулуба (проміжку немає до 20 см під суглобом) — поділ
+# геометричний: межа — внутрішній край руки (вісь плеча в позі з опущеними руками мінус
+# радіус руки на цій висоті); зовні — рука (лише кістки руки), всередині — тулуб (без них);
+# перехід 1,5 см. Лише в смузі від 4 до 30 см під суглобом і біля руки.
+for b in ("_r", "_l"):
+    pb = arm.pose.bones["upperarm" + b]
+    h, t = np.array((aw @ pb.head)[:]), np.array((aw @ pb.tail)[:])
+    ax = (t - h) / np.linalg.norm(t - h)
+    zn = np.sign(h[0] - CXb)
+    iu = nazvy.index("upperarm" + b)
+    ruchni = np.array([nm.startswith(("upperarm" + b, "lowerarm" + b)) for nm in nazvy])
+    tulubni = np.array([nm.startswith(("spine", "clavicle")) for nm in nazvy])
+    s_ = (P - h) @ ax
+    vis = h + np.outer(s_, ax)
+    r3 = np.linalg.norm(P - vis, axis=1)
+    Ld = np.linalg.norm(t - h)
+    smuga = (P[:, 2] < h[2] - 0.04) & (s_ > 0) & (s_ < 0.85 * Ld)
+    yadro = smuga & (hol == "upperarm" + b)
+    a_ = np.zeros(n); obr = np.zeros(n, bool)
+    for z in np.arange(h[2] - Ld, h[2] - 0.04, 0.01):
+        q = yadro & (np.abs(P[:, 2] - z) < 0.008)
+        if q.sum() < 6:
+            continue
+        R = np.percentile(r3[q], 75)
+        sh = smuga & (np.abs(P[:, 2] - z) < 0.005) & (r3 < R + 0.05)
+        x_vis = vis[sh, 0]
+        mezha = (x_vis - CXb) * zn - R * 0.95                      # внутрішній край руки
+        x_out = (P[sh, 0] - CXb) * zn
+        a_[sh] = np.clip((x_out - mezha) / 0.015 + 0.5, 0, 1)
+        obr |= sh
+    vplyv = obr
+    # рука: вагу тулуба → плечу
+    W_t = W[:, tulubni] * (a_ * vplyv)[:, None]
+    W[:, tulubni] -= W_t; W[:, iu] += W_t.sum(1)
+    # тулуб: вагу руки → хребту
+    W_r = W[:, ruchni] * ((1 - a_) * vplyv * (r3 > 0))[:, None]
+    zr = W_r.sum(1)
+    W[:, ruchni] -= W_r
+    z_s3 = float((aw @ arm.pose.bones["spine_03"].head).z)
+    ks = np.where(P[:, 2] > z_s3, nazvy.index("spine_03"), nazvy.index("spine_02"))
+    np.add.at(W, (np.arange(n), ks), zr)
+    log("рука%s нижче пахви: рука %d вершин, тулуб без ваги руки %d" % (b, int((a_ * vplyv > 0.5).sum()), int((zr > 0.05).sum())))
 # легке згладжування вздовж сітки довкола плеча — перехід у складці пахви без сходинки
 J = {b: np.array((aw @ arm.pose.bones["upperarm" + b].head)[:]) for b in ("_r", "_l")}
 d = np.minimum(np.linalg.norm(P - J["_r"], axis=1), np.linalg.norm(P - J["_l"], axis=1))

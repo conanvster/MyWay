@@ -12,14 +12,19 @@ extends Node3D
 ## Що показується:
 ##   каст      — коло під ногами кольором скіла, світло, що росте до кінця
 ##               читання, і частинки, що стягуються до кастера;
-##   скіл      — на одну ціль летить згусток зі слідом; «усі-поруч» — хвиля
-##               від кастера; баф/лік — частинки здіймаються довкола цілі;
+##   скіл      — на одну ціль летить згусток зі слідом, а якщо назва скіла
+##               каже інше (`LOOK_BY_WORD`) — промінь, блискавка чи стріла;
+##               «усі-поруч» — хвиля від кастера, блискавки з неба, град
+##               стріл або удар об землю з пилом і трусінням камери;
+##               баф/лік — частинки здіймаються довкола цілі;
 ##   удар      — іскри й короткий спалах на тілі цілі;
 ##   смерть    — пил під тілом (труп лишається за П-68).
 ##
-## Колір — за родом скіла, не за стихією: у `skills.json` поле «стихія»
-## порожнє в усіх 192 скілів (06.11.2026). З'явиться стихія — колір
-## братиметься з неї (`TONE_OF_ELEMENT`).
+## Колір — за стихією скіла; вона порожня в усіх 192 скілів (06.11.2026),
+## тож спершу — стихія, вгадана з назви («вогняний спис» → вогонь), далі —
+## за родом скіла (атака, баф, лік, дебаф).
+##
+## Критів і промахів у бою немає (`combat.gd`), тож і показувати їх нічим.
 ##
 ## Вузли ефектів короткі й самі себе прибирають таймером. Одночасно живих —
 ## не більше `MAX_LIVE`: на масовій бійці зайве просто не з'являється.
@@ -47,6 +52,34 @@ const TONE_OF_ELEMENT := {
 ## і без цього на цілі спалахувало б двічі.
 const SKILL_SHADOW := 0.25
 const BOLT_TIME := 0.28
+
+## Вигляд скіла за назвою (26.11.2026, П-272 залишок). У `skills.json` немає
+## ні поля «вигляд», ні заповненої «стихії», тож що летить — промінь,
+## блискавка, стріла чи згусток — і якого кольору, вгадується за словами
+## назви. Перший збіг виграє. Сервер про це не знає: це лише показ.
+##   look — "промінь" | "блискавка" | "стріла" | "земля" | "" (згусток/хвиля)
+##   element — колір із `TONE_OF_ELEMENT`, якщо в самому скілі стихії немає
+const LOOK_BY_WORD := [
+	["промін", "промінь", ""],
+	["блискав", "блискавка", "блискавка"],
+	["гнів небес", "блискавка", "блискавка"],
+	["грім", "земля", "блискавка"],
+	["стріл", "стріла", ""],
+	["постріл", "стріла", ""],
+	["ударна хвиля", "земля", "земля"],
+	["хвиля сили", "земля", ""],
+	["землетрус", "земля", "земля"],
+	["вогн", "", "вогонь"],
+	["полум", "", "вогонь"],
+	["віри", "", "світло"],
+	["гнил", "", "темрява"],
+]
+const ARROW_SPEED := 32.0
+const BEAM_TIME := 0.45
+## Трусіння камери від удару об землю: найсильніше поруч, нуль далі за
+## `SHAKE_REACH` метрів від камери.
+const SHAKE_REACH := 22.0
+const SHAKE_POWER := 0.22
 
 var creatures: Dictionary = {}
 var skills: SkillBook = null
@@ -151,15 +184,28 @@ func skill_landed(id: int, key: String, victims: Array) -> void:
 	var caster := _body(id)
 	var target := "" if skill == null else skill.target
 	var harms := skill != null and _harms(skill)
+	var look := look_of(skill)
 
 	if target == "усі-поруч" and caster != null:
-		_wave(caster, tone, skill.range_at(1) if skill != null else 4.0)
+		var reach := skill.range_at(1) if skill != null else 4.0
+		_wave(caster, tone, reach)
+		if look == "земля":
+			_slam(caster, reach)
 	for v in victims:
 		var who := _body(int(v))
 		if who == null:
 			continue
-		if harms and target == "жива" and caster != null and who != caster:
-			_bolt(caster, who, tone)
+		var aimed := harms and caster != null and who != caster
+		if aimed and target == "жива":
+			match look:
+				"промінь": _ray(caster, who, tone)
+				"блискавка": _lightning(caster, who, tone, false)
+				"стріла": _arrow(caster, who, tone)
+				_: _bolt(caster, who, tone)
+		elif aimed and look == "блискавка":
+			_lightning(caster, who, tone, true)
+		elif aimed and look == "стріла":
+			_arrow(caster, who, tone)
 		elif harms:
 			_burst(who.global_position + Vector3.UP * _chest(who),
 					tone, 20, 3.0)
@@ -217,6 +263,9 @@ static func tone_of(skill: Skill) -> Color:
 		return TONE_ATTACK
 	if TONE_OF_ELEMENT.has(skill.element):
 		return TONE_OF_ELEMENT[skill.element]
+	var guessed: String = _look_row(skill)[1]
+	if TONE_OF_ELEMENT.has(guessed):
+		return TONE_OF_ELEMENT[guessed]
 	if skill.heals():
 		return TONE_HEAL
 	if _harms(skill):
@@ -224,6 +273,28 @@ static func tone_of(skill: Skill) -> Color:
 	if skill.target == "жива":
 		return TONE_CURSE
 	return TONE_BUFF
+
+
+## Що летить: "промінь", "блискавка", "стріла", "земля" або "" (див.
+## `LOOK_BY_WORD`).
+static func look_of(skill: Skill) -> String:
+	return "" if skill == null else str(_look_row(skill)[0])
+
+
+static var _look_cache: Dictionary = {}
+
+
+static func _look_row(skill: Skill) -> Array:
+	if _look_cache.has(skill.name):
+		return _look_cache[skill.name]
+	var row := ["", ""]
+	var name_low := skill.name.to_lower()
+	for rule: Array in LOOK_BY_WORD:
+		if name_low.contains(rule[0]):
+			row = [rule[1], rule[2]]
+			break
+	_look_cache[skill.name] = row
+	return row
 
 
 static func _harms(skill: Skill) -> bool:
@@ -312,6 +383,240 @@ func _wave(caster: Node3D, tone: Color, reach: float) -> void:
 	var dim := flash.create_tween()
 	dim.tween_property(flash, "light_energy", 0.0, 0.4)
 	dim.tween_callback(flash.queue_free)
+
+
+## Промінь: світна труба від рук кастера до цілі, по ній «тече» світло.
+## Іде за обома, доки світить (`BEAM_TIME`).
+func _ray(from: Node3D, to: Node3D, tone: Color) -> void:
+	if _live >= MAX_LIVE:
+		return
+	var holder := Node3D.new()
+	add_child(holder)
+	_live += 1
+	var tube := MeshInstance3D.new()
+	var shape := CylinderMesh.new()
+	shape.top_radius = 0.09
+	shape.bottom_radius = 0.09
+	shape.height = 1.0
+	shape.radial_segments = 12
+	shape.rings = 1
+	shape.cap_top = false
+	shape.cap_bottom = false
+	tube.mesh = shape
+	var paint := ShaderMaterial.new()
+	paint.shader = _flow_shader()
+	paint.set_shader_parameter("tone", Vector3(tone.r, tone.g, tone.b))
+	paint.set_shader_parameter("power", 1.0)
+	tube.material_override = paint
+	tube.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Вісь циліндра — Y; повертаємо на −Z вузла, щоб `look_at` її наводив.
+	tube.rotation.x = -PI / 2.0
+	holder.add_child(tube)
+	var lamp := OmniLight3D.new()
+	lamp.light_color = tone
+	lamp.light_energy = 2.0
+	lamp.omni_range = 3.5
+	holder.add_child(lamp)
+	var place := func(_t: float) -> void:
+		if not (is_instance_valid(from) and is_instance_valid(to)):
+			holder.visible = false
+			return
+		var a := from.global_position + Vector3.UP * _chest(from)
+		var b := to.global_position + Vector3.UP * _chest(to)
+		var length := maxf(0.1, a.distance_to(b))
+		holder.global_position = a
+		if not a.is_equal_approx(b) and absf((b - a).normalized().y) < 0.999:
+			holder.look_at(b, Vector3.UP)
+		tube.scale = Vector3(1.0, length, 1.0)
+		tube.position = Vector3(0, 0, -length / 2.0)
+		lamp.position = Vector3(0, 0, -length)
+	place.call(0.0)
+	var shine := holder.create_tween()
+	shine.tween_method(place, 0.0, 1.0, BEAM_TIME)
+	shine.parallel().tween_property(paint, "shader_parameter/power", 0.0,
+			0.18).set_delay(BEAM_TIME - 0.18)
+	shine.tween_callback(func() -> void:
+		_live -= 1
+		holder.queue_free())
+	_burst(from.global_position + Vector3.UP * _chest(from), tone, 10, 1.6)
+	_burst(to.global_position + Vector3.UP * _chest(to), tone, 24, 3.4)
+	_flash(to, tone)
+
+
+## Блискавка: ламана стрічка, двічі перемальована за 0,2 с, і спалах
+## світла. `from_sky` — б'є з неба в ціль (скіли «усі-поруч»), інакше — від
+## кастера.
+func _lightning(from: Node3D, to: Node3D, tone: Color, from_sky: bool) -> void:
+	if _live >= MAX_LIVE:
+		return
+	var end := to.global_position + Vector3.UP * _chest(to)
+	var start: Vector3
+	if from_sky:
+		start = end + Vector3(randf_range(-2.0, 2.0), 14.0, randf_range(-2.0, 2.0))
+	else:
+		start = from.global_position + Vector3.UP * _chest(from)
+	var bolt := MeshInstance3D.new()
+	var lines := ImmediateMesh.new()
+	bolt.mesh = lines
+	bolt.material_override = _glow_paint(tone.lightened(0.35), 2.5)
+	(bolt.material_override as StandardMaterial3D).cull_mode = \
+			BaseMaterial3D.CULL_DISABLED
+	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(bolt)
+	_live += 1
+	_jag(lines, start, end)
+	var lamp := OmniLight3D.new()
+	lamp.light_color = tone.lightened(0.3)
+	lamp.light_energy = 6.0
+	lamp.omni_range = 9.0
+	add_child(lamp)
+	lamp.global_position = end + Vector3.UP * 0.5
+	var strike := bolt.create_tween()
+	strike.tween_interval(0.07)
+	strike.tween_callback(func() -> void: _jag(lines, start, end))
+	strike.tween_interval(0.07)
+	strike.tween_callback(func() -> void:
+		_jag(lines, start, end)
+		lamp.light_energy = 3.0)
+	strike.tween_interval(0.08)
+	strike.tween_callback(func() -> void:
+		_live -= 1
+		bolt.queue_free()
+		lamp.queue_free())
+	_burst(end, tone.lightened(0.3), 26, 5.0)
+	_flash(to, Color(1, 1, 1))
+
+
+## Ламана від `a` до `b`: дві схрещені стрічки (видно з будь-якого боку),
+## кожна точка зсунута вбік на частку довжини.
+func _jag(lines: ImmediateMesh, a: Vector3, b: Vector3) -> void:
+	lines.clear_surfaces()
+	var dir := (b - a)
+	var length := dir.length()
+	if length < 0.01:
+		return
+	dir /= length
+	var side := dir.cross(Vector3.UP)
+	if side.length() < 0.1:
+		side = dir.cross(Vector3.RIGHT)
+	side = side.normalized()
+	var up := side.cross(dir).normalized()
+	var steps := clampi(int(length / 0.8), 4, 18)
+	var points: Array[Vector3] = [a]
+	for i in range(1, steps):
+		var t := float(i) / float(steps)
+		var swing := length * 0.06
+		points.append(a.lerp(b, t) + side * randf_range(-swing, swing)
+				+ up * randf_range(-swing, swing))
+	points.append(b)
+	lines.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for across: Vector3 in [side, up]:
+		for i in points.size() - 1:
+			var w0 := across * 0.05
+			var w1 := across * 0.05
+			var p0 := points[i]
+			var p1 := points[i + 1]
+			lines.surface_add_vertex(p0 - w0)
+			lines.surface_add_vertex(p0 + w0)
+			lines.surface_add_vertex(p1 + w1)
+			lines.surface_add_vertex(p0 - w0)
+			lines.surface_add_vertex(p1 + w1)
+			lines.surface_add_vertex(p1 - w1)
+	lines.surface_end()
+
+
+## Стріла: тонке древко з ледь світним слідом, летить пологою дугою зі
+## швидкістю `ARROW_SPEED` і влучає туди, де ціль на кінці польоту.
+func _arrow(from: Node3D, to: Node3D, tone: Color) -> void:
+	if _live >= MAX_LIVE:
+		return
+	var start := from.global_position + Vector3.UP * _chest(from)
+	var holder := Node3D.new()
+	add_child(holder)
+	holder.global_position = start
+	_live += 1
+	var shaft := MeshInstance3D.new()
+	var stick := BoxMesh.new()
+	stick.size = Vector3(0.025, 0.025, 0.75)
+	shaft.mesh = stick
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.55, 0.45, 0.32)
+	wood.emission_enabled = true
+	wood.emission = tone
+	wood.emission_energy_multiplier = 0.6
+	shaft.material_override = wood
+	shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	holder.add_child(shaft)
+	var trail := _particles(tone, 30, 0.25, 0.05)
+	var motion := trail.process_material as ParticleProcessMaterial
+	motion.initial_velocity_min = 0.0
+	motion.initial_velocity_max = 0.1
+	motion.gravity = Vector3.ZERO
+	motion.scale_curve = _fade_curve()
+	holder.add_child(trail)
+	var end0 := to.global_position + Vector3.UP * _chest(to)
+	var flight := clampf(start.distance_to(end0) / ARROW_SPEED, 0.08, 0.9)
+	var lift := start.distance_to(end0) * 0.06
+	var fly := holder.create_tween()
+	fly.tween_method(func(t: float) -> void:
+		if not (is_instance_valid(to) and is_instance_valid(holder)):
+			return
+		var end := to.global_position + Vector3.UP * _chest(to)
+		var arc := func(s: float) -> Vector3:
+			return start.lerp(end, s) + Vector3.UP * (lift * 4.0 * s * (1.0 - s))
+		var at: Vector3 = arc.call(t)
+		var ahead: Vector3 = arc.call(t + 0.05)
+		holder.global_position = at
+		if not at.is_equal_approx(ahead):
+			holder.look_at(ahead, Vector3.UP), 0.0, 1.0, flight)
+	fly.tween_callback(func() -> void:
+		if is_instance_valid(to):
+			_burst(to.global_position + Vector3.UP * _chest(to), TONE_HIT, 12, 4.0)
+			_flash(to, Color(1, 1, 1))
+		shaft.visible = false
+		trail.emitting = false)
+	fly.tween_interval(0.3)
+	fly.tween_callback(func() -> void:
+		_live -= 1
+		holder.queue_free())
+
+
+## Удар об землю: пил колом від ніг і трусіння камери, якщо вона поруч.
+func _slam(caster: Node3D, reach: float) -> void:
+	var feet := caster.global_position + Vector3.UP * (0.05 - _feet(caster))
+	var dust := _particles(TONE_DUST, 48, 0.9, 0.5, false)
+	var motion := dust.process_material as ParticleProcessMaterial
+	motion.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+	motion.emission_ring_axis = Vector3.UP
+	motion.emission_ring_radius = 0.8
+	motion.emission_ring_inner_radius = 0.4
+	motion.emission_ring_height = 0.05
+	motion.direction = Vector3(0, 0.15, 0)
+	motion.spread = 15.0
+	motion.radial_accel_min = reach * 2.5
+	motion.radial_accel_max = reach * 3.5
+	motion.initial_velocity_min = 0.5
+	motion.initial_velocity_max = 1.2
+	motion.damping_min = 1.0
+	motion.damping_max = 2.0
+	motion.gravity = Vector3(0, -0.5, 0)
+	_one_shot(dust, feet)
+	shake_near(feet, SHAKE_POWER)
+
+
+## Трусить камеру гравця, якщо подія поруч з нею. Камера — та, що зараз
+## поточна у вікні; трусить її `CameraRig.shake`, якщо він є.
+func shake_near(at: Vector3, power: float) -> void:
+	var view := get_viewport()
+	var cam := view.get_camera_3d() if view != null else null
+	if cam == null:
+		return
+	var near := 1.0 - cam.global_position.distance_to(at) / SHAKE_REACH
+	if near <= 0.0:
+		return
+	var rig := cam.get_parent()
+	if rig != null and rig.has_method("shake"):
+		rig.call("shake", power * near, 0.35)
 
 
 func _aura(who: Node3D, tone: Color) -> void:
@@ -457,6 +762,28 @@ void fragment() {
 }
 """
 	return _beam
+
+
+static var _flow: Shader = null
+
+
+## Промінь: яскраве серце, м'які краї й смуги, що біжать від кастера до цілі.
+static func _flow_shader() -> Shader:
+	if _flow == null:
+		_flow = Shader.new()
+		_flow.code = """shader_type spatial;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec3 tone = vec3(0.55, 0.45, 1.0);
+uniform float power = 1.0;
+void fragment() {
+	float face = abs(dot(normalize(NORMAL), normalize(VIEW)));
+	float core = pow(face, 1.8);
+	float stripes = 0.65 + 0.35 * sin(UV.y * 40.0 + TIME * 30.0);
+	ALBEDO = tone * (1.0 + 1.2 * core);
+	ALPHA = clamp(core * stripes * power, 0.0, 1.0);
+}
+"""
+	return _flow
 
 
 ## Вибух іскор у точці.

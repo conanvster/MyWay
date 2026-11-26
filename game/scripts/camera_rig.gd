@@ -58,6 +58,11 @@ var free_aim: bool = false
 ## коли перешкода перестала заступати.
 var _faded: Array[GeometryInstance3D] = []
 
+## Трусіння (удар об землю, `Fx.shake_near`): сила в метрах і скільки ще.
+var _shake_power := 0.0
+var _shake_left := 0.0
+var _shake_time := 0.0
+
 @onready var _camera: Camera3D = $Camera3D
 @onready var _target: Node3D = get_parent()
 
@@ -113,6 +118,21 @@ func _process(delta: float) -> void:
 			cos(yaw) * cos(pitch)) * distance
 	_camera.global_position = _place_camera(pivot, offset)
 	_camera.look_at(pivot, Vector3.UP)
+	if _shake_left > 0.0:
+		_shake_left = maxf(0.0, _shake_left - delta)
+		var fade := _shake_left / maxf(0.01, _shake_time)
+		_camera.global_position += Vector3(randf_range(-1, 1),
+				randf_range(-1, 1), randf_range(-1, 1)) * _shake_power * fade
+
+
+## Коротко трусить камеру: `power` — найбільший зсув у метрах, згасає за
+## `seconds`. Сильніше трусіння перекриває слабше, слабше — не гасить сильне.
+func shake(power: float, seconds: float) -> void:
+	if power < _shake_power * (_shake_left / maxf(0.01, _shake_time)):
+		return
+	_shake_power = power
+	_shake_left = seconds
+	_shake_time = seconds
 
 
 ## Межа відмотки: камера не бачить далі, ніж персонаж.

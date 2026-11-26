@@ -8,7 +8,10 @@ extends Node
 ## Ліворуч — кастер (орчиха з нуля), праворуч — дві цілі (вовки). Знімки:
 ## 1 каст атаки посередині читання · 2 згусток у польоті · 3 хвиля
 ## «усі-поруч» · 4 баф · 5 лік · 6 звичайний удар · 7 пил смерті ·
-## 8–10 новий рівень (стовп, кільця, сніп іскор).
+## 8–10 новий рівень (стовп, кільця, сніп іскор) · 11 промінь · 12 блискавка
+## від кастера · 13 блискавки з неба на двох · 14 стріла в польоті · 15 град
+## стріл · 16 удар об землю (пил; трусіння камери — друкується, бо в
+## пробі камера без `CameraRig`).
 ## Друкує, скільки вузлів ефектів живе після всього (має бути 0) і
 ## середній час кадру під час ефектів.
 
@@ -23,13 +26,14 @@ var _frame_ms: Array = []
 ## Знімки — зі своєї сцени сталого розміру: віконний менеджер міняв
 ## розмір вікна посеред прогону, і кадри 6–7 виходили іншими.
 var _screen: SubViewport
+var _rig: Node3D
 
 
 func _ready() -> void:
 	# Помилка в скрипті, що його кличе проба, лишає `await` без кінця —
 	# і вікно висить. Аварійний вихід.
-	get_tree().create_timer(90.0).timeout.connect(func() -> void:
-		print("‼ проба не скінчилась за 90 с")
+	get_tree().create_timer(120.0).timeout.connect(func() -> void:
+		print("‼ проба не скінчилась за 120 с")
 		get_tree().quit(1))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var args := OS.get_cmdline_user_args()
@@ -115,6 +119,36 @@ func _go() -> void:
 	await _shot("9-рівень-кільця")
 	await _wait(0.35)
 	await _shot("10-рівень-сніп")
+	await _wait(1.0)
+	# Вигляд за назвою скіла (26.11.2026): промінь, блискавка, стріла, земля.
+	_fx.skill_landed(1, _named(book, "енергетичний промінь"), [2])
+	await _wait(0.2)
+	await _shot("11-промінь")
+	await _wait(0.8)
+	# Блискавка й стріла живуть 0,1–0,3 с — на процесорному рендері
+	# (llvmpipe, ~130 мс кадр) знімок їх пропускав. Час — у 10 разів повільніше.
+	Engine.time_scale = 0.1
+	_fx.skill_landed(1, _named(book, "блискавка"), [2])
+	await _wait(0.03)
+	await _shot("12-блискавка")
+	await _wait(0.8)
+	_fx.skill_landed(1, _named(book, "гнів небес"), [2, 3])
+	await _wait(0.03)
+	await _shot("13-гнів-небес")
+	await _wait(0.8)
+	_fx.skill_landed(1, _named(book, "влучний постріл"), [2])
+	await _wait(0.06)
+	await _shot("14-стріла")
+	await _wait(0.8)
+	_fx.skill_landed(1, _named(book, "град стріл"), [2, 3])
+	await _wait(0.07)
+	await _shot("15-град-стріл")
+	Engine.time_scale = 1.0
+	await _wait(0.8)
+	_fx.skill_landed(1, _named(book, "ударна хвиля"), [2, 3])
+	await _wait(0.3)
+	await _shot("16-удар-об-землю")
+	print("[fx] трусіння камери: %s" % ("так" if _rig.get("shaken") else "НІ"))
 
 	var ms := 0.0
 	for v: float in _frame_ms:
@@ -156,7 +190,14 @@ func _stage(world: Node3D) -> void:
 	world.add_child(ground)
 	var eye := Camera3D.new()
 	eye.fov = 50
-	world.add_child(eye)
+	_rig = Node3D.new()
+	var probe_rig := GDScript.new()
+	probe_rig.source_code = "extends Node3D\nvar shaken := false\n" \
+			+ "func shake(_p: float, _s: float) -> void:\n\tshaken = true\n"
+	probe_rig.reload()
+	_rig.set_script(probe_rig)
+	world.add_child(_rig)
+	_rig.add_child(eye)
 	eye.current = true
 	eye.position = Vector3(0.0, 4.5, 7.5)
 	eye.look_at(Vector3(0.0, 0.8, 0.0))
@@ -200,8 +241,17 @@ static func _stand_in() -> GDScript:
 func _key(book: SkillBook, target: String, harm: bool) -> String:
 	for key: String in book.keys():
 		var s := book.get_skill(key)
-		if s.target == target and Fx._harms(s) == harm and not s.heals():
+		if s.target == target and Fx._harms(s) == harm and not s.heals() \
+				and Fx.look_of(s) == "":
 			return key
+	return ""
+
+
+func _named(book: SkillBook, skill_name: String) -> String:
+	for key: String in book.keys():
+		if book.get_skill(key).name == skill_name:
+			return key
+	push_error("[fx] немає скіла «%s»" % skill_name)
 	return ""
 
 

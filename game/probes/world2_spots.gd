@@ -109,6 +109,9 @@ func _go() -> void:
 	var user_args := OS.get_cmdline_user_args()
 	if user_args.has("--пори"):
 		_hours = HOURS
+	var day: DayCycle = world.get("day")
+	if light_mode and day != null:
+		day.set_process(false)
 	var at_frames := user_args.find("--кадрів")
 	if at_frames >= 0 and at_frames + 1 < user_args.size():
 		_measure = maxi(1, int(user_args[at_frames + 1]))
@@ -204,6 +207,18 @@ func _go() -> void:
 const HOURS := [["1-ранок", 7.0], ["2-день", 13.0], ["3-вечір", 19.3],
 		["4-ніч", 23.5]]
 var _hours: Array = []
+var _first_mean := 0.0
+
+
+## Середня яскравість кадру (0…1) по сітці 64×36 — для самоперевірки.
+static func _mean(image: Image) -> float:
+	var sum := 0.0
+	for y in 36:
+		for x in 64:
+			var c := image.get_pixel(x * image.get_width() / 64,
+					y * image.get_height() / 36)
+			sum += c.r + c.g + c.b
+	return sum / (64.0 * 36.0 * 3.0)
 var _measure := 60
 
 
@@ -228,8 +243,13 @@ var _base := {}
 
 
 ## П5: той самий кадр п'ятьма варіантами, кожен додає одну зміну.
-func _light_series(land: Node, name_of: String) -> void:
-	var air: Environment = land._air
+func _light_series(_land: Node, name_of: String) -> void:
+	# Оточення — те, що СПРАВДІ показується. `land._air` тут не годиться:
+	# світ будує землю раз у `_ready`, проба — вдруге, і другий
+	# WorldEnvironment лишається непоказаним. До 26.11.2026 серія правила
+	# саме його, і всі п'ять варіантів виходили однаковими (знімки
+	# 06.11 і 26.11 — недійсні).
+	var air: Environment = get_viewport().find_world_3d().environment
 	if _base.is_empty():
 		for key: String in ["tonemap_mode", "tonemap_exposure", "ssil_enabled",
 				"glow_enabled", "adjustment_enabled"]:
@@ -246,7 +266,16 @@ func _light_series(land: Node, name_of: String) -> void:
 		await RenderingServer.frame_post_draw
 		var path := "user://світло/%s-%s.png" % [name_of.replace(" ", "_")
 				.replace(",", ""), LIGHTS[k]]
-		get_viewport().get_texture().get_image().save_png(path)
+		var image := get_viewport().get_texture().get_image()
+		image.save_png(path)
+		# Самоперевірка: варіант, що нічим не відрізняється від першого,
+		# означає, що серія знову править не те оточення.
+		var mean := _mean(image)
+		if k == 0:
+			_first_mean = mean
+		elif absf(mean - _first_mean) < 0.002:
+			print("‼ [світло] %s · %s не відрізняється від «зараз»"
+					% [name_of, LIGHTS[k]])
 		print("[світло] %s · %s · кадрів %.0f" % [name_of, LIGHTS[k], fps])
 	_light(air, 0)
 

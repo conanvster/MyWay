@@ -52,3 +52,6 @@ game/models/own/avatary/elf-s808-mixamo/
 # сірі матеріали (перевірка `ResourceLoader.exists`).
 game/assets/baobab/
 art/monsters/_аркуш-каркас/
+
+# Каталог сервісу оновлень (tools/opublikuvaty.sh) — збірки клієнта, поза git
+/updates/

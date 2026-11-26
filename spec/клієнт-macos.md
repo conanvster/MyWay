@@ -147,3 +147,7 @@ unzip -tq 4.7.2.stable/macos.zip && echo macos.zip цілий
   файлів у `.app` ad-hoc підпис бандла стає недійсним: на Apple Silicon
   це може зупинити запуск — апдейтер має або міняти бандл цілком, або
   перепідписувати `codesign --force --deep -s - MyWay.app` (на Mac).
+- **Апдейтер зроблено** (26.11.2026): spec/апдейтер.md. Знахідка: вбудований
+  підпис Godot для клієнта не вдається («Unsigned nested executable file» —
+  GDExtension `libTree3D` у Contents/Frameworks), і `_CodeSignature` у
+  бандлі немає; апдейтер підписує бандл ad-hoc на Mac гравця сам.

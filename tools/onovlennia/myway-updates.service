@@ -1,0 +1,25 @@
+# Приклад юніта systemd --user для сервісу оновлень MyWay. НЕ ввімкнено.
+#
+# Поставити (власник, коли вирішить):
+#   cp tools/onovlennia/myway-updates.service ~/.config/systemd/user/
+#   # поправ WorkingDirectory, якщо репозиторій не в ~/гра-lineage
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now myway-updates.service
+#   journalctl --user -u myway-updates -f
+# Щоб працював і без входу в сесію: loginctl enable-linger $USER
+[Unit]
+Description=MyWay: сервіс оновлень для апдейтера (HTTP, TCP 24600)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/гра-lineage
+ExecStart=%h/гра-lineage/run-updates.sh --port 24600
+Restart=on-failure
+RestartSec=5
+# Лише читання: каталог updates/ сервісу писати не треба.
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadOnlyPaths=%h
+
+[Install]
+WantedBy=default.target

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Публікація збірки клієнта в каталог сервісу оновлень.
 
-    python3 -I tools/onovlennia/publish.py --build build/myway-… --updates updates \\
+    python3 -I tools/onovlennia/publish.py --build build/myway-… --root ~/MyWay-сервер/updates \\
         [--name «MyWay»] [--game-port 24565] [--min-release N] [linux macos windows]
 
 Що робить:
@@ -147,7 +147,9 @@ def main():
     repo = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
     parser = argparse.ArgumentParser(description="Публікація збірки MyWay")
     parser.add_argument("--build", help="тека збірки (типово — найновіша в build/)")
-    parser.add_argument("--updates", default=os.path.join(repo, "updates"))
+    parser.add_argument("--updates", "--root", dest="updates",
+                        default=os.path.expanduser("~/MyWay-сервер/updates"),
+                        help="тека, з якої сервер роздає збірки")
     parser.add_argument("--name", help="назва сервера (типово — попередня або «MyWay»)")
     parser.add_argument("--game-port", type=int, help="ігровий порт UDP (типово 24565)")
     parser.add_argument("--min-release", type=int,

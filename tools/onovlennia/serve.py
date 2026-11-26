@@ -187,7 +187,7 @@ def main():
     Handler.root = root
     server = http.server.ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
-    print("→ сервіс оновлень: http://%s:%d/ · корінь %s"
+    print("→ слухаю http://%s:%d/ · роздаю збірки з %s"
           % (args.bind, args.port, root), flush=True)
     try:
         server.serve_forever()

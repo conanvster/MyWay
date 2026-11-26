@@ -150,7 +150,7 @@ printf 'head -c "$(stat -c %%s "%s")" /dev/zero | tr "\\000" x > "%s.tmp"\nmv "%
     "$target" "$target" "$target" "$target" > "$spoil"
 
 echo "── апдейтер (godot --headless, проба e2e)"
-probe_args=(--тека "$work/client" --адреса "127.0.0.1:$http_port"
+probe_args=(--робоча "$work" --стара-тека "$work/немає" --адреса "127.0.0.1:$http_port"
     --мертвий "127.0.0.1:24609" --порт-гри "$game_port" --обрив-мб 300
     --зміна "$change" --псування "$spoil" --журнал-сервера "$server_log"
     --клієнту-рушій "--headless"

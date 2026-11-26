@@ -10,13 +10,15 @@ const CHUNK := 1 << 20
 const CONNECT_WAIT_MS := 6000
 ## Скільки сервер може мовчати посеред файла, доки не скажемо «замовк».
 const STALL_MS := 30000
-## Стан установленого клієнта: випуск і версія. Пишеться лише після
-## ПОВНОГО оновлення; на час завантаження стирається.
+## Стан установленого клієнта: випуск, версія і `files` — які файли
+## поставив сам апдейтер (лише їх він колись прибере чи перенесе; чужого
+## в теці не чіпає). Випуск ставиться лише після ПОВНОГО оновлення; на час
+## завантаження він 0.
 const STATE_FILE := ".myway-installed.json"
 ## Кеш хешів: {шлях: [розмір, час зміни, sha256]}, щоб не рахувати
 ## 1,6 ГБ на кожному старті.
 const HASH_CACHE := ".myway-hashes.json"
-## Мітка «тека наша»: зайве з неї апдейтер прибирає сам.
+## Мітка: у цій теці стоїть клієнт, поставлений апдейтером.
 const MARK_FILE := ".myway-client"
 const OWN_FILES := [STATE_FILE, HASH_CACHE, MARK_FILE]
 
@@ -301,9 +303,11 @@ func verify(manifest: Dictionary) -> Dictionary:
 			str(manifest["launch"])))
 	if need.is_empty():
 		installed = int(manifest.get("release", 0))
-		if int(state.get("release", -1)) != installed:
+		if int(state.get("release", -1)) != installed \
+				or not state.has("files"):
 			_write_json(install.path_join(STATE_FILE), {"release": installed,
-					"version": manifest.get("version", "")})
+					"version": manifest.get("version", ""),
+					"files": paths_of(manifest)})
 	return {"need": need, "need_bytes": need_bytes,
 			"installed": installed if present else 0, "present": present}
 
@@ -324,15 +328,22 @@ func job_update(manifest: Dictionary, need: Array) -> Dictionary:
 		var part := install.path_join(str(entry["path"])) + ".part"
 		left += int(entry["size"]) - (_size_of(part)
 				if FileAccess.file_exists(part) else 0)
-	var free := DirAccess.open(install).get_space_left()
+	var free := space_left(install)
 	# Запас 64 МБ: файл замінюється ПІСЛЯ перевірки, і обидва якийсь час
 	# лежать поруч.
 	if free >= 0 and free < left + (64 << 20):
 		return {"why": "немає місця на диску: треба %s, вільно %s (тека %s)"
 				% [_mb(left + (64 << 20)), _mb(free), install]}
-	# Оновлення почалось — старий стан уже не правда: перерване посеред
-	# дороги не пустить грати старим, наполовину заміненим клієнтом.
-	DirAccess.remove_absolute(install.path_join(STATE_FILE))
+	# Оновлення почалось — старий випуск уже не правда: перерване посеред
+	# дороги не пустить грати старим, наполовину заміненим клієнтом. Список
+	# файлів — і старі, і нові: усе це тепер наше.
+	var state := _read_json(install.path_join(STATE_FILE))
+	var before: Array = state.get("files", [])
+	var ours := {}
+	for name: Variant in before + paths_of(manifest):
+		ours[str(name)] = true
+	_write_json(install.path_join(STATE_FILE), {"release": 0,
+			"files": ours.keys()})
 	_put(0, total, "")
 	var got_bytes := [0]
 	for entry: Dictionary in need:
@@ -343,7 +354,7 @@ func job_update(manifest: Dictionary, need: Array) -> Dictionary:
 				else _download(entry, got_bytes)
 		if why != "":
 			return {"why": why}
-	_prune(manifest)
+	_prune(before, manifest)
 	var checked := verify(manifest)
 	if not checked.get("need", [1]).is_empty():
 		return {"why": "після оновлення %d файлів досі не збігаються з " \
@@ -359,23 +370,54 @@ func _prepare_dir() -> String:
 	if not DirAccess.dir_exists_absolute(install):
 		var err := DirAccess.make_dir_recursive_absolute(install)
 		if err != OK:
-			return "не створити теку клієнта %s: %s" % [install,
-					error_string(err)]
+			return "не створити теку %s: %s — обери іншу («Змінити…»)" \
+					% [install, error_string(err)]
+	var why := writable_problem(install)
+	if why != "":
+		return why
 	if not FileAccess.file_exists(install.path_join(MARK_FILE)):
-		var dir := DirAccess.open(install)
-		if dir == null:
-			return "тека клієнта %s не відкривається" % install
-		if not (dir.get_files().is_empty()
-				and dir.get_directories().is_empty()):
-			return "тека %s не порожня й не створена апдейтером — " % install \
-					+ "не чіпаю її; обери іншу або спорожни"
 		var mark := FileAccess.open(install.path_join(MARK_FILE),
 				FileAccess.WRITE)
-		if mark == null:
-			return "немає права писати в %s: %s" % [install, error_string(
-					FileAccess.get_open_error())]
-		mark.store_line("Тут клієнт MyWay, яким керує апдейтер.")
+		if mark != null:
+			mark.store_line("Тут клієнт MyWay, яким керує апдейтер.")
 	return ""
+
+
+## Чому в теку не можна писати; порожньо — можна. Пробуємо по-справжньому:
+## створити й стерти файл (права, тека лише для читання, диск без запису).
+static func writable_problem(dir: String) -> String:
+	if not DirAccess.dir_exists_absolute(dir):
+		return "теки %s немає" % dir
+	var probe := dir.path_join(".myway-write-test")
+	var file := FileAccess.open(probe, FileAccess.WRITE)
+	if file == null:
+		return ("у теку %s не можна писати (%s): немає прав або диск лише " \
+				+ "для читання — обери іншу теку («Змінити…»)") % [dir,
+				error_string(FileAccess.get_open_error())]
+	file.close()
+	DirAccess.remove_absolute(probe)
+	return ""
+
+
+## Вільне місце там, де ляже тека (якщо її ще немає — на найближчій
+## наявній теці вище). −1 — система не каже.
+static func space_left(path: String) -> int:
+	var at := path
+	while at != "" and not DirAccess.dir_exists_absolute(at):
+		var up := at.get_base_dir()
+		if up == at:
+			break
+		at = up
+	var dir := DirAccess.open(at) if at != "" else null
+	return dir.get_space_left() if dir != null else -1
+
+
+static func paths_of(manifest: Dictionary) -> Array:
+	var out: Array = []
+	for entry: Variant in manifest.get("files", []):
+		if entry is Dictionary:
+			out.append(str(entry.get("path", "")))
+	return out
 
 
 ## Один файл: у `<шлях>.part` з докачуванням, перевірка SHA-256,
@@ -547,41 +589,189 @@ func _link(entry: Dictionary) -> String:
 	return ""
 
 
-## Прибрати з теки клієнта все, чого немає в маніфесті (крім службових
-## файлів). На Mac це не прикраса: зайвий файл у бандлі ламає підпис.
-func _prune(manifest: Dictionary) -> void:
+## Прибрати файли, які апдейтер ставив раніше, а в новому маніфесті їх
+## немає (на Mac зайвий файл у бандлі ламає підпис). ЧУЖОГО не чіпаємо:
+## лише те, що записано в стані як наше. Теки, що спорожніли, — теж геть.
+func _prune(before: Array, manifest: Dictionary) -> void:
 	var keep := {}
-	for entry: Dictionary in manifest["files"]:
-		keep[str(entry["path"])] = true
-	for name in OWN_FILES:
-		keep[name] = true
-	_prune_dir(install, "", keep)
+	for name: Variant in paths_of(manifest):
+		keep[str(name)] = true
+	for name: Variant in before:
+		var relative := str(name)
+		if keep.has(relative) or not safe_relative(relative):
+			continue
+		var path := install.path_join(relative)
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+			_drop_empty(install, path.get_base_dir())
 
 
-func _prune_dir(base: String, prefix: String, keep: Dictionary) -> void:
+## Стерти порожні теки від `dir` угору, але не вище `top`.
+static func _drop_empty(top: String, dir: String) -> void:
+	var at := dir
+	while at.length() > top.length() and at.begins_with(top):
+		var opened := DirAccess.open(at)
+		if opened == null:
+			return
+		opened.include_hidden = true
+		if not (opened.get_files().is_empty()
+				and opened.get_directories().is_empty()):
+			return
+		DirAccess.remove_absolute(at)
+		at = at.get_base_dir()
+
+
+# ── перенесення в іншу теку ─────────────────────────────────────────────
+
+## Перенести встановлений клієнт із `from` у `install`. Переносимо лише
+## НАШЕ: файли зі стану (або, у старому встановленні без списку, — усе в
+## теці з міткою, бо тоді апдейтер ставив лише в порожню свою теку).
+## Спершу `rename` (той самий диск — миттєво); не вийшло — копія з
+## перевіркою SHA-256 і лише потім стирання джерела.
+func job_move(from: String) -> Dictionary:
+	var state := _read_json(from.path_join(STATE_FILE))
+	var names: Array = []
+	if state.has("files"):
+		for name: Variant in state["files"]:
+			if safe_relative(str(name)):
+				names.append(str(name))
+	elif FileAccess.file_exists(from.path_join(MARK_FILE)):
+		_list_all(from, "", names)
+	else:
+		return {"why": "у %s немає клієнта, поставленого апдейтером" % from}
+	for own in OWN_FILES:
+		if not names.has(own):
+			names.append(own)
+	# Mac: печатка, поставлена тут же (`_fix_macos`), у маніфесті не
+	# значиться, але без неї перенесений бандл лишився б непідписаним.
+	var apps := {}
+	for name: String in names:
+		if ".app/" in name:
+			apps[name.left(name.find(".app/") + 4)] = true
+	for app: String in apps:
+		var seal := app.path_join("Contents/_CodeSignature")
+		for name in DirAccess.get_files_at(from.path_join(seal)):
+			if not names.has(seal.path_join(name)):
+				names.append(seal.path_join(name))
+	var moving: Array = []
+	var total := 0
+	for name: String in names:
+		for one in [name, name + ".part"]:
+			var path := from.path_join(one)
+			if FileAccess.file_exists(path):
+				moving.append(one)
+				total += _size_of(path)
+	if not DirAccess.dir_exists_absolute(install):
+		var err := DirAccess.make_dir_recursive_absolute(install)
+		if err != OK:
+			return {"why": "не створити теку %s: %s" % [install,
+					error_string(err)]}
+	var why := writable_problem(install)
+	if why != "":
+		return {"why": why}
+	_put(0, total, "переношу")
+	# Той самий диск — `rename`, миттєво. Інший — своя копія з перевіркою:
+	# `DirAccess.rename_absolute` між дисками сам тихо копіює, без звірки
+	# хешу і губить біт виконання (заміряно 26.11.2026).
+	var same := same_disk(from, install)
+	var cache := _read_json(from.path_join(HASH_CACHE))
+	var copied := 0
+	for name: String in moving:
+		if _stopped():
+			return {"why": "перенесення зупинено — частина файлів уже в %s" \
+					% install}
+		var source := from.path_join(name)
+		var target := install.path_join(name)
+		_mutex.lock()
+		_what = name
+		_mutex.unlock()
+		var size := _size_of(source)
+		DirAccess.make_dir_recursive_absolute(target.get_base_dir())
+		if FileAccess.file_exists(target):
+			DirAccess.remove_absolute(target)
+		if same and DirAccess.rename_absolute(source, target) == OK:
+			_add(size)
+		else:
+			var failed := _copy_checked(source, target)
+			if failed != "":
+				return {"why": failed}
+			copied += 1
+			# Час зміни в копії новий; вміст той самий (звірено) — кеш
+			# переносимо, інакше на Mac підписаний на місці рушій
+			# здавався б зіпсованим і качався знову.
+			var known: Variant = cache.get(name)
+			if known is Array and known.size() == 3:
+				cache[name] = [size, FileAccess.get_modified_time(target),
+						known[2]]
+		_drop_empty(from, source.get_base_dir())
+	if copied > 0:
+		_write_json(install.path_join(HASH_CACHE), cache)
+	_drop_empty(from.get_base_dir(), from)
+	return {"ok": true, "moved": moving.size(), "copied": copied}
+
+
+## Чи дві теки на одному диску (тоді перенесення — перейменуванням).
+## Сумнів — «ні»: копія з перевіркою повільніша, але не зіпсує.
+static func same_disk(a: String, b: String) -> bool:
+	if OS.get_name() == "Windows":
+		return a.left(2).to_upper() == b.left(2).to_upper()
+	var flag := "-f" if OS.get_name() == "macOS" else "-c"
+	var ids: Array[String] = []
+	for path in [a, b]:
+		var out: Array = []
+		if OS.execute("stat", [flag, "%d", path], out) != 0 or out.is_empty():
+			return false
+		ids.append(str(out[0]).strip_edges())
+	return ids[0] == ids[1] and ids[0] != ""
+
+
+func _list_all(base: String, prefix: String, out: Array) -> void:
 	var dir := DirAccess.open(base.path_join(prefix))
 	if dir == null:
 		return
 	dir.include_hidden = true
 	for name in dir.get_files():
-		var relative := prefix.path_join(name) if prefix != "" else name
-		if not keep.has(relative):
-			dir.remove(name)
+		out.append(prefix.path_join(name) if prefix != "" else name)
 	for name in dir.get_directories():
-		var relative := prefix.path_join(name) if prefix != "" else name
-		if name == "_CodeSignature":
-			continue
-		if dir.is_link(base.path_join(relative)):
-			if not keep.has(relative):
-				dir.remove(name)
-			continue
-		_prune_dir(base, relative, keep)
-		var inner := DirAccess.open(base.path_join(relative))
-		if inner != null:
-			inner.include_hidden = true
-			if inner.get_files().is_empty() \
-					and inner.get_directories().is_empty():
-				dir.remove(name)
+		_list_all(base, prefix.path_join(name) if prefix != "" else name, out)
+
+
+## Копія з перевіркою: SHA-256 джерела, записане, і SHA-256 копії з диска.
+func _copy_checked(source: String, target: String) -> String:
+	var input := FileAccess.open(source, FileAccess.READ)
+	if input == null:
+		return "не прочитати %s: %s" % [source, error_string(
+				FileAccess.get_open_error())]
+	var output := FileAccess.open(target + ".part", FileAccess.WRITE)
+	if output == null:
+		return "не записати %s: %s (немає прав або місця)" % [target,
+				error_string(FileAccess.get_open_error())]
+	var hashing := HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	while true:
+		var block := input.get_buffer(CHUNK)
+		if block.is_empty():
+			break
+		if not output.store_buffer(block):
+			output.close()
+			DirAccess.remove_absolute(target + ".part")
+			return "не записалось у %s — найімовірніше, скінчилось місце" \
+					% target
+		hashing.update(block)
+		_add(block.size())
+	output.close()
+	var want := hashing.finish().hex_encode()
+	if FileAccess.get_sha256(target + ".part") != want:
+		DirAccess.remove_absolute(target + ".part")
+		return "копія %s не збіглась із джерелом за SHA-256 — джерело " \
+				% target + "лишив на місці"
+	if DirAccess.rename_absolute(target + ".part", target) != OK:
+		return "не перейменувати копію %s" % target
+	var mode := FileAccess.get_unix_permissions(source)
+	if mode != 0 and OS.get_name() != "Windows":
+		FileAccess.set_unix_permissions(target, mode)
+	DirAccess.remove_absolute(source)
+	return ""
 
 
 ## Mac: зняти карантин і, якщо печатка бандла не сходиться, підписати

@@ -6,16 +6,23 @@ extends Node
 ##   0. розбір адреси й безпечні шляхи маніфесту;
 ##   1. адреса, де ніхто не слухає, — помилка текстом, «Грати» заблоковано;
 ##   2. 127.0.0.1 — config підтягнувся, треба завантажити все;
+##  2б. тека встановлення: типова видима (~/Games/MyWay), тека без права
+##      запису — відмова текстом, тека, яку не створити, — помилка перед
+##      завантаженням; нестандартна тека (пробіл, кирилиця) запам'ятована;
 ##   3. обрив посеред .pck → «Оновити» вдруге докачує з того місця (Range),
 ##      хеші збігаються;
 ##   4. у публікації замінили один файл → завантажується лише він;
 ##  4б. файл у публікації не збігається з маніфестом → «хеш не зійшовся»;
 ##      тека без права запису → сказано про права; потім усе гаразд;
 ##   5. LAN-IP — той самий сервер, качати нічого;
+##  5б. нова тека, коли гра вже стоїть: питання → «Перенести» → нічого не
+##      качаємо, чужий файл у старій теці лишився; «Завантажити наново» →
+##      стару не чіпаємо; клієнт першої версії (user://client) → «Перенести»;
 ##   6. мінімальний випуск вищий за наш — «Грати» заблоковано;
 ##   7. «Грати» → клієнт із `--host IP:ігровий-порт` заходить на сервер.
 ##
-## Аргументи (після `--`): --тека, --адреса, --lan, --мертвий,
+## Аргументи (після `--`): --робоча <тека для тек гри>, --адреса, --lan,
+## --мертвий,
 ## --порт-гри, --обрив-мб, --зміна <скрипт>, --псування <скрипт>,
 ## --журнал-сервера <файл>,
 ## і для самого апдейтера --клієнту-рушій / --клієнту.
@@ -28,7 +35,9 @@ const CLIENT_ADDRESS := "~/.local/share/godot/app_userdata/MyWay/" \
 		+ "адреса-сервера.cfg"
 
 var _failed := 0
-var _kept := ""
+## Налаштування апдейтера до проби — проба їх вертає як були.
+var _settings_had := false
+var _settings_kept := ""
 var _client_kept := ""
 var _client_had := false
 var _page: Node
@@ -81,7 +90,12 @@ func _go() -> void:
 	var cut := int(_arg("--обрив-мб", "300")) << 20
 	var change := _arg("--зміна", "")
 	var server_log := _arg("--журнал-сервера", "")
-	_kept = PAGE.last_address()
+	var work := _arg("--робоча", "")
+	var settings := ProjectSettings.globalize_path(PAGE.SETTINGS_FILE)
+	_settings_had = FileAccess.file_exists(settings)
+	if _settings_had:
+		_settings_kept = FileAccess.get_file_as_string(settings)
+	DirAccess.remove_absolute(settings)
 	var client_file := CLIENT_ADDRESS.replace("~", OS.get_environment("HOME"))
 	_client_had = FileAccess.file_exists(client_file)
 	if _client_had:
@@ -108,8 +122,11 @@ func _go() -> void:
 	_page = UPDATER.instantiate()
 	get_tree().root.add_child(_page)
 	await get_tree().process_frame
-	var install: String = _page.install
-	print("  тека клієнта: %s" % install)
+	_check(_page.install == PAGE.default_dir() and _page.install.ends_with(
+			"Games/MyWay"), "типова тека видима: %s" % _page.install)
+	_check(_page._installed_label.text.contains("ще не встановлена"),
+			"«%s»" % _page._installed_label.text)
+	_check(_page.pending_kind == "", "старого клієнта немає — не питає")
 
 	print("\n— 1. ніхто не слухає (%s) —" % dead)
 	await _type(dead)
@@ -139,6 +156,32 @@ func _go() -> void:
 			% _page.play_blocker())
 	_check(PAGE.last_address() == address,
 			"адресу запам'ятовано")
+
+	print("\n— 2б. тека встановлення —")
+	var closed := work.path_join("закрита")
+	DirAccess.make_dir_recursive_absolute(closed)
+	OS.execute("chmod", ["555", closed])
+	_page.choose_dir(closed)
+	_check(_page.error_text.contains("не можна писати")
+			and _page.install == PAGE.default_dir(),
+			"тека без права запису — відмова: «%s»" % _page.error_text)
+	_page.choose_dir(closed.path_join("гра"))
+	_check(_page.install == closed.path_join("гра"),
+			"тека, якої ще немає, прийнята: %s" % _page.install)
+	await _until(func() -> bool: return not _page.busy(), 60.0)
+	await _press_update()
+	_check(_page.error_text.contains("не створити теку"),
+			"перед завантаженням — помилка: «%s»" % _page.error_text)
+	var install := work.path_join("Мої ігри/MyWay")
+	_page.choose_dir(install)
+	await _until(func() -> bool: return not _page.busy(), 60.0)
+	_check(_page.install == install and PAGE.setting("клієнт", "тека")
+			== install, "нестандартну теку обрано й запам'ятовано: %s"
+			% install)
+	_check(_page._dir.text == install and _page._dir_info.text.contains(
+			"вільно на диску"), "під полем: %s" % _page._dir_info.text)
+	_check(_page.need.size() == files.size(), "у новій теці треба все: %d"
+			% _page.need.size())
 
 	print("\n— 3. обрив на %s і докачування —" % SYNC._mb(cut))
 	_page.abort_after = cut
@@ -174,6 +217,10 @@ func _go() -> void:
 	_check(_page.installed == int(_page.manifest.get("release", -1)),
 			"установлено випуск %d" % _page.installed)
 
+	var foreign := install.path_join("чуже.txt")
+	var note := FileAccess.open(foreign, FileAccess.WRITE)
+	note.store_string("це поклала людина")
+	note.close()
 	if change != "":
 		print("\n— 4. у публікації змінено один файл —")
 		var out: Array = []
@@ -192,6 +239,8 @@ func _go() -> void:
 				"завантажено лише %s" % [_page._sync.fetched])
 		_check(_same_as_manifest(install, _page.manifest["files"]),
 				"хеші знову збігаються")
+		_check(FileAccess.file_exists(foreign),
+				"чужий файл у теці після оновлення не чіпано")
 
 	var spoil := _arg("--псування", "")
 	if spoil != "" and change != "":
@@ -226,6 +275,53 @@ func _go() -> void:
 		_check(_page.error_text == "" and not _page.config.is_empty(),
 				"config через LAN: «%s»" % _page.config.get("name", "—"))
 		_check(_page.need.is_empty(), "качати нічого: %s" % _page._status.text)
+
+	print("\n— 5б. перенесення встановленої гри —")
+	var moved := work.path_join("інша тека")
+	_page.choose_dir(moved)
+	_check(_page.pending_kind == "move" and _page.install == install,
+			"питає, що робити зі встановленою грою: %s"
+			% _page._ask.dialog_text.replace("\n", " "))
+	_check(_page._play.disabled, "поки питає, «Грати» заблоковано")
+	_page.answer("move")
+	await _until(func() -> bool: return not _page.busy(), 300.0)
+	_check(_page.error_text == "" and _page.install == moved,
+			"перенесено: %s" % _page._status.text)
+	_check(_page.need.is_empty() and _same_as_manifest(moved,
+			_page.manifest["files"]), "у новій теці все на місці, качати " \
+			+ "нічого: %s" % _page._status.text)
+	_check(FileAccess.file_exists(foreign) and not FileAccess.file_exists(
+			install.path_join(str(_page.manifest["launch"]))),
+			"у старій теці лишився лише чужий файл")
+	_check(_page._installed_label.text == "Гра встановлена в: %s" % moved,
+			"«%s»" % _page._installed_label.text)
+
+	var fresh := work.path_join("наново")
+	_page.choose_dir(fresh)
+	_page.answer("fresh")
+	await _until(func() -> bool: return not _page.busy(), 120.0)
+	_check(_page.install == fresh and _page.need.size() == files.size()
+			and _same_as_manifest(moved, _page.manifest["files"]),
+			"«Завантажити наново»: нова тека порожня, стару не чіпано")
+	_page.choose_dir(moved)
+	await _until(func() -> bool: return not _page.busy(), 120.0)
+	_check(_page.pending_kind == "" and _page.install == moved
+			and _page.need.is_empty(), "назад у теку з грою — без питань")
+
+	print("\n— 5в. клієнт першої версії апдейтера (user://client) —")
+	var target := work.path_join("типова")
+	_page.legacy_dir = moved
+	_page.install = target
+	_page.offer_legacy()
+	_check(_page.pending_kind == "legacy", "пропонує перенести: %s"
+			% _page._ask.dialog_text.replace("\n", " "))
+	_page.answer("move")
+	await _until(func() -> bool: return not _page.busy(), 300.0)
+	_check(_page.install == target and _page.need.is_empty()
+			and _same_as_manifest(target, _page.manifest["files"]),
+			"старий клієнт перенесено, качати нічого")
+	_check(not DirAccess.dir_exists_absolute(moved),
+			"стара тека (лише наша) прибрана")
 
 	print("\n— 6. мінімальний випуск вищий за наш —")
 	var least: int = _page.config["min_client_release"]
@@ -286,11 +382,15 @@ func _last_in(path: String, mark: String) -> String:
 
 
 func _finish(client_file: String) -> void:
-	if _kept != "":
-		PAGE.remember_address(_kept)
+	var settings := ProjectSettings.globalize_path(PAGE.SETTINGS_FILE)
+	if _settings_had:
+		var kept := FileAccess.open(settings, FileAccess.WRITE)
+		kept.store_string(_settings_kept)
 	else:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(
-				"user://адреса.cfg"))
+		DirAccess.remove_absolute(settings)
+	var work := _arg("--робоча", "")
+	if work != "":
+		OS.execute("chmod", ["755", work.path_join("закрита")])
 	if _client_had:
 		var file := FileAccess.open(client_file, FileAccess.WRITE)
 		file.store_string(_client_kept)

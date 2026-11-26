@@ -8,6 +8,13 @@ extends Control
 ##
 ## Тут кожен крок окремо, і **кнопка «Зайти в гру» не працює, доки сервер
 ## не відповів**. Це не прикраса: це те, що прибирає цілий клас вад.
+##
+## Сервер в іншій машині (клієнт для Mac, 26.11.2026): поле «IP сервера» і
+## «Підключитися». У зібраному клієнті (`template`) лишається ЛИШЕ воно:
+## базу й сервер там підняти нічим, і кнопки, що не можуть спрацювати,
+## тільки плутали б гравця. Те саме вдома — `-- --лише-мережа`.
+
+const NET := preload("res://scripts/net.gd")
 
 const SERVER_PORT := 24565
 const DB_URL := "http://127.0.0.1:3000"
@@ -37,6 +44,17 @@ var _log: Label
 var _world_pick: OptionButton
 var _since := 0.0
 var _probe: HTTPRequest
+## Адреса сервера в мережі й кнопка до нього.
+var _address: LineEdit
+var _connect: Button
+## Чи вже підключались самі за `--host` — лише раз за життя процесу.
+static var _auto_used := false
+
+
+## Чи лише клієнт до чужого сервера: зібраний застосунок або прапорець.
+static func remote_only() -> bool:
+	return OS.has_feature("template") \
+			or OS.get_cmdline_user_args().has("--лише-мережа")
 
 
 func _ready() -> void:
@@ -47,11 +65,26 @@ func _ready() -> void:
 	# автозавантажень немає (пастка з CONTEXT.md), і сама згадка імені не
 	# дає пробі навіть скомпілювати цей файл — а сторінку треба перевіряти.
 	var net := get_node_or_null("/root/Net")
+	# Повернулись сюди з причиною (сервер зник) — у `--демо` не стукаємо
+	# знову по колу, а лишаємось на сторінці й показуємо причину.
+	var why := str(net.why_left) if net != null else ""
 	if (net != null and net.is_server) \
-			or OS.get_cmdline_user_args().has("--демо"):
+			or (OS.get_cmdline_user_args().has("--демо") and why == ""):
 		_enter_world()
 		return
 	_build()
+	# Чому повернулись сюди зі світу — сервер не відповів, обірвалось.
+	if net != null and str(net.why_left) != "":
+		_say(str(net.why_left), true)
+		net.why_left = ""
+	if remote_only():
+		# Апдейтер дав `--host`: підключаємось самі, раз. Після невдачі
+		# лишаємось на сторінці з причиною — інакше стукали б по колу.
+		if net != null and str(net.host_given) != "" and not _auto_used \
+				and why == "":
+			_auto_used = true
+			_connect_remote.call_deferred()
+		return
 	_probe = HTTPRequest.new()
 	add_child(_probe)
 	_probe.request_completed.connect(_db_answered)
@@ -79,16 +112,79 @@ func _build() -> void:
 	box.add_child(head)
 
 	_world_pick = _worlds(box)
-	_db_light = _line(box, "база: перевіряю…")
-	_db_button = _button(box, "Підняти базу", _start_db)
-	_server_light = _line(box, "сервер: перевіряю…")
-	_server_button = _button(box, "Підняти сервер", _start_server)
-	_play = _button(box, "Зайти в гру", _enter_world)
-	_play.disabled = true
-	_button(box, "Зупинити сервер", _stop_server)
+	if not remote_only():
+		_db_light = _line(box, "база: перевіряю…")
+		_db_button = _button(box, "Підняти базу", _start_db)
+		_server_light = _line(box, "сервер: перевіряю…")
+		_server_button = _button(box, "Підняти сервер", _start_server)
+		_play = _button(box, "Зайти в гру", _enter_local)
+		_play.disabled = true
+		_button(box, "Зупинити сервер", _stop_server)
+	_remote(box)
 
 	_log = _line(box, "")
 	_log.add_theme_font_size_override("font_size", 12)
+	var version := _line(box, "версія: " + NET.build_version())
+	version.add_theme_font_size_override("font_size", 11)
+	version.add_theme_color_override("font_color", Color(0.55, 0.57, 0.6))
+	_log.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_log.custom_minimum_size = Vector2(420, 0)
+
+
+## Сервер в іншій машині: адреса й «Підключитися». Остання введена адреса
+## вже стоїть у полі — щоразу її не вводять.
+func _remote(box: VBoxContainer) -> void:
+	var head := _line(box, "сервер у мережі:" if not remote_only()
+			else "IP сервера:")
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_address = LineEdit.new()
+	_address.placeholder_text = "наприклад 192.168.1.48 або 192.168.1.48:%d" \
+			% NET.PORT
+	_address.custom_minimum_size = Vector2(420, 38)
+	var net := get_node_or_null("/root/Net")
+	_address.text = str(net.host_given) if net != null \
+			and str(net.host_given) != "" else NET.last_address()
+	_address.text_submitted.connect(func(_t: String) -> void:
+			_connect_remote())
+	box.add_child(_address)
+	_connect = _button(box, "Підключитися", _connect_remote)
+
+
+## Рядок під кнопками: що сталося. Помилка — червоним.
+func _say(text: String, bad: bool) -> void:
+	_log.text = text
+	_log.add_theme_color_override("font_color",
+			Color(0.95, 0.5, 0.45) if bad else Color(0.8, 0.8, 0.8))
+
+
+## «Підключитися»: розібрати адресу, запам'ятати, зайти. Чи сервер живий,
+## скаже сам світ: не відповів за `CONNECT_WAIT` — поверне сюди з причиною.
+func _connect_remote() -> void:
+	var asked := NET.parse_address(_address.text)
+	if asked.has("why"):
+		_say(str(asked["why"]), true)
+		return
+	var net := get_node_or_null("/root/Net")
+	if net == null:
+		_say("‼ немає мережі (Net): клієнт зібрано без автозавантаження",
+				true)
+		return
+	net.host = str(asked["host"])
+	net.port = int(asked["port"])
+	NET.remember_address(_address.text)
+	_say("з'єднуюсь із %s:%d…" % [net.host, net.port], false)
+	_connect.disabled = true
+	print("[сторінка] підключаюсь до %s:%d" % [net.host, net.port])
+	_enter_world()
+
+
+## «Зайти в гру» на свій сервер: адреса з рядка запуску, а не та, що
+## лишилась від спроби підключитись деінде.
+func _enter_local() -> void:
+	var net := get_node_or_null("/root/Net")
+	if net != null:
+		net.address_from_args()
+	_enter_world()
 
 
 ## Вибір світу (П-204). Персонажі в кожному світі свої, тож світ треба

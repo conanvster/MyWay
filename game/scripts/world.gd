@@ -113,7 +113,7 @@ func _ready() -> void:
 	# будувати: інакше стартова сторінка секунду світила б зелене на
 	# чужу, стару мітку при вже зайнятому порті.
 	if Net.is_server:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mark_path()))
 	data = GameData.new()
 	data.load_all()
 	vision = Vision.new(creatures)
@@ -233,11 +233,74 @@ func _ready() -> void:
 		# прийти раніше, ніж клієнт готовий, і загубитись.
 		multiplayer.connected_to_server.connect(
 				func() -> void: rpc_id(1, "announce_ready", Net.character))
-		multiplayer.connection_failed.connect(
-				func() -> void: print("[мережа] ‼ сервер не відповів"))
+		# Не відповів, обірвалось, не дочекались — вертаємо на стартову
+		# сторінку з причиною. Доти тут був лише рядок у консолі, а людина
+		# (тим паче на Mac, без терміналу) бачила порожній світ і нічого
+		# більше (P3, 26.11.2026).
+		multiplayer.connection_failed.connect(func() -> void:
+				_lost.call_deferred("сервер %s:%d не відповів" % [Net.host,
+						Net.port] + NOT_REACHED))
+		multiplayer.server_disconnected.connect(func() -> void:
+				_lost.call_deferred("з'єднання з сервером %s:%d обірвалось"
+						% [Net.host, Net.port]))
 		# І аж ТЕПЕР стукаємо: доки була стартова сторінка, світу не було,
 		# і пакети шукали б вузол, якого не існує.
-		Net.join()
+		if not Net.join():
+			_lost.call_deferred(Net.why_left)
+		else:
+			_wait_for_server()
+
+
+## Скільки чекати відповіді сервера. ENet сам здається лише за 5–30 с, і
+## весь цей час людина дивиться в порожнечу; сервер у тій самій мережі
+## відповідає за долі секунди, тож десяти секунд досить і з запасом.
+const CONNECT_WAIT := 10.0
+const NOT_REACHED := ". Перевір IP, чи запущено сервер і чи пускає " \
+		+ "його брандмауер UDP-порт"
+
+
+## Відлік до «не дочекались». Таймер — вузол світу, а не дерева: зник
+## світ — зник і таймер, і лямбда не кличе звільненого.
+func _wait_for_server() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer is not ENetMultiplayerPeer:
+		return                    # проба поставила `Net.joined` сама
+	var clock := Timer.new()
+	clock.one_shot = true
+	clock.wait_time = CONNECT_WAIT
+	add_child(clock)
+	clock.timeout.connect(func() -> void:
+			if multiplayer.multiplayer_peer == peer \
+					and peer.get_connection_status() \
+					!= MultiplayerPeer.CONNECTION_CONNECTED:
+				_lost("за %d с сервер %s:%d не відповів"
+						% [CONNECT_WAIT, Net.host, Net.port] + NOT_REACHED))
+	clock.start()
+
+
+## Клієнт утратив сервер — назад на стартову сторінку, причину несемо
+## туди в `Net.why_left`. Те саме, що робить «Вийти» в HUD (`hud._quit`),
+## лише з причиною.
+##
+## Кличеться відкладено: `hud._quit` сам закриває з'єднання, Godot на це
+## теж каже «обірвалось», і без відкладення ми б удруге підвантажили
+## сторінку. Відкладений виклик бачить `Net.joined == false` і мовчить.
+func _lost(why: String) -> void:
+	if not Net.joined or not is_inside_tree() or is_queued_for_deletion():
+		return
+	print("[мережа] ‼ " + why)
+	Net.why_left = why
+	var peer := multiplayer.multiplayer_peer
+	if peer != null:
+		peer.close()
+	multiplayer.multiplayer_peer = null
+	Net.joined = false
+	var tree := get_tree()
+	var launcher: Node = load("res://scenes/launcher.tscn").instantiate()
+	launcher.tree_entered.connect(func() -> void:
+			tree.current_scene = launcher
+			queue_free(), CONNECT_ONE_SHOT)
+	tree.root.add_child.call_deferred(launcher)
 
 
 ## Мітка «світ збудовано». Її читає стартова сторінка.
@@ -253,18 +316,28 @@ func _ready() -> void:
 const READY_MARK := "user://сервер.json"
 
 
+## Сервер на нетиповому порту (`--порт`, пробний) кладе мітку окремо:
+## сторінка дивиться лише на типовий порт, і чужа мітка збила б її з
+## пантелику — показала б номер пробного сервера як номер справжнього, а
+## стерта при його запуску — сховала б справжній.
+func _mark_path() -> String:
+	return READY_MARK if Net.port == Net.PORT \
+			else "user://сервер-%d.json" % Net.port
+
+
 func _mark_ready() -> void:
-	var file := FileAccess.open(READY_MARK, FileAccess.WRITE)
+	var mark := _mark_path()
+	var file := FileAccess.open(mark, FileAccess.WRITE)
 	if file == null:
 		print("[світ] ‼ не вдалось записати мітку %s: %s"
-				% [READY_MARK, error_string(FileAccess.get_open_error())])
+				% [mark, error_string(FileAccess.get_open_error())])
 		return
 	# «світ» — на якій мапі сервер збудований. Стартова сторінка звіряє його
 	# зі своїм і не пускає в гру, якщо не збіглось: інакше персонаж у
 	# чужому рельєфі під землею (слово замовника 11.09.2026).
 	file.store_string(JSON.stringify({
 			"номер": OS.get_process_id(),
-			"порт": Net.PORT,
+			"порт": Net.port,
 			"світ": GameData.map_path().get_file(),
 			"коли": int(Time.get_unix_time_from_system())}))
 
@@ -426,7 +499,7 @@ func _tick_range(delta: float) -> void:
 ## ЛИШЕ при зайнятому порті, а новий сервер стирає стару мітку в `_ready`.
 func _exit_tree() -> void:
 	if Net.is_server:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mark_path()))
 
 
 ## Скільки коштує кадр сервера — щоб це було число, а не здогадка (P2).
@@ -661,9 +734,19 @@ func client_which_world(server_map: String) -> void:
 	# немає (слово замовника 11.09.2026). Тож не лишаємо його там, а
 	# перезапускаємо клієнт у світі сервера.
 	var user := Array(OS.get_cmdline_user_args())
+	# Прибираємо ОБИДВА прапорці й ставимо той, що в сервера. Доти
+	# прибирався лише `--світ2`: клієнт світу 2 до сервера світу 1
+	# перезапускався знову без `--світ1`, тобто у світі 2, — і так по колу.
+	user.erase("--світ1")
 	user.erase("--світ2")
-	if server_map == GameData.MAP2_PATH.get_file():
-		user.append("--світ2")
+	user.append("--світ2" if server_map == GameData.MAP2_PATH.get_file()
+			else "--світ1")
+	# Адресу, введену на сторінці, теж несемо: у рядку запуску її немає, і
+	# без неї перезапущений клієнт стукав би на 127.0.0.1.
+	if not user.has("--host"):
+		user.append_array(["--host", Net.host])
+	if not user.has("--порт"):
+		user.append_array(["--порт", str(Net.port)])
 	var engine := Array(OS.get_cmdline_args())
 	var cut := engine.find("--")
 	if cut >= 0:
@@ -671,7 +754,9 @@ func client_which_world(server_map: String) -> void:
 	# Шлях до гри — явно: рушій не повертає `--path` серед своїх
 	# аргументів, і без нього перезапущений клієнт, піднятий з кореня
 	# репозиторію (`run.sh`), відкрив би менеджер проєктів, а не гру.
-	if not engine.has("--path"):
+	# Зібраному клієнтові (Mac) `--path` не треба: гра в ньому вшита, а
+	# шлях змусив би його шукати проєкт у теці застосунку.
+	if OS.has_feature("editor") and not engine.has("--path"):
 		engine = ["--path", ProjectSettings.globalize_path("res://")] + engine
 	print("[світ] перезапускаю клієнт у світі сервера (%s). Щоб грати в "
 			% server_map + "іншому — зупини сервер на стартовій сторінці й "
@@ -723,12 +808,16 @@ func sign_in(login: String, password: String, register: bool = false) -> void:
 			print("[акаунт] %s увійшов, персонажів %d"
 					% [login, _signed[id]["персонажі"].size()]),
 			CONNECT_ONE_SHOT)
-	# Світ передаємо завжди: база віддає перелік персонажів лише того
-	# світу, у якому стоїть ЦЕЙ сервер (П-204). `register` світу не
-	# знає — новий акаунт однаково без персонажів.
-	store.call_rpc("register" if register else "login",
-			{"login": login, "password": password,
-			"world": GameData.world_key()})
+	# Світ — лише для входу: база віддає перелік персонажів того світу, у
+	# якому стоїть ЦЕЙ сервер (П-204). `register` світу не знає — новий
+	# акаунт однаково без персонажів. Доти світ ішов і в `register`, і
+	# PostgREST шукав `register(login, password, world)`, якої немає: 404,
+	# і «Завести акаунт» у грі відповідало «база не відповіла» (спіймано
+	# пробою remote_join 26.11.2026).
+	var args := {"login": login, "password": password}
+	if not register:
+		args["world"] = GameData.world_key()
+	store.call_rpc("register" if register else "login", args)
 
 
 ## Створити персонажа на своєму акаунті.

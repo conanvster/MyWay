@@ -105,6 +105,16 @@ func setup() -> void:
 			_sign_in.disabled = false
 			_sign_up.disabled = false)
 
+	# Версія збірки в куті: гравець, що скаржиться, називає її — і ясно,
+	# чи в нього той самий клієнт, що й сервер.
+	var version := Label.new()
+	version.text = "версія: " + preload("res://scripts/net.gd").build_version()
+	version.add_theme_font_size_override("font_size", 11)
+	version.add_theme_color_override("font_color", Color(0.55, 0.57, 0.6))
+	version.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	version.position = Vector2(12, -24)
+	_root.add_child(version)
+
 	_why = Label.new()
 	_why.add_theme_color_override("font_color", Color(1, 0.6, 0.5))
 	_why.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)

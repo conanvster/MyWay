@@ -103,6 +103,15 @@ func _go() -> void:
 	# обробки кадру, щоразу +1 зміна (`_light`). Знімки — у
 	# user://світло/<місце>-<варіант>.png, кадри — в журнал.
 	var light_mode := OS.get_cmdline_user_args().has("--світло")
+	# `--пори` (26.11.2026, П-273 після П-274): кожну серію світла — на
+	# чотири пори доби; `--кадрів N` — скільки кадрів міряти (на процесорному
+	# рендері кадри нічого не кажуть, а 60 — це хвилини на знімок).
+	var user_args := OS.get_cmdline_user_args()
+	if user_args.has("--пори"):
+		_hours = HOURS
+	var at_frames := user_args.find("--кадрів")
+	if at_frames >= 0 and at_frames + 1 < user_args.size():
+		_measure = maxi(1, int(user_args[at_frames + 1]))
 	if light_mode:
 		spots = [["площа Стільна", Vector3(0, 0, 6), 0.0, -14.0, 7.0]]
 		for one: Array in SPOTS:
@@ -158,23 +167,27 @@ func _go() -> void:
 		var draws := 0.0
 		var tris := 0.0
 		var started := Time.get_ticks_usec()
-		for i in 60:
+		for i in _measure:
 			await get_tree().process_frame
 			draws += Performance.get_monitor(
 					Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 			tris += Performance.get_monitor(
 					Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
-		var fps := 60.0 / ((Time.get_ticks_usec() - started) / 1e6)
+		var fps := _measure / ((Time.get_ticks_usec() - started) / 1e6)
 		var grass := Vector2i.ZERO
 		var meadow: Node = land.get_node_or_null("Різнотрав'я")
 		if meadow != null:
 			grass = meadow.counts()
 		print("[місце] %s — земля %.1f м · кадрів %.0f · малювань %.0f · "
-				% [name_of, ground, fps, draws / 60.0]
+				% [name_of, ground, fps, draws / _measure]
 				+ "трикутників %.0f тис. · трави %d клітинок, %d купок"
-				% [tris / 60.0 / 1000.0, grass.x, grass.y])
+				% [tris / _measure / 1000.0, grass.x, grass.y])
 		if light_mode:
-			await _light_series(land, name_of)
+			if _hours.is_empty():
+				await _light_series(land, name_of)
+			for row: Array in _hours:
+				_set_hour(world, float(row[1]))
+				await _light_series(land, "%s-%s" % [name_of, row[0]])
 			continue
 		Shot.take(get_tree().root)
 		# Ім'я знімка з роздільністю в секунду: між двома має пройти
@@ -184,6 +197,29 @@ func _go() -> void:
 			await get_tree().process_frame
 	print("[місця] знімки зроблено")
 	get_tree().quit()
+
+
+## Години для `--пори`: середина кожної пори з `data/doba.json`, ранок і
+## вечір — ближче до сходу й заходу, де світло найбільш «своє».
+const HOURS := [["1-ранок", 7.0], ["2-день", 13.0], ["3-вечір", 19.3],
+		["4-ніч", 23.5]]
+var _hours: Array = []
+var _measure := 60
+
+
+## Поставити світ на годину й зупинити годинник, щоб серія світла не
+## пливла посеред знімків.
+func _set_hour(world: Node, h: float) -> void:
+	var day: DayCycle = world.get("day")
+	if day == null:
+		print("‼ у світу немає доби (DayCycle)")
+		return
+	day.fixed_hour = h
+	day.apply(h)
+	day.set_process(false)
+	# Серія світла бере за «зараз» те, що поставила доба.
+	_base.clear()
+	print("[світло] година %.1f — %s" % [h, day.part_of(h)])
 
 
 const LIGHTS := ["1-зараз", "2-agx", "3-agx-ssil", "4-agx-ssil-glow",
@@ -204,9 +240,9 @@ func _light_series(land: Node, name_of: String) -> void:
 		for i in 20:
 			await get_tree().process_frame
 		var started := Time.get_ticks_usec()
-		for i in 60:
+		for i in _measure:
 			await get_tree().process_frame
-		var fps := 60.0 / ((Time.get_ticks_usec() - started) / 1e6)
+		var fps := _measure / ((Time.get_ticks_usec() - started) / 1e6)
 		await RenderingServer.frame_post_draw
 		var path := "user://світло/%s-%s.png" % [name_of.replace(" ", "_")
 				.replace(",", ""), LIGHTS[k]]
@@ -220,7 +256,8 @@ func _light(air: Environment, step: int) -> void:
 		air.set(key, _base[key])
 	if step >= 1:
 		air.tonemap_mode = Environment.TONE_MAPPER_AGX
-		air.tonemap_exposure = 1.1
+		# Від експозиції, яку поставила доба, а не стала 1,1.
+		air.tonemap_exposure = float(_base["tonemap_exposure"]) * 1.1
 	if step >= 2:
 		air.ssil_enabled = true
 		air.ssil_radius = 5.0

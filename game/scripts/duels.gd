@@ -169,6 +169,10 @@ func accept(to: int, a: Node, b: Node) -> Dictionary:
 	_slot_of[from] = slot
 	_slot_of[to] = slot
 	link.report(from, "[арена] %s проти %s, місце %d" % [_name(from), _name(to), slot])
+	# В-12: де сервер запам'ятав кожного — з цим звіряє клієнт.
+	print("[арена] назад запам'ятав: %d (%.1f, %.1f), %d (%.1f, %.1f)"
+			% [from, a.global_position.x, a.global_position.z,
+			   to, b.global_position.x, b.global_position.z])
 	return {"місце": slot, "хто": [from, to]}
 
 

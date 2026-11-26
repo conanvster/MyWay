@@ -470,6 +470,11 @@ static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
 		_piece(body, one[0], one[1], one[2])
 		if one[0] == window:
 			_piece(body, frame, one[1], one[2])
+			# Уночі світиться не кожне вікно (хтось уже спить) — від
+			# місця дому, однаково в кожного гравця.
+			if (k * 7 + absi(luck >> 5)) % 3 == 0:
+				body.get_child(body.get_child_count() - 1) \
+						.set_meta("dark_glass", true)
 			k += 1
 			if shutters != "" and (k + absi(luck)) % 2 == 0:
 				_piece(body, KIT % shutters, one[1], one[2])
@@ -479,6 +484,7 @@ static func house_body(body: Node3D, house: Dictionary, shown: bool) -> void:
 					one[2])
 			_piece(body, KIT % "DoorFrame_Round_WoodDark", one[1], one[2])
 			_doorstep(body, one[1])
+			_by_door(body, one[1], luck)
 	# Кути: між торцями модулів лишалась щілина на товщину лиця.
 	for f in floors:
 		for cx: float in [-edge_x, edge_x]:
@@ -595,9 +601,16 @@ static func _swap(body: Node3D, style: String, roof: String) -> void:
 		var view: MeshInstance3D = child
 		if view.name == "Фронтони":
 			continue
+		var dark := view.get_parent() != null \
+				and view.get_parent().has_meta("dark_glass")
 		for s in view.mesh.get_surface_count():
 			var was: Material = view.mesh.surface_get_material(s)
-			if was != null and table.has(was.resource_name):
+			if was == null:
+				continue
+			if was.resource_name in NIGHT_GLASS:
+				view.set_surface_override_material(s,
+						_glass(not dark, was.resource_name))
+			elif table.has(was.resource_name):
 				view.set_surface_override_material(s, table[was.resource_name])
 
 
@@ -926,6 +939,66 @@ static func _iron() -> StandardMaterial3D:
 		made.roughness = 0.55
 		_paints["залізо"] = made
 	return _paints["залізо"]
+
+
+## Скло, що світиться вночі: вікна набору й ліхтарі Poly Haven. Матеріали
+## спільні на все місто, тож зміна доби міняє одне число, а не сотні.
+const NIGHT_GLASS := ["MI_WindowGlass", "wooden_lantern_01_glass"]
+## Сила світла скла в найтемнішу ніч. Glow бере лише те, що яскравіше за
+## поріг середовища (`DayCycle.GLOW_FROM`), — сонячні стіни не світяться.
+const GLASS_NIGHT := 4.0
+const LAMP_NIGHT := 7.0
+
+
+## Скло: «світле» (горить уночі) чи «темне» (тьмяне завжди). `what` —
+## назва матеріалу набору: ліхтар горить яскравіше за вікно.
+static func _glass(lit: bool, what: String) -> StandardMaterial3D:
+	var key := "скло %s %s" % [what, lit]
+	if not _paints.has(key):
+		var made := StandardMaterial3D.new()
+		made.albedo_color = Color(0.10, 0.09, 0.08)
+		made.roughness = 0.15
+		made.metallic = 0.2
+		if lit:
+			made.emission_enabled = true
+			made.emission = Color(1.0, 0.70, 0.36)
+			made.emission_energy_multiplier = 0.0
+			made.set_meta("night_energy",
+					LAMP_NIGHT if what != "MI_WindowGlass" else GLASS_NIGHT)
+		_paints[key] = made
+	return _paints[key]
+
+
+## Скільки ночі: 0 — день (скло не світить), 1 — ніч. Кличе `DayCycle`.
+static func set_night(night: float) -> void:
+	for key: String in _paints:
+		var made: Material = _paints[key]
+		if made is StandardMaterial3D and made.has_meta("night_energy"):
+			(made as StandardMaterial3D).emission_energy_multiplier = \
+					float(made.get_meta("night_energy")) * night
+
+
+## Дрібнота біля дверей (план §4.3 «розсипом за правилами»): у половини
+## домів ліхтар на кронштейні праворуч від дверей, у двох третин — бочка,
+## ящик чи відро ліворуч. Від місця дому — однаково в кожного гравця.
+## Лише вигляд: сервер їх не знає, крізь них ходять (як крізь тин).
+static func _by_door(body: Node3D, at: Vector3, luck: int) -> void:
+	if absi(luck >> 7) % 2 == 0:
+		var arm := MeshInstance3D.new()
+		var bar := BoxMesh.new()
+		bar.size = Vector3(0.05, 0.05, 0.42)
+		arm.mesh = bar
+		arm.material_override = _iron()
+		arm.position = at + Vector3(0.95, 2.62, 0.21)
+		body.add_child(arm)
+		# Ліхтар висить за ручку (верх ручки — 0,39 м над його низом).
+		_prop(body, "wooden_lantern_01", at + Vector3(0.95, 2.2, 0.36))
+	var what: String = ["", "wine_barrel_01", "wooden_crate_01",
+			"wooden_bucket_01", "wine_barrel_01", ""][absi(luck >> 9) % 6]
+	if what != "":
+		_prop(body, what, at + Vector3(-1.35, 0.0, 0.55))
+		if what == "wooden_crate_01" and absi(luck >> 12) % 2 == 0:
+			_prop(body, "wooden_crate_02", at + Vector3(-1.35, 0.34, 0.55))
 
 
 ## Утоптаний ґрунт перед дверима: дім углибині кварталу інакше стоїть

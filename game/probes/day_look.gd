@@ -1,7 +1,10 @@
 extends Node
 ## Зміна доби (П-274): та сама місцина світу 2 о восьмій порі.
 ##
-##     ./run.sh --доба [тека]
+##     ./run.sh --доба [тека] [--вулиця]
+##
+## `--вулиця` — не з висоти на місто, а з вулиці перед дверима дому з
+## ліхтарем: видно скло вікон і ліхтар уночі (план §4.3).
 ##
 ## Знімки `<тека>/<година>-<пора>.png` і аркуш у журнал: сила сонця,
 ## місяць, зорі, світлячки — щоб перевірити не лише на око.
@@ -57,6 +60,24 @@ func _go() -> void:
 	at.y = land.height_at(at.x, at.z) + 12.0
 	var look := Vector3(float(mid[0]), land.height_at(float(mid[0]),
 			float(mid[2])) + 6.0, float(mid[2]))
+	if "--вулиця" in OS.get_cmdline_user_args():
+		for house: Dictionary in town["будинки"]:
+			if house.has("вид") or bool(house.get("відкрито", false)) \
+					or bool(house.get("без дверей", false)) \
+					or absi(hash(house["де"]) >> 7) % 2 != 0:
+				continue
+			var p: Array = house["де"]
+			var turn := deg_to_rad(float(house.get("поворот", 0.0)))
+			var front := Vector3(sin(turn), 0, cos(turn))
+			var deep := float(house["модулі"][1]) * TownLook.MODULE * 0.5
+			var door := Vector3(float(p[0]), 0, float(p[2])) + front * deep
+			door.y = land.surface_y(door.x, door.z)
+			look = door + Vector3(0, 1.8, 0)
+			at = door + front * 5.0 + front.cross(Vector3.UP) * 2.0
+			at.y = land.surface_y(at.x, at.z) + 1.9
+			print("  дім з ліхтарем: %s, поворот %s"
+					% [p, house.get("поворот")])
+			break
 	var eye := Camera3D.new()
 	eye.far = 1200.0
 	eye.fov = 62.0

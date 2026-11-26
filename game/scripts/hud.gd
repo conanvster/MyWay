@@ -3459,10 +3459,10 @@ func _build_cast() -> void:
 ## нижньому лівому, можна перемістити, згорнути, розгорнути»). Видно
 ## одразу, хрестика нема — лише згорнути. Текст можна виділити й
 ## скопіювати; колесо гортає назад.
-func _build_log() -> void:
+func _build_log(inner: Vector2 = LOG_INNER) -> void:
 	_log_box = WindowBox.new()
 	_log_box.name = "ВікноЛогу"
-	_log_box.setup("Лог", LOG_INNER)
+	_log_box.setup("Лог", inner)
 	_log_box.add_fold()
 	_log_box.no_close()
 	_log_box.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
@@ -3471,7 +3471,7 @@ func _build_log() -> void:
 	_root.add_child(_log_box)
 	_log_text = RichTextLabel.new()
 	_log_text.name = "Рядки"
-	_log_text.size = LOG_INNER
+	_log_text.size = inner
 	_log_text.bbcode_enabled = true
 	_log_text.scroll_following = true
 	_log_text.selection_enabled = true
@@ -3497,6 +3497,46 @@ func log_line(text: String) -> void:
 
 
 ## Скільки рядків у «Лозі» — для проб.
+## В-8: три розкладки «Логу», коли екран вузький і лог налазить на панель
+## (масштаб ×1,5: вікно 1280×720 — це 853 точки завширшки). Поки лише для
+## знімків на вибір замовника (`probes/log_look.gd`); у грі — як було.
+## «А» — лог вужчий і вищий, у вільному місці ліворуч від панелі;
+## «Б» — лог тієї самої ширини, піднятий над верхом панелі;
+## «В» — лог на місці, панель зсувається праворуч від нього.
+func place_log(variant: String) -> void:
+	var view := get_viewport().get_visible_rect().size
+	var wide := CELL * 7 + GAP * 6
+	var panel_left := (view.x - wide) * 0.5
+	var log_right := 12.0 + _log_box.size.x
+	var lift := (_strips - 1) * (CELL + GAP)
+	match variant:
+		"А":
+			var fit := maxf(160.0, panel_left - 12.0 - 12.0
+					- (_log_box.size.x - LOG_INNER.x))
+			var inner := Vector2(minf(LOG_INNER.x, fit), 210.0)
+			var lines := _log_text.text
+			_log_box.free()
+			_build_log(inner)
+			_log_text.text = lines
+			_log_box.offset_left = 12
+			_log_box.offset_top = -_log_box.custom_minimum_size.y - 12
+		"Б":
+			if log_right + 12.0 > panel_left:
+				_log_box.offset_top = -_log_box.custom_minimum_size.y \
+						- CELL - 16 - lift - 12
+			_log_box.offset_left = 12
+		"В":
+			var shift := maxf(0.0, log_right + 12.0 - panel_left)
+			for box: Control in [_cells[0]["cell"].get_parent(), _cast_box]:
+				box.offset_left += shift
+				box.offset_right += shift
+	var size := _log_box.custom_minimum_size
+	_log_box.offset_bottom = _log_box.offset_top + size.y
+	_log_box.offset_right = _log_box.offset_left + size.x
+	_messages.offset_top = _log_box.offset_top - 12 - MESSAGES * 20
+	_messages.offset_bottom = _messages.offset_top
+
+
 func log_count() -> int:
 	return _log_text.get_paragraph_count() - 1
 

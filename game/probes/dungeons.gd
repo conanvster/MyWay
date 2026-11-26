@@ -9,6 +9,10 @@ extends Node
 ##         мапи PNG у стилі «Forge of the Gods» і числа; можна --headless
 ##     godot --path game res://scenes/dungeons.tscn -- --знімки <тека>
 ##         те саме плюс чотири знімки на підземелля з вікна
+##     … --знімки <тека> --світло А|Б|В [--лише 1,2,4]
+##         П-193, три варіанти світла: А — ліхтар довкола гравця, як у грі
+##         (1,2 на 14 м); Б — без ліхтаря, розсіяне втричі яскравіше;
+##         В — без ліхтаря, світильники вдвічі частіше
 ##
 ## Що друкує, щоб підземелля було видно й без картинки: чи все прохідне
 ## зв'язане (не лізучи на кручі), скільки кроків від входу до боса, яка
@@ -277,6 +281,13 @@ func _stage() -> Array:
 	lantern.light_color = Color(1.0, 0.9, 0.75)
 	lantern.light_energy = 1.0
 	lantern.omni_range = 9.0
+	match _arg("--світло"):
+		"А":
+			# Як у грі (`client_view.gd`, ліхтар гравця).
+			lantern.light_energy = 1.2
+			lantern.omni_range = 14.0
+		"Б", "В":
+			lantern.light_energy = 0.0
 	world.add_child(lantern)
 	return [world, holder, eye, lantern]
 
@@ -288,8 +299,14 @@ func _raise(world: Node3D, holder: WorldEnvironment, i: int) -> DungeonView:
 	view.name = id
 	world.add_child(view)
 	var started := Time.get_ticks_msec()
-	view.build(plan, _book.style_of(plan))
-	holder.environment = DungeonView.environment(_book.style_of(plan))
+	var style: Dictionary = _book.style_of(plan).duplicate()
+	match _arg("--світло"):
+		"Б":
+			style["темрява"] = float(style.get("темрява", 0.1)) * 3.0
+		"В":
+			style["крок_світла"] = float(style.get("крок_світла", 8.0)) * 0.5
+	view.build(plan, style)
+	holder.environment = DungeonView.environment(style)
 	print("  %d · %s: 3D за %d мс · трикутників %d · світел %d · оздоби %d"
 			% [i + 1, id, Time.get_ticks_msec() - started, view.triangles,
 			   view.lights_made, view.props_made])

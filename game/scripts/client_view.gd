@@ -1462,6 +1462,15 @@ func _demo_duel(delta: float) -> bool:
 				% Vector2(me.global_position.x - _duel_from.x,
 					me.global_position.z - _duel_from.z).length()
 				+ "живий %s, здоров'я %d" % [me.is_alive(), me.hp])
+		# В-12: «місце виклику» клієнта — не міра. Клієнт, що вантажить
+		# світ, кілька секунд не малює кадрів, а сервер тим часом уже веде
+		# його до ведучого: клієнт запам'ятовує місце появи (0, 0), хоч
+		# сервер вертає точно туди, де той стояв у мить згоди. Тому
+		# `check.sh` звіряє «тепер» із точкою, яку запам'ятав сервер.
+		print("[арена] показ: я %d, тепер (%.1f, %.1f), "
+				% [_world.multiplayer.get_unique_id(), me.global_position.x,
+				   me.global_position.z]
+				+ "місце виклику (%.1f, %.1f)" % [_duel_from.x, _duel_from.z])
 		return true
 	var other_id := 0
 	for id: int in _creatures:

@@ -20,6 +20,10 @@ extends Node
 const PATH := "res://data/doba.json"
 ## Як часто перераховувати: світло міняється повільно, щокадру не треба.
 const EVERY := 0.25
+## Glow (П-273 його не взяв: удень світитись нічому) — лише вночі і лише
+## те, що яскравіше за поріг: скло вікон і ліхтарів міст, світлячки.
+## Сонячна стіна до порогу не дотягує. Удень вимкнено — нічого не коштує.
+const GLOW_FROM := 1.6
 
 var land: Node = null
 var sun: DirectionalLight3D = null
@@ -103,6 +107,10 @@ func _remember() -> void:
 		"сонце": sun.light_color if sun != null else Color.WHITE,
 		"сила сонця": sun.light_energy if sun != null else 1.0,
 	}
+	_air.glow_hdr_threshold = GLOW_FROM
+	_air.glow_intensity = 0.9
+	_air.glow_bloom = 0.0
+	_air.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	if _sky != null:
 		_sky.sky_cover = _stars()
 		_sky.sky_cover_modulate = Color(1, 1, 1, 0)
@@ -176,6 +184,11 @@ func apply(h: float) -> void:
 		}
 		_mix_air()
 		_air.tonemap_exposure = float(_base["експозиція"]) * float(k["експозиція"])
+	# Вікна й ліхтарі: запалюють, коли сонце сідає нижче за 0,6 денної сили.
+	var night := clampf(1.0 - float(k["сила сонця"]) / 0.6, 0.0, 1.0)
+	TownLook.set_night(night)
+	if _air != null:
+		_air.glow_enabled = night > 0.01
 	if _flies != null:
 		var glow := clampf(float(k["світлячки"]), 0.0, 1.0)
 		_fly_glow.albedo_color.a = glow

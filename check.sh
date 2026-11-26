@@ -437,10 +437,12 @@ run_trade() {
 # Два справжні клієнти через справжній сервер: ведучий (`--веде`) кличе
 # другого на арену, той погоджується, обох переносить, б'є лише ведучий.
 # Звіряємо: обидва побували на арені, переможений не загубив речей, і
-# обох повернуло туди, звідки покликали. Ведучий стоїть на місці — йому
-# не далі 1 м; другий у мить згоди ще йде до ведучого (кличуть за 4 м, а
-# підходить він до 2,5), і його останнє місце на клієнті розходиться з
-# серверним на крок-два — йому не далі 3 м.
+# обох повернуло туди, звідки покликали: місце клієнта після повернення
+# — не далі 1 м від точки, яку сервер запам'ятав у мить згоди (рядок
+# «назад запам'ятав» у журналі сервера). Не з «місцем виклику» клієнта
+# (В-12, 26.11.2026): клієнт, що вантажить світ, кілька секунд не малює
+# кадрів, і за цей час сервер доводить його до ведучого, а клієнт ще
+# пам'ятає місце появи — так виходило «9,8 м» при точному поверненні.
 run_duel() {
     head_of "Арена: виклик, бій за згодою, повернення"
     stop_server
@@ -457,8 +459,8 @@ run_duel() {
     own_client2=$!
     local waited=0
     while [ "$waited" -lt 150 ]; do
-        if grep -q '\[арена\] показ закінчив' "$logs/duel-lead.log" \
-            && grep -q '\[арена\] показ закінчив' "$logs/duel-follow.log"
+        if grep -q '\[арена\] показ: я ' "$logs/duel-lead.log" \
+            && grep -q '\[арена\] показ: я ' "$logs/duel-follow.log"
         then
             break
         fi
@@ -470,22 +472,36 @@ run_duel() {
     own_client=""
     own_client2=""
     printf '    (бій зайняв %d с)\n' "$waited"
+    local kept
+    kept=$(grep -m1 -o "назад запам'ятав: .*" "$logs/server-duel.log")
 
-    local side log line far most
+    local side log line far me
     for side in lead follow; do
-        most=$([ "$side" = lead ] && echo 1.0 || echo 3.0)
         log="$logs/duel-$side.log"
         grep -q '\[арена\] показ: на арені' "$log" \
             && say_ok "$side: $(grep -m1 -o 'на арені, стою в .*' "$log")" \
             || { say_bad "$side: на арену не перенесло"; continue; }
-        line=$(grep -m1 -o 'показ закінчив: .*' "$log")
-        far=$(printf '%s' "$line" | grep -o 'за [0-9.]* м' | grep -o '[0-9.]*')
-        if [ -z "$far" ]; then
+        line=$(grep -m1 -o 'показ: я [0-9]*, тепер .*' "$log")
+        me=$(printf '%s' "$line" | grep -o 'я [0-9]*' | grep -o '[0-9]*')
+        # Відстань від «тепер» клієнта до точки, яку сервер запам'ятав
+        # для цього ж номера: «… N (x, z), M (x, z)».
+        far=$(LC_ALL=C awk -v line="$line" -v kept="$kept" -v me="$me" 'BEGIN {
+            if (me == "" || kept == "") exit
+            n = split(kept, w, /[ (),:]+/)
+            for (i = 1; i <= n - 2; i++) if (w[i] == me) { kx = w[i+1]; kz = w[i+2]; ok = 1 }
+            if (!ok) exit
+            sub(/.*тепер \(/, "", line)
+            split(line, v, /[,)] */)
+            dx = v[1] - kx; dz = v[2] - kz
+            printf "%.1f", sqrt(dx * dx + dz * dz) }')
+        if [ -z "$line" ]; then
             say_bad "$side: назад не повернуло за 150 с"
-        elif awk -v f="$far" -v m="$most" 'BEGIN { exit !(f <= m) }'; then
-            say_ok "$side: ${line#показ закінчив: }"
+        elif [ -z "$far" ]; then
+            say_bad "$side: сервер не записав, куди вертати ($kept)"
+        elif awk -v f="$far" 'BEGIN { exit !(f <= 1.0) }'; then
+            say_ok "$side: назад за $far м від місця, яке запам'ятав сервер"
         else
-            say_bad "$side: повернуло задалеко — $line"
+            say_bad "$side: повернуло задалеко — $far м від місця сервера ($line; $kept)"
         fi
     done
     grep -q 'поразка. речі не загублено' "$logs/duel-follow.log" \

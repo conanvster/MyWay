@@ -49,3 +49,4 @@ game/models/own/avatary/elf-s808-mixamo/
 # фото — лише на диску, доки замовник не вирішить. Без них дерево бере
 # сірі матеріали (перевірка `ResourceLoader.exists`).
 game/assets/baobab/
+art/monsters/_аркуш-каркас/

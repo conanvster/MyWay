@@ -21,8 +21,10 @@
     python3 tools/comfyui/monster3d.py звільнити
         Вивантажити моделі з відеопам'яті ComfyUI.
 
-ComfyUI має вже працювати: `cd ~/ComfyUI && venv/bin/python main.py
---listen 127.0.0.1 --port 8188 --cache-none` (20.11.2026: без `--cache-none` копії Qwen-Edit і
+З 26.11.2026 графи йдуть через диспетчер відеокарти ~/gpu-broker (проксі ComfyUI :8189): він сам
+запускає ComfyUI з `--cache-none`, чекає пам'яті й звільняє її після графа — окремо ComfyUI не
+запускати; напряму (старий спосіб) — `COMFY_URL=http://127.0.0.1:8188`. Раніше: `cd ~/ComfyUI &&
+venv/bin/python main.py --listen 127.0.0.1 --port 8188 --cache-none` (20.11.2026: без `--cache-none` копії Qwen-Edit і
 Pixal3D лишаються в оперативці — понад 20 ГБ з 30, і фонові прогони знімає нестача пам'яті). Відеопам'ять має бути вільна (LM Studio:
 `~/.lmstudio/bin/lms unload --all`).
 """
@@ -36,7 +38,8 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 COMFY = os.path.expanduser("~/ComfyUI")
-URL = "http://127.0.0.1:8188"
+# черга на відеокарту — ~/gpu-broker/README.md (слово замовника 26.11.2026)
+URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8189")
 
 # Слова, перевірені на зайці 23.09.2026. «{хто}» — хто на референсі
 # англійською (hare, wolf…); решта — щоб Kontext не малював НОВОГО звіра,

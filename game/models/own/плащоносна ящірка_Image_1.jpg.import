@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://g4q6o0iqfn6f"
-path="res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.ctex"
+path.s3tc="res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.s3tc.ctex"
+path.etc2="res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "8ab1e5a34626d03ef3d5ec35eedd6156"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/плащоносна ящірка_Image_1.jpg"
-dest_files=["res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.ctex"]
+dest_files=["res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.s3tc.ctex", "res://.godot/imported/плащоносна ящірка_Image_1.jpg-120679d6d6ba62a9f313d501bce7ebfd.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

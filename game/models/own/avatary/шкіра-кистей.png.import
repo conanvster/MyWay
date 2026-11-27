@@ -3,19 +3,21 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b2w4r3jm3hueu"
-path="res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.ctex"
+path.s3tc="res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.s3tc.ctex"
+path.etc2="res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://models/own/avatary/шкіра-кистей.png"
-dest_files=["res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.ctex"]
+dest_files=["res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.s3tc.ctex", "res://.godot/imported/шкіра-кистей.png-f5de4e1fdf8afb250e50cf6ca04babeb.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -36,5 +38,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

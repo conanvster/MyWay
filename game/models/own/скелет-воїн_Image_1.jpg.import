@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://brvo0ph2280ka"
-path="res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.ctex"
+path.s3tc="res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.s3tc.ctex"
+path.etc2="res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "877ce75bbcc7ff26746f34b4c9a9ab16"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/скелет-воїн_Image_1.jpg"
-dest_files=["res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.ctex"]
+dest_files=["res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.s3tc.ctex", "res://.godot/imported/скелет-воїн_Image_1.jpg-de01b8458746bd7bbd88062074f9049c.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

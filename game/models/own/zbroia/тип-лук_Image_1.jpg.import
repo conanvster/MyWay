@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d3o5scipuur22"
-path="res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.ctex"
+path.s3tc="res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.s3tc.ctex"
+path.etc2="res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "6096f34b54e06c76d39464a045cca09f"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/zbroia/тип-лук_Image_1.jpg"
-dest_files=["res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.ctex"]
+dest_files=["res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.s3tc.ctex", "res://.godot/imported/тип-лук_Image_1.jpg-7c1aaf5ddf5cce77d014294f4d40b30f.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

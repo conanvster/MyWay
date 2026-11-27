@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://sxj00r1bt5pw"
-path="res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.ctex"
+path.s3tc="res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.s3tc.ctex"
+path.etc2="res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "cd635009ad1754b65f8ffa3529aa1fa6"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/zbroia/тип-щит_Image_1.jpg"
-dest_files=["res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.ctex"]
+dest_files=["res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.s3tc.ctex", "res://.godot/imported/тип-щит_Image_1.jpg-11fba48970fa4e38e79f8dc3c3c956b2.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

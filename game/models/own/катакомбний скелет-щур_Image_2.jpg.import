@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b75l2lpe62xdu"
-path="res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.ctex"
+path.s3tc="res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.s3tc.ctex"
+path.etc2="res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "fe39698fe6dac33e20e732c6869de043"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/катакомбний скелет-щур_Image_2.jpg"
-dest_files=["res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.ctex"]
+dest_files=["res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.s3tc.ctex", "res://.godot/imported/катакомбний скелет-щур_Image_2.jpg-f3ee26c0d6c089ae1e3c5fc3ef5da246.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

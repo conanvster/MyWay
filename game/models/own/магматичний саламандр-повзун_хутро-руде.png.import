@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bx5cv3f5m5c6j"
-path="res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.ctex"
+path.s3tc="res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.s3tc.ctex"
+path.etc2="res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "7c76bdf79330b29dcc747678f9333c03"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/магматичний саламандр-повзун_хутро-руде.png"
-dest_files=["res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.ctex"]
+dest_files=["res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.s3tc.ctex", "res://.godot/imported/магматичний саламандр-повзун_хутро-руде.png-402d73fa8e143511420c847a1357169b.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

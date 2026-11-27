@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://q7xe7il6enrb"
-path="res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.ctex"
+path.s3tc="res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.s3tc.ctex"
+path.etc2="res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "a7f4cca7d5a26e5217913716d966c454"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/заєць_Image_2.jpg"
-dest_files=["res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.ctex"]
+dest_files=["res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.s3tc.ctex", "res://.godot/imported/заєць_Image_2.jpg-a857a7cf8ec70c853009890b7bccb46c.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

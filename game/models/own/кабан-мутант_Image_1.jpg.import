@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfkf742q0r0vt"
-path="res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.ctex"
+path.s3tc="res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.s3tc.ctex"
+path.etc2="res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "712d53d42df15a31d352fac6c83b5c49"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/кабан-мутант_Image_1.jpg"
-dest_files=["res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.ctex"]
+dest_files=["res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.s3tc.ctex", "res://.godot/imported/кабан-мутант_Image_1.jpg-240df89dfd5ff25e5717a0d13628b4fd.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

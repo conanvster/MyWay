@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b6gm4la85xmw4"
-path="res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.ctex"
+path.s3tc="res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.s3tc.ctex"
+path.etc2="res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "0bfa4a0e1e8f374ea6d4eca79fd219a5"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/печерний ведмідь_Image_2.jpg"
-dest_files=["res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.ctex"]
+dest_files=["res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.s3tc.ctex", "res://.godot/imported/печерний ведмідь_Image_2.jpg-32206c899866fef9f604e6cfa84c60af.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

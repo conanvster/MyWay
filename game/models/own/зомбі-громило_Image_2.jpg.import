@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://be4nb5moonm2d"
-path="res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.ctex"
+path.s3tc="res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.s3tc.ctex"
+path.etc2="res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "0824e56d95a53a72620620f0eed39c16"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/зомбі-громило_Image_2.jpg"
-dest_files=["res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.ctex"]
+dest_files=["res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.s3tc.ctex", "res://.godot/imported/зомбі-громило_Image_2.jpg-39f3ef4c990a863c52c1929457c95ec0.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

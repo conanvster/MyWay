@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://ds5q72rignnn8"
-path="res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.ctex"
+path.s3tc="res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.s3tc.ctex"
+path.etc2="res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "ef54c9ad537cd320a9ba29353062095c"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/гнол-мисливець_Image_1.jpg"
-dest_files=["res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.ctex"]
+dest_files=["res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.s3tc.ctex", "res://.godot/imported/гнол-мисливець_Image_1.jpg-e688079be83b32a58e8aaad9670e5fc4.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

@@ -3,9 +3,11 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://c2kduqb8xx81v"
-path="res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.ctex"
+path.s3tc="res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.s3tc.ctex"
+path.etc2="res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.etc2.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
 }
 generator_parameters={
 "md5": "e0a120c6abd618f5afc030d4da9f0653"
@@ -14,11 +16,11 @@ generator_parameters={
 [deps]
 
 source_file="res://models/own/химера_Image_0_reskin.jpg"
-dest_files=["res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.ctex"]
+dest_files=["res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.s3tc.ctex", "res://.godot/imported/химера_Image_0_reskin.jpg-2deff6c533a62112c16517f5dafe52fc.etc2.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -39,5 +41,5 @@ process/premult_alpha=false
 process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
-process/size_limit=0
+process/size_limit=2048
 detect_3d/compress_to=1

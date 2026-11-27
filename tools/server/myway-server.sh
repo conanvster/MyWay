@@ -167,6 +167,11 @@ cmd_restart() {
 cmd_update_game() {
     local delay="${1:-60}"
     echo "═══ оновлення гри: збірка → публікація → перезапуск ($(date '+%d.%m %T'))"
+    # Нові текстури моделей (аватари, монстри) — стиснути до збірки: без цього
+    # вони йдуть у гру 4K без стиснення (27.11.2026 пакет 3,2 ГБ, iMac гальмував).
+    python3 "$repo/tools/stysnuty_tekstury.py"
+    (cd "$repo/game" && godot --headless --import > "$log_dir/import.log" 2>&1) \
+        || say_err "імпорт текстур завершився з помилкою — $log_dir/import.log"
     (cd "$repo" && tools/zibraty.sh)
     (cd "$repo" && tools/opublikuvaty.sh)
     # Сервіс оновлень працює з коду репозиторію: після оновлення коду він має

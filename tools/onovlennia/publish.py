@@ -155,6 +155,9 @@ def main():
     parser.add_argument("--min-release", type=int,
                         help="мінімальний випуск клієнта (типово = поточний)")
     parser.add_argument("--manifest-only", choices=PLATFORMS)
+    parser.add_argument("--config-only", action="store_true",
+                        help="лише оновити updater_version у config.json "
+                             "(після нової збірки апдейтера), файли не чіпати")
     parser.add_argument("platforms", nargs="*", help="linux macos windows")
     args = parser.parse_args()
     for platform in args.platforms:
@@ -165,6 +168,17 @@ def main():
     updates = os.path.realpath(args.updates)
     config_path = os.path.join(updates, "config.json")
     config = read_json(config_path) or {}
+
+    if args.config_only:
+        if not config:
+            sys.exit("‼ %s ще немає — спершу повна публікація" % config_path)
+        old = config.get("updater_version")
+        config["updater_version"] = updater_version(repo)
+        config["published"] = datetime.datetime.now().isoformat(timespec="seconds")
+        write_json(config_path, config)
+        print("✓ updater_version %s → %s (старі апдейтери покажуть «вийшла нова "
+              "версія апдейтера»)" % (old, config["updater_version"]))
+        return
 
     if args.manifest_only:
         platform = args.manifest_only

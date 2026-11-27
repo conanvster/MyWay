@@ -350,6 +350,16 @@ func _start_status_file() -> void:
 		return
 	DirAccess.make_dir_recursive_absolute(_status_path.get_base_dir())
 	_status_since = int(Time.get_unix_time_from_system())
+	at = args.find("--команда")
+	_command_path = args[at + 1] if at >= 0 and at + 1 < args.size() \
+			else _status_path.get_base_dir().path_join("команда.json")
+	# Стара команда від попереднього запуску не має зупинити новий сервер.
+	DirAccess.remove_absolute(_command_path)
+	var poll := Timer.new()
+	poll.wait_time = 1.0
+	poll.autostart = true
+	poll.timeout.connect(_tick_command)
+	add_child(poll)
 	var timer := Timer.new()
 	timer.wait_time = STATUS_EVERY
 	timer.autostart = true
@@ -376,6 +386,8 @@ func _write_status() -> void:
 			"максимум": Net.MAX_PLAYERS,
 			"гравці": online,
 			"запущено": _status_since,
+			"зупинка": {} if _stop_at == 0 else {
+					"о": _stop_at, "чому": _stop_why},
 			"оновлено": int(Time.get_unix_time_from_system())}, " ")
 	# Через тимчасовий файл і перейменування: сервіс не прочитає півфайла.
 	var tmp := _status_path + ".tmp"
@@ -390,6 +402,92 @@ func _write_status() -> void:
 	if err != OK:
 		print("[світ] ‼ стан для вікі не перейменовано: %s"
 				% error_string(err))
+
+
+## Керування сервером ззовні — значок у треї й `tools/server/myway-server.sh`
+## (слово замовника 27.11.2026: «не організована процедура перезапуску та
+## інформування про необхідність оновити лаунчер та гру … стартонути,
+## зупинити, оновити»). Команда — файл поруч зі станом:
+##   {"дія": "зупинка", "через": 60, "чому": "вийшла нова версія гри"}
+##   {"дія": "скасувати"}
+## Сервер забирає файл, попереджає всіх у грі відліком (`STOP_WARN`), у
+## мить зупинки зберігає кожного й виходить сам — без `kill`, тож нічого не
+## губиться. Скільки лишилось — і в status.json («зупинка»), і на вікі.
+const STOP_WARN := [600, 300, 120, 60, 30, 10, 5]
+const STOP_SAVE_WAIT := 3.0
+var _command_path := ""
+var _stop_at := 0
+var _stop_why := ""
+var _stop_warned: Array = []
+var _stopping := false
+
+
+func _tick_command() -> void:
+	if _stopping:
+		return
+	if FileAccess.file_exists(_command_path):
+		var raw := FileAccess.get_file_as_string(_command_path)
+		DirAccess.remove_absolute(_command_path)
+		var cmd: Variant = JSON.parse_string(raw)
+		if not cmd is Dictionary:
+			print("[світ] ‼ команда не JSON: %s" % raw.left(200))
+		elif cmd.get("дія") == "скасувати":
+			if _stop_at != 0:
+				_stop_at = 0
+				_stop_warned.clear()
+				link.to_all(&"client_notice", ["Перезапуск сервера скасовано"])
+				print("[світ] зупинку скасовано")
+				_write_status()
+		elif cmd.get("дія") == "повідомити":
+			var said := str(cmd.get("текст", "")).strip_edges()
+			if not said.is_empty():
+				link.to_all(&"client_notice", [said])
+				print("[світ] повідомлення гравцям: %s" % said)
+		elif cmd.get("дія") == "зупинка":
+			var after := maxi(int(cmd.get("через", 0)), 0)
+			_stop_at = int(Time.get_unix_time_from_system()) + after
+			_stop_why = str(cmd.get("чому", ""))
+			_stop_warned = STOP_WARN.filter(func(s: int) -> bool: return s > after)
+			print("[світ] зупинка через %d с: %s" % [after, _stop_why])
+			_warn_stop(after)
+			_write_status()
+		else:
+			print("[світ] ‼ невідома команда: %s" % raw.left(200))
+	if _stop_at == 0:
+		return
+	var left := _stop_at - int(Time.get_unix_time_from_system())
+	if left <= 0:
+		_stop_now()
+		return
+	for mark: int in STOP_WARN:
+		if left <= mark and not _stop_warned.has(mark):
+			_stop_warned.append(mark)
+			_warn_stop(left)
+			break
+
+
+func _warn_stop(left: int) -> void:
+	var when := "зараз" if left <= 0 else "через %s" % (
+			"%d хв" % maxi(roundi(left / 60.0), 1) if left >= 60 else "%d с" % left)
+	var text := "Сервер зупиняється %s" % when
+	if not _stop_why.is_empty():
+		text += ": %s" % _stop_why
+	text += ". Прогрес збережено. Далі заходь через апдейтер — він оновить гру, якщо треба."
+	link.to_all(&"client_notice", [text])
+	print("[світ] попередження гравцям: %s" % text)
+
+
+func _stop_now() -> void:
+	_stopping = true
+	_stop_at = 0
+	_warn_stop(0)
+	_save_everyone()
+	print("[світ] зберігаю %d гравців і зупиняюсь" % _names.size())
+	# Збереження йде запитами до бази — даємо їм дійти, тоді виходимо.
+	await get_tree().create_timer(STOP_SAVE_WAIT).timeout
+	DirAccess.remove_absolute(_status_path)
+	print("[світ] сервер зупинено командою")
+	get_tree().quit(0)
 
 
 func _mark_ready() -> void:

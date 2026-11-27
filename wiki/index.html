@@ -77,7 +77,7 @@
     (i.files||[]).forEach(function(f){
       var s=document.querySelector('.sz[data-size="'+f.os+'"]'); if(s) s.textContent=mb(f.size);
     });
-    var m="Апдейтер "+i.version+" · викладено "+i.date;
+    var m="Апдейтер "+(i.number?"v"+i.number+" ":"")+"(збірка "+i.version+") · викладено "+i.date;
     if(i.server) m+=" · сервер гри "+i.server;
     document.getElementById("dl-meta").textContent=m;
     if(i.server) document.getElementById("dl-ip").textContent=i.server;

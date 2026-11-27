@@ -70,6 +70,14 @@ done
 python3 - "$stage/zavantazhennia" "$version" "$server_ip" <<'EOF'
 import hashlib, json, os, sys, datetime
 d, version, ip = sys.argv[1:4]
+# Номер апдейтера (v3…) — той, що опубліковано для самооновлення; без нього
+# на сторінці видно лише позначку збірки, і нова версія не впізнається.
+number = None
+try:
+    with open(os.path.expanduser("~/MyWay-сервер/updates/config.json"), encoding="utf-8") as f:
+        number = json.load(f).get("updater_version")
+except (OSError, ValueError):
+    pass
 files = []
 for name in ("windows", "macos", "linux"):
     p = os.path.join(d, "MyWay-Updater-%s.zip" % name)
@@ -79,7 +87,7 @@ for name in ("windows", "macos", "linux"):
             h.update(b)
     files.append({"os": name, "file": os.path.basename(p),
                   "size": os.path.getsize(p), "sha256": h.hexdigest()})
-info = {"version": version, "server": ip,
+info = {"version": version, "number": number, "server": ip,
         "date": datetime.datetime.now().strftime("%d.%m.%Y %H:%M"),
         "files": files}
 with open(os.path.join(d, "info.json"), "w", encoding="utf-8") as f:

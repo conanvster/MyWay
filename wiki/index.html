@@ -15,6 +15,40 @@
 <h1>Карта світу</h1>
 <p class="lead">Світ версії 2: один материк, море довкола, п'ять зон, що сильнішають від столиці. Назви міст і сіл тимчасові (П-173).</p>
 <div class="stats"><div><b>5 632</b><span>сторона світу, м</span></div><div><b>5</b><span>міст</span></div><div><b>4</b><span>сіл</span></div><div><b>967</b><span>зон появи</span></div><div><b>12 150</b><span>монстрів на мапі</span></div><div><b>33</b><span>святинь</span></div><div><b>16</b><span>орієнтирів</span></div></div>
+<section class="status" id="stan" aria-live="polite">
+<span class="dot" id="st-dot"></span>
+<div><b id="st-head">Сервер: перевіряю…</b>
+<span id="st-sub" class="st-sub"></span>
+<span id="st-who" class="st-who"></span></div>
+</section>
+<script>
+(function(){
+  var dot=document.getElementById("st-dot"), head=document.getElementById("st-head"),
+      sub=document.getElementById("st-sub"), who=document.getElementById("st-who");
+  function plural(n){var a=n%10,b=n%100;
+    return a==1&&b!=11?"гравець":a>=2&&a<=4&&(b<10||b>=20)?"гравці":"гравців";}
+  function since(t){var s=Math.max(0,Date.now()/1000-t),h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+    return h?h+" год "+m+" хв":m+" хв";}
+  function off(text,why){dot.className="dot off";head.textContent=text;sub.textContent=why||"";who.textContent="";}
+  function tick(){
+    fetch("status.json",{cache:"no-store"}).then(function(r){
+      if(!r.ok) throw r.status; return r.json();
+    }).then(function(s){
+      if(!s["працює"]) return off("Сервер вимкнено", s["чому"]||"");
+      var n=s["гравців"]||0;
+      dot.className="dot on";
+      head.textContent="Сервер працює · онлайн "+n+" "+plural(n)+(s["максимум"]?" з "+s["максимум"]:"");
+      sub.textContent=(s["світ"]||"")+" · версія "+(s["версія"]||"?")+" · працює "+since(s["запущено"]||0)
+        +(s["у меню"]?" · ще "+s["у меню"]+" у меню входу":"");
+      who.textContent=(s["гравці"]||[]).map(function(p){
+        return p["ім'я"]+(p["рівень"]?" ("+p["рівень"]+")":"");}).join(", ");
+    }).catch(function(){
+      off("Сервер недоступний","ПК із сервером вимкнений або сервіс оновлень не запущений (./run-updates.sh)");
+    });
+  }
+  tick(); setInterval(tick,15000);
+})();
+</script>
 <section class="download" id="zavantazhyty" aria-labelledby="dl-h">
 <h2 id="dl-h">Завантажити гру</h2>
 <p>Завантаж <b>апдейтер</b> для своєї системи. Він сам завантажить гру, оновлюватиме її й запустить.</p>

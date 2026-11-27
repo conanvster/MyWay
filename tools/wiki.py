@@ -283,6 +283,15 @@ footer{max-width:1280px;margin:0 auto;padding:0 16px 2rem;color:var(--muted);
 .dl.mine{background:var(--accent);border-color:var(--accent)}
 .dl.mine b,.dl.mine span{color:var(--accent-ink)}
 .dl-meta{font-size:.85rem;color:var(--muted)}
+.status{display:flex;gap:.8rem;align-items:flex-start;background:var(--paper);
+  border:1px solid var(--rule);border-radius:8px;padding:.8rem 1.2rem;margin:1.2rem 0 0}
+.status .dot{flex:none;width:.8rem;height:.8rem;border-radius:50%;margin-top:.35rem;
+  background:var(--muted)}
+.status .dot.on{background:#2e9d5b;box-shadow:0 0 0 4px rgba(46,157,91,.18)}
+.status .dot.off{background:#c0503f}
+.status b{font-size:1.05rem}
+.st-sub,.st-who{display:block;font-size:.85rem;color:var(--muted)}
+.st-who{color:var(--ink);margin-top:.15rem}
 .steps{padding-left:1.3rem}
 .steps li{margin:.2rem 0}
 @media (max-width:640px){
@@ -424,6 +433,48 @@ def значок_3д(річ):
              ("linux", "Linux", "x86_64")]
 
 
+# Стан сервера й онлайн (слово замовника 27.11.2026: «на сторінці
+# http://192.168.1.34/myway/ — покажи статус сервера та онлайн»). Сторінка
+# читає status.json поруч із собою: nginx home-hub проксує його на сервіс
+# оновлень ПК із сервером гри (:24600/status.json), а той — файл, який
+# кожні 10 с переписує сам сервер гри (world.gd, _write_status).
+СТАН_HTML = """<section class="status" id="stan" aria-live="polite">
+<span class="dot" id="st-dot"></span>
+<div><b id="st-head">Сервер: перевіряю…</b>
+<span id="st-sub" class="st-sub"></span>
+<span id="st-who" class="st-who"></span></div>
+</section>
+<script>
+(function(){
+  var dot=document.getElementById("st-dot"), head=document.getElementById("st-head"),
+      sub=document.getElementById("st-sub"), who=document.getElementById("st-who");
+  function plural(n){var a=n%10,b=n%100;
+    return a==1&&b!=11?"гравець":a>=2&&a<=4&&(b<10||b>=20)?"гравці":"гравців";}
+  function since(t){var s=Math.max(0,Date.now()/1000-t),h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+    return h?h+" год "+m+" хв":m+" хв";}
+  function off(text,why){dot.className="dot off";head.textContent=text;sub.textContent=why||"";who.textContent="";}
+  function tick(){
+    fetch("status.json",{cache:"no-store"}).then(function(r){
+      if(!r.ok) throw r.status; return r.json();
+    }).then(function(s){
+      if(!s["працює"]) return off("Сервер вимкнено", s["чому"]||"");
+      var n=s["гравців"]||0;
+      dot.className="dot on";
+      head.textContent="Сервер працює · онлайн "+n+" "+plural(n)+(s["максимум"]?" з "+s["максимум"]:"");
+      sub.textContent=(s["світ"]||"")+" · версія "+(s["версія"]||"?")+" · працює "+since(s["запущено"]||0)
+        +(s["у меню"]?" · ще "+s["у меню"]+" у меню входу":"");
+      who.textContent=(s["гравці"]||[]).map(function(p){
+        return p["ім'я"]+(p["рівень"]?" ("+p["рівень"]+")":"");}).join(", ");
+    }).catch(function(){
+      off("Сервер недоступний","ПК із сервером вимкнений або сервіс оновлень не запущений (./run-updates.sh)");
+    });
+  }
+  tick(); setInterval(tick,15000);
+})();
+</script>
+"""
+
+
 def завантаження_html():
     """Блок «Завантажити гру» на головній (П-291, слово замовника 27.11.2026:
     «на головній буде додано розділ скачати апдейтер/лоадер»).
@@ -438,7 +489,7 @@ def завантаження_html():
         'download><b>%s</b><span>%s</span><span class="sz" data-size="%s">'
         '</span></a>' % (k, k, e(n), e(опис), k)
         for k, n, опис in ПЛАТФОРМИ)
-    return """<section class="download" id="zavantazhyty" aria-labelledby="dl-h">
+    return СТАН_HTML + """<section class="download" id="zavantazhyty" aria-labelledby="dl-h">
 <h2 id="dl-h">Завантажити гру</h2>
 <p>Завантаж <b>апдейтер</b> для своєї системи. Він сам завантажить гру, оновлюватиме її й запустить.</p>
 <div class="dls">%s</div>

@@ -260,6 +260,9 @@ def remont_t_riadu(t, vyd):
         nul = os.path.join(t, "%s-0.png" % poza)
         for k in (45, 90, 180):
             f = os.path.join(t, "%s-%d.png" % (poza, k))
+            # «‼» — уже тричі не повернувся: на кожному перезапуску не перезнімати знову
+            if os.path.exists(f[:-4] + ".‼"):
+                continue
             if os.path.exists(f) and os.path.exists(nul) and povtor(f, nul):
                 print("↻ %s: %s-%d ≈ свій 0° — перезнімаю" % (vyd, poza, k), flush=True)
                 os.remove(f)
@@ -303,6 +306,7 @@ def zheneruvaty(vydy):
             else:
                 print("‼ %s %s-%d не повернувся за %d спроби — перевір очима" % (
                     vyd, poza, kut, SPROB), flush=True)
+                open(kudy[:-4] + ".‼", "w").write("не повернувся за %d спроби\n" % SPROB)
             print("готово", vyd, poza, kut, flush=True)
         z = zbroia(best[vyd])
         kudy = os.path.join(t, "зброя.png")

@@ -130,7 +130,9 @@ func _load_field() -> void:
 	_zones = zones
 	_grid = want
 	_grid_step = float(earth.get("крок", 8.0))
-	_plant_seen = float(earth.get("видно рослини", PLANT_SEEN))
+	_plant_wanted = float(earth.get("видно рослини", PLANT_SEEN))
+	_plant_seen = GraphicsQuality.plant_distance(_plant_wanted)
+	GraphicsQuality.register_landscape(self)
 	var start: Array = earth.get("початок", [0, 0])
 	_origin = Vector2(float(start[0]), float(start[1]))
 	for zone: Dictionary in data.get("зони", []):
@@ -292,7 +294,7 @@ func stream_to(pos: Vector3) -> void:
 	for key: String in want:
 		_sector_seen_at[key] = now
 		if not _loaded_sectors.get(key, false):
-			_load_sector(key)
+			HitchLog.timed("ділянка %s" % key, _load_sector.bind(key))
 	var known: Array = _tree_specs.keys()
 	for key: String in _fence_specs.keys():
 		if not known.has(key):
@@ -398,6 +400,21 @@ func _near_only(view: Node) -> void:
 
 
 var _plant_seen := PLANT_SEEN
+## Скільки хоче світ (`видно рослини` у мапі); `_plant_seen` — після
+## якості графіки (`GraphicsQuality.plant_distance`).
+var _plant_wanted := PLANT_SEEN
+
+
+## Якість графіки змінилась — нова дальність рослин уже збудованим.
+func retune_plants() -> void:
+	var was := _plant_seen
+	_plant_seen = GraphicsQuality.plant_distance(_plant_wanted)
+	if is_equal_approx(was, _plant_seen):
+		return
+	for child in find_children("*", "GeometryInstance3D", true, false):
+		var mesh: GeometryInstance3D = child
+		if is_equal_approx(mesh.visibility_range_end, was):
+			mesh.visibility_range_end = _plant_seen
 
 
 ## Скільки метрів має бік ділянки підвантаження у світі версії 2.
@@ -537,6 +554,9 @@ func _sky() -> void:
 		air.ssao_intensity = 1.6
 		air.ambient_light_energy = 0.5
 	_air = air
+	GraphicsQuality.tune_environment(air)
+	GraphicsQuality.tune_sun(get_parent().get_node_or_null("Light")
+			as DirectionalLight3D)
 
 	var holder := WorldEnvironment.new()
 	holder.name = "Небо"

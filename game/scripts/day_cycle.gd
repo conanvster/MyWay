@@ -161,7 +161,8 @@ func apply(h: float) -> void:
 				if absf(toward.y) < 0.99 else Vector3.FORWARD)
 		sun.light_color = _mul(_base["сонце"], k["сонце"])
 		sun.light_energy = float(_base["сила сонця"]) * float(k["сила сонця"])
-		sun.shadow_enabled = sun.light_energy > 0.05
+		sun.shadow_enabled = sun.light_energy > 0.05 \
+				and GraphicsQuality.shadows()
 	if moon != null:
 		var moon_at := Vector3(-toward.x, absf(toward.y) * 0.8 + 0.35, -toward.z) \
 				.normalized()

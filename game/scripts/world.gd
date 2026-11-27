@@ -526,6 +526,7 @@ var _preload_spots: Array = []
 
 func _start_preload() -> void:
 	SkinnedModel.background_loads = true
+	GraphicsQuality.tune_viewport(get_viewport())
 	HitchLog.start(Net.build_version())
 	for zone: Dictionary in data.map.get("зони появи", []):
 		var look: Dictionary = data.for_kind(int(zone.get("вид", 0))) \

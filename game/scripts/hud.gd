@@ -3531,13 +3531,14 @@ func _build_messages() -> void:
 ## Вікно «Налаштування» (слово замовника 27.11.2026): розмір вікна, повний
 ## екран, масштаб показу — і розкладка блоків. Що вибрав, те й лишається:
 ## пишеться в `user://settings.cfg` (`GameSettings`).
-const SETTINGS_INNER := Vector2(300, 236)
+const SETTINGS_INNER := Vector2(300, 270)
 const SETTINGS_ROW := 34.0
 
 var _settings_box: WindowBox
 var _settings_size: OptionButton
 var _settings_full: CheckBox
 var _settings_scale: OptionButton
+var _settings_quality: OptionButton
 var _settings_lock: CheckBox
 var _settings_sizes: Array[Vector2i] = []
 
@@ -3586,6 +3587,19 @@ func _build_settings() -> void:
 	_settings_scale.item_selected.connect(func(i: int) -> void:
 			GameSettings.set_scale(get_window(), GameSettings.SCALES[i]))
 	body.add_child(_settings_scale)
+	y += SETTINGS_ROW
+
+	# Якість графіки (GraphicsQuality, 27.11.2026): діє одразу.
+	_settings_label("Якість графіки", y, body)
+	_settings_quality = OptionButton.new()
+	_settings_quality.name = "Якість"
+	_settings_quality.focus_mode = Control.FOCUS_NONE
+	_settings_quality.position = Vector2(140, y)
+	_settings_quality.size = Vector2(160, 28)
+	_settings_quality.item_selected.connect(func(i: int) -> void:
+			GraphicsQuality.set_chosen(GraphicsQuality.LEVELS[i])
+			_fill_quality())
+	body.add_child(_settings_quality)
 	y += SETTINGS_ROW + 8.0
 
 	_settings_lock = CheckBox.new()
@@ -3655,7 +3669,21 @@ func _toggle_settings() -> void:
 				< absf(GameSettings.SCALES[best] - scale):
 			best = i
 	_settings_scale.select(best)
+	_fill_quality()
 	_settings_lock.set_pressed_no_signal(_layout.locked)
+
+
+## Пункти якості: «Авто» показує, у що воно розкрилось на цій відеокарті.
+func _fill_quality() -> void:
+	_settings_quality.clear()
+	for one: String in GraphicsQuality.LEVELS:
+		var title: String = GraphicsQuality.TITLES[one]
+		if one == GraphicsQuality.AUTO:
+			title += " (%s)" % GraphicsQuality.TITLES[
+					GraphicsQuality.auto_level()].to_lower()
+		_settings_quality.add_item(title)
+	_settings_quality.select(GraphicsQuality.LEVELS.find(
+			GraphicsQuality.chosen()))
 
 
 ## Блоки показу стають рухливими, вікна пам'ятають, де їх лишили.

@@ -95,6 +95,7 @@ static func environment(from_style: Dictionary) -> Environment:
 	var tone: Array = from_style.get("колір_імли", [0.6, 0.55, 0.5])
 	air.volumetric_fog_albedo = Color(tone[0], tone[1], tone[2])
 	air.volumetric_fog_length = 48.0
+	GraphicsQuality.tune_environment(air)
 	return air
 
 

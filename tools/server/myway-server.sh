@@ -183,13 +183,17 @@ cmd_update_updater() {
     new=$((old + 1))
     echo "═══ оновлення апдейтера v$old → v$new ($(date '+%d.%m %T'))"
     sed -i "s/^config\/version=\"$old\"/config\/version=\"$new\"/" "$project"
+    # Підйом версії — окремим комітом лише цього файла (гачок check.sh займає
+    # порт робочого сервера, тому --no-verify): інші незакомічені файли не чіпаємо.
+    git -C "$repo" commit --no-verify -q -m "Апдейтер v$new (myway-server.sh update-updater)" -- updater/project.godot \
+        || say_err "підйом версії не закомічено — закоміть updater/project.godot сам"
     (cd "$repo" && tools/zibraty_updater.sh)
     python3 -I "$repo/tools/onovlennia/publish.py" --config-only
     "$repo/tools/vyklasty_wiki.sh"
     if is_active myway-game; then
         write_command "{\"дія\": \"повідомити\", \"текст\": $(json_str "Вийшов новий апдейтер v$new: завантаж його на http://192.168.1.34/myway/ — старий теж працює, але покаже попередження")}"
     fi
-    echo "✓ апдейтер v$new зібрано й викладено. Зміну updater/project.godot закоміть."
+    echo "✓ апдейтер v$new зібрано й викладено (версію закомічено; запуш, коли зручно)"
 }
 
 action="${1:-status}"

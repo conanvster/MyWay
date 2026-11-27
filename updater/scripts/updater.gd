@@ -724,8 +724,15 @@ func _self_updated(result: Dictionary) -> void:
 	remove_tree(stage)
 	print("[апдейтер] оновлено до v%s, перезапускаю %s" % [
 			fresh.get("release", "?"), here])
-	var pid := OS.create_process("open", ["-n", here]) \
-			if OS.get_name() == "macOS" else OS.create_process(here, [])
+	# Ті самі аргументи, що в цього запуску (--тека тощо), крім самого
+	# --оновити-себе: новий не має кинутись оновлюватись знову.
+	var again: Array = Array(OS.get_cmdline_args())
+	var mine: Array = Array(OS.get_cmdline_user_args())
+	mine.erase("--оновити-себе")
+	if not mine.is_empty():
+		again += ["--"] + mine
+	var pid := OS.create_process("open", ["-n", here, "--args"] + again) \
+			if OS.get_name() == "macOS" else OS.create_process(here, again)
 	if pid == -1:
 		_fail("новий апдейтер стоїть на місці, але не запустився — відкрий "
 				+ "його сам: %s" % here)

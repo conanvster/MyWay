@@ -74,8 +74,10 @@ const SCANS := {
 	# чоловіка мають дивний вигляд — потрібно генерувати нові», «підключи до гри»):
 	# картка N — обличчя з кадру вікі vN; ельф v2 — інше обличчя, ніж у кадрі (замовник:
 	# «v1 та v2 мають схоже обличчя — зроби інше для v2»). tools/cholovik_znulia.sh.
+	# картка 2 — нова Т-модель (27.11.2026, П-289: тіло з фото рівного світла, голова й кисті
+	# Pixal3D; попередня людина-2.glb лежить поруч, не видалена)
 	"людина-чоловік": [SCAN_DIR + "lyudyna-cholovik-z-nulia/людина.glb",
-			SCAN_DIR + "lyudyna-cholovik-z-nulia/людина-2.glb",
+			SCAN_DIR + "lyudyna-cholovik-z-nulia/людина-т.glb",
 			SCAN_DIR + "lyudyna-cholovik-z-nulia/людина-3.glb"],
 	"ельф-чоловік": [SCAN_DIR + "elf-cholovik-z-nulia/ельф.glb",
 			SCAN_DIR + "elf-cholovik-z-nulia/ельф-2.glb",

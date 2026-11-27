@@ -348,6 +348,26 @@ if not os.path.exists(PREF + "-обєм.blend") or DO == "шов":
         raise SystemExit("[збірка] ‼ зріз по площині шиї не лишив від голови нічого — "
                          "перевір --горло/--потилиця (spec/аватари-з-нуля.md, крок 5)")
     najbilsha(hol)
+    # --голова-до-тіла L (Т-модель людини, 27.11.2026): шия детальної голови товща за шию тіла
+    # (спереду на 2–3 см) — після злиття низ шиї голови лишав горизонтальний бортик. Вершини
+    # голови нижче площини шиї, що стирчать назовні з тіла, притягуються до найближчої точки
+    # поверхні тіла з вагою, яка росте від 0 на площині до 1 на глибині L; ремеш злиття
+    # згладжує сітку після зсуву.
+    HDT = arg("--голова-до-тіла", float, 0.0)
+    if HDT:
+        bvh_t = BVHTree.FromObject(tilo, bpy.context.evaluated_depsgraph_get())
+        H_ = tochky(hol)
+        dd = (H_ - np.array(SH_P)) @ np.array(SH_N)
+        t_ = np.clip(-dd / HDT, 0, 1)
+        w_ = t_ * t_ * (3 - 2 * t_)
+        nz = 0
+        for i in np.where(w_ > 0)[0]:
+            q, n_, _, _ = bvh_t.find_nearest(Vector(H_[i]))
+            if q is not None and (Vector(H_[i]) - q).dot(n_) > 0:
+                H_[i] = H_[i] + (np.array(q) - H_[i]) * w_[i]
+                nz += 1
+        zapysaty(hol, H_)
+        log("голова до тіла: зсунуто %d вершин шиї голови (смуга %.3f м)" % (nz, HDT))
     aktyv(tilo)
     hol.select_set(True)
     bpy.ops.object.join()

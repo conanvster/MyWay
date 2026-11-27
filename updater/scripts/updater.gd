@@ -722,8 +722,8 @@ func _self_updated(result: Dictionary) -> void:
 				% [here, error_string(err)] + "старий, він працює")
 		return
 	remove_tree(stage)
-	print("[апдейтер] оновлено до v%s, перезапускаю %s" % [
-			fresh.get("release", "?"), here])
+	print("[апдейтер] оновлено до v%d, перезапускаю %s" % [
+			int(fresh.get("release", 0)), here])
 	# Ті самі аргументи, що в цього запуску (--тека тощо), крім самого
 	# --оновити-себе: новий не має кинутись оновлюватись знову.
 	var again: Array = Array(OS.get_cmdline_args())
@@ -745,17 +745,21 @@ static func clean_self_update() -> void:
 	if not OS.has_feature("template"):
 		return
 	remove_tree(self_path() + ".old")
+	remove_tree(self_path().get_base_dir().path_join(SELF_STAGE))
 
 
 static func remove_tree(path: String) -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 		return
-	if not DirAccess.dir_exists_absolute(path):
+	var dir := DirAccess.open(path)
+	if dir == null:
 		return
-	for name in DirAccess.get_files_at(path):
+	# Приховані теж (.myway-hashes.json тощо): get_files_at їх не бачить.
+	dir.include_hidden = true
+	for name in dir.get_files():
 		DirAccess.remove_absolute(path.path_join(name))
-	for name in DirAccess.get_directories_at(path):
+	for name in dir.get_directories():
 		remove_tree(path.path_join(name))
 	DirAccess.remove_absolute(path)
 

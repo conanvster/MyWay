@@ -331,6 +331,41 @@ func job_self_update() -> Dictionary:
 	return out
 
 
+## Копія самого апдейтера `source` у теку `install` (вона — тимчасова, поруч
+## із постійним місцем): кнопка «Перенести апдейтер у Програми». На Mac
+## бандл копіює `ditto` (зберігає підпис, права й посилання), далі
+## карантин і печатка — `_fix_macos`. Деінде апдейтер — один файл.
+## {"copy": шлях копії, "note": попередження або ""} чи {"why"}.
+func job_copy_self(source: String) -> Dictionary:
+	var prepared := _prepare_dir()
+	if prepared != "":
+		return {"why": prepared}
+	var name := source.get_file()
+	var target := install.path_join(name)
+	_put(0, 0, "копіюю апдейтер у %s" % install.get_base_dir())
+	if DirAccess.dir_exists_absolute(source):
+		var out: Array = []
+		var code := OS.execute("ditto", [source, target], out, true)
+		if code != 0:
+			return {"why": "ditto не скопіював %s у %s (код %d): %s" % [
+					source, target, code, "\n".join(out).strip_edges()]}
+	else:
+		var err := DirAccess.copy_absolute(source, target)
+		if err != OK:
+			return {"why": "не скопіювати %s у %s: %s" % [source, target,
+					error_string(err)]}
+		if FileAccess.get_sha256(target) != FileAccess.get_sha256(source):
+			return {"why": "копія %s не збіглась із джерелом за SHA-256" \
+					% target}
+		if OS.get_name() != "Windows":
+			FileAccess.set_unix_permissions(target,
+					FileAccess.get_unix_permissions(source) | 0x1ED)
+	var note := ""
+	if OS.get_name() == "macOS" and name.ends_with(".app"):
+		note = _fix_macos({"app": name, "files": []})
+	return {"copy": target, "note": note}
+
+
 func job_update(manifest: Dictionary, need: Array) -> Dictionary:
 	fetched.clear()
 	resumed.clear()
@@ -420,14 +455,20 @@ static func writable_problem(dir: String) -> String:
 ## Вільне місце там, де ляже тека (якщо її ще немає — на найближчій
 ## наявній теці вище). −1 — система не каже.
 static func space_left(path: String) -> int:
+	var at := existing_parent(path)
+	var dir := DirAccess.open(at) if at != "" else null
+	return dir.get_space_left() if dir != null else -1
+
+
+## Сама тека, якщо вона є, інакше найближча наявна тека вище.
+static func existing_parent(path: String) -> String:
 	var at := path
 	while at != "" and not DirAccess.dir_exists_absolute(at):
 		var up := at.get_base_dir()
 		if up == at:
 			break
 		at = up
-	var dir := DirAccess.open(at) if at != "" else null
-	return dir.get_space_left() if dir != null else -1
+	return at
 
 
 static func paths_of(manifest: Dictionary) -> Array:

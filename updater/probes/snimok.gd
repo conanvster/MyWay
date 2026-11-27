@@ -7,6 +7,8 @@ extends Node
 ##     godot --path updater --rendering-driver opengl3 \
 ##         res://scenes/snimok.tscn -- --адреса 127.0.0.1:24610 \
 ##         --тека ~/Games/MyWay --png build/updater-vikno.png
+## `--тісно` — найгірший випадок для розкладки: ще й кнопки самооновлення
+## й перенесення видно (у незібраному їх ховає) і довга помилка з шляхом.
 ## Налаштувань апдейтера не міняє (тека — з `--тека`, адресу вертає).
 
 const UPDATER := preload("res://scenes/updater.tscn")
@@ -34,6 +36,15 @@ func _go() -> void:
 	var started := Time.get_ticks_msec()
 	while page.busy() and Time.get_ticks_msec() - started < 120000:
 		await get_tree().process_frame
+	if OS.get_cmdline_user_args().has("--тісно"):
+		page._self_button.visible = true
+		page._move_button.visible = true
+		page._fail("новий апдейтер не завантажено: не вдалось поставити " \
+				+ "апдейтер на місце /Users/ola/Applications/MyWay Updater" \
+				+ ".app/Contents/MacOS/дуже-довгий-шлях-без-пробілів-" \
+				+ "щоб-перевірити-перенесення-рядка: Permission denied — " \
+				+ "лишився старий, він працює. Спробуй ще раз або завантаж " \
+				+ "новий апдейтер з http://192.168.1.34/myway/ вручну.")
 	for i in 10:
 		await get_tree().process_frame
 	var png := _arg("--png", "user://updater.png")

@@ -226,6 +226,7 @@ func _ready() -> void:
 			# Після спавнера: відновлене підземелля додає йому свої зони.
 			life.restore(_restore_dungeon, close_dungeon)
 		_mark_ready()
+		_start_status_file()
 		print("[світ] сервер чекає гравців")
 	else:
 		# Спавн просимо самі, коли сцена вже здатна приймати виклики.
@@ -323,6 +324,72 @@ const READY_MARK := "user://сервер.json"
 func _mark_path() -> String:
 	return READY_MARK if Net.port == Net.PORT \
 			else "user://сервер-%d.json" % Net.port
+
+
+## Стан сервера для сторінки вікі `/myway/` (слово замовника 27.11.2026:
+## «на сторінці … покажи статус сервера та онлайн»). Кожні `STATUS_EVERY` с
+## сервер переписує файл, а сервіс оновлень (`tools/onovlennia/serve.py`)
+## віддає його як `/status.json`; файл старший за 30 с там означає «сервер
+## не відповідає». Пише лише справжній сервер (типовий порт, не полігон):
+## пробні сервери `check.sh` і проб інакше показували б гравцям чужий стан.
+## Шлях — `--статус <файл>`, типово `~/MyWay-сервер/status.json`.
+const STATUS_EVERY := 10.0
+var _status_path := ""
+var _status_since := 0
+
+
+func _start_status_file() -> void:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--статус")
+	if at >= 0 and at + 1 < args.size():
+		_status_path = args[at + 1]
+	elif Net.port == Net.PORT and not args.has("--полігон"):
+		_status_path = OS.get_environment("HOME").path_join(
+				"MyWay-сервер/status.json")
+	if _status_path.is_empty():
+		return
+	DirAccess.make_dir_recursive_absolute(_status_path.get_base_dir())
+	_status_since = int(Time.get_unix_time_from_system())
+	var timer := Timer.new()
+	timer.wait_time = STATUS_EVERY
+	timer.autostart = true
+	timer.timeout.connect(_write_status)
+	add_child(timer)
+	_write_status()
+	print("[світ] стан для вікі: %s" % _status_path)
+
+
+func _write_status() -> void:
+	var online: Array = []
+	for id: int in _names:
+		if creatures.has(id):
+			var who: Node = creatures[id]
+			online.append({"ім'я": _names[id], "рівень": who.get("level")})
+	online.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return String(a["ім'я"]) < String(b["ім'я"]))
+	var text := JSON.stringify({
+			"світ": GameData.map_path().get_file(),
+			"порт": Net.port,
+			"версія": Net.build_version(),
+			"гравців": online.size(),
+			"у меню": maxi(_signed.size() - online.size(), 0),
+			"максимум": Net.MAX_PLAYERS,
+			"гравці": online,
+			"запущено": _status_since,
+			"оновлено": int(Time.get_unix_time_from_system())}, " ")
+	# Через тимчасовий файл і перейменування: сервіс не прочитає півфайла.
+	var tmp := _status_path + ".tmp"
+	var file := FileAccess.open(tmp, FileAccess.WRITE)
+	if file == null:
+		print("[світ] ‼ стан для вікі не записано (%s): %s"
+				% [tmp, error_string(FileAccess.get_open_error())])
+		return
+	file.store_string(text)
+	file.close()
+	var err := DirAccess.rename_absolute(tmp, _status_path)
+	if err != OK:
+		print("[світ] ‼ стан для вікі не перейменовано: %s"
+				% error_string(err))
 
 
 func _mark_ready() -> void:
@@ -1844,6 +1911,9 @@ func _on_joined(id: int) -> void:
 	send_things(id)
 	rpc_id(id, "client_ground", ground.rows())
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
+	# Онлайн на сторінці вікі — одразу, не чекаючи 10-секундного такту.
+	if not _status_path.is_empty():
+		_write_status()
 
 
 ## Що показувати на сторінці «Стати». Збирає СЕРВЕР: у клієнта ні базових
@@ -3408,6 +3478,8 @@ func _on_left(id: int) -> void:
 		_trade_closed(other, "%s вийшов із гри" % _names.get(id, "гравець"))
 	_names.erase(id)
 	_signed.erase(id)
+	if not _status_path.is_empty():
+		call_deferred("_write_status")
 	_stats_mark.erase(id)
 	_skills_mark.erase(id)
 	_bag_mark.erase(id)

@@ -2,6 +2,8 @@
 """Сервіс оновлень MyWay: лише читання, лише три шляхи.
 
     GET /config.json                      параметри сервера гри
+    GET /status.json                      чи працює сервер гри і хто онлайн
+                                          (файл пише world.gd, див. --status)
     GET /manifest/<платформа>.json        перелік файлів збірки (шлях, розмір, SHA-256)
     GET /files/<платформа>/<шлях>         самі файли, з підтримкою Range (докачування)
 
@@ -23,6 +25,7 @@ HTTP-сервер; Range, потокова віддача 1,6 ГБ і перев
 
 import argparse
 import http.server
+import json
 import os
 import re
 import sys
@@ -31,6 +34,8 @@ import urllib.parse
 
 PLATFORMS = ("linux", "macos", "windows")
 CHUNK = 1 << 20
+# Сервер гри переписує стан кожні 10 с; старіший за це — вважаємо, що його нема.
+STATUS_STALE = 30
 MANIFEST_RE = re.compile(r"^/manifest/(linux|macos|windows)\.json$")
 FILES_RE = re.compile(r"^/files/(linux|macos|windows)/(.+)$")
 RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
@@ -99,6 +104,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         target = None
         kind = "application/octet-stream"
+        if path == "/status.json":
+            self.send_status(with_body)
+            return
         if path == "/config.json":
             target = os.path.join(self.root, "config.json")
             kind = "application/json; charset=utf-8"
@@ -117,6 +125,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.fail(404, "немає такого шляху")
             return
         self.send_file(target, kind, with_body)
+
+    def send_status(self, with_body):
+        """Стан сервера гри для сторінки вікі (/myway/). Файл переписує сам
+        сервер кожні 10 с; немає файла або він старший за STATUS_STALE —
+        сервер гри не працює (або завис), і сторінка це так і показує."""
+        state = {"працює": False}
+        try:
+            with open(self.status_file, encoding="utf-8") as handle:
+                data = json.load(handle)
+            age = time.time() - float(data.get("оновлено", 0))
+            if age <= STATUS_STALE:
+                state = dict(data, працює=True)
+            else:
+                state["чому"] = "стан не оновлювався %d с" % age
+        except FileNotFoundError:
+            state["чому"] = "сервер гри не запущений"
+        except (OSError, ValueError) as err:
+            state["чому"] = "стан не прочитався: %s" % err
+        body = json.dumps(state, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        # Сторінку вікі роздає інший хост (home-hub) — дозволяємо читати.
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        if with_body:
+            self.wfile.write(body)
 
     def send_file(self, target, kind, with_body):
         try:
@@ -179,12 +215,16 @@ def main():
     parser.add_argument("--root", required=True, help="каталог публікації")
     parser.add_argument("--port", type=int, default=24600)
     parser.add_argument("--bind", default="0.0.0.0")
+    parser.add_argument("--status", default=os.path.expanduser(
+        "~/MyWay-сервер/status.json"),
+        help="файл стану, який пише сервер гри (--статус у world.gd)")
     args = parser.parse_args()
     root = os.path.realpath(args.root)
     if not os.path.isfile(os.path.join(root, "config.json")):
         sys.exit("‼ у %s немає config.json — спершу tools/opublikuvaty.sh"
                  % root)
     Handler.root = root
+    Handler.status_file = args.status
     server = http.server.ThreadingHTTPServer((args.bind, args.port), Handler)
     server.daemon_threads = True
     print("→ слухаю http://%s:%d/ · роздаю збірки з %s"

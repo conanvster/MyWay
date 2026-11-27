@@ -66,7 +66,7 @@ python3 -I tools/onovlennia/publish.py "${publish_args[@]}" linux
 
 echo "── сервіс оновлень на TCP $http_port"
 python3 -I tools/onovlennia/serve.py --root "$work/updates" --port "$http_port" \
-    > "$logs/serve.log" 2>&1 &
+    --status "$work/status.json" > "$logs/serve.log" 2>&1 &
 pids+=($!)
 base="http://127.0.0.1:$http_port"
 for _ in $(seq 50); do
@@ -123,8 +123,12 @@ echo "── акаунт $login: $reply"
 
 echo "── сервер гри на UDP $game_port (світ 2, з базою)"
 server_log="$logs/server.log"
+# До старту сервера /status.json має чесно казати «не працює».
+if curl -s "$base/status.json" | grep -q '"працює": false'; then
+    echo "  ✓ /status.json без сервера гри — «не працює»"
+else echo "  ✗ /status.json без сервера"; failed=$((failed + 1)); fi
 godot --headless --path "$root/game" -- --server --світ2 --порт "$game_port" \
-    --база http://127.0.0.1:3000 > "$server_log" 2>&1 &
+    --база http://127.0.0.1:3000 --статус "$work/status.json" > "$server_log" 2>&1 &
 pids+=($!)
 for _ in $(seq 300); do
     grep -q 'сервер чекає гравців' "$server_log" && break
@@ -149,6 +153,17 @@ target="$work/updates/files/linux/versiia.json"
 printf 'head -c "$(stat -c %%s "%s")" /dev/zero | tr "\\000" x > "%s.tmp"\nmv "%s.tmp" "%s"\n' \
     "$target" "$target" "$target" "$target" > "$spoil"
 
+sleep 1
+if curl -s "$base/status.json" | grep -q '"працює": true'; then
+    echo "  ✓ /status.json — сервер гри працює"
+else echo "  ✗ /status.json після старту сервера"; failed=$((failed + 1)); fi
+# Поки апдейтер грає, у фоні стежимо за онлайном: найбільше «гравців».
+# Сам файл, а не HTTP: клієнт проби заходить і виходить за частки секунди,
+# а сервер переписує стан саме при вході/виході (HTTP-шлях перевірено вище).
+( while :; do cat "$work/status.json" 2>/dev/null; echo; sleep 0.05; done ) \
+    > "$logs/status-poll.log" 2>/dev/null &
+pids+=($!)
+
 echo "── апдейтер (godot --headless, проба e2e)"
 probe_args=(--робоча "$work" --стара-тека "$work/немає" --адреса "127.0.0.1:$http_port"
     --мертвий "127.0.0.1:24609" --порт-гри "$game_port" --обрив-мб 300
@@ -164,6 +179,10 @@ grep -aq 'проба апдейтера: ПРОЙДЕНО' "$logs/e2e.log" || co
 echo
 echo "── що бачив сервіс оновлень (206 — докачування):"
 grep -E 'MyWay.pck|versiia' "$logs/serve.log" | sed 's/^/  /' | tail -8
+most="$(grep -o '"гравців": [0-9]*' "$logs/status-poll.log" | grep -o '[0-9]*$' | sort -n | tail -1)"
+if [ "${most:-0}" -ge 1 ]; then
+    echo "  ✓ онлайн у /status.json під час гри: $most ($(grep -o "\"ім'я\": \"[^\"]*\"" "$logs/status-poll.log" | sort -u | head -3 | tr '\n' ' '))"
+else echo "  ✗ онлайн у /status.json так і не з'явився"; failed=$((failed + 1)); fi
 echo "── сервер гри:"
 grep -E '\[акаунт\]|\[світ\] приєднався' "$server_log" | sed 's/^/  /'
 [ $failed -gt 0 ] && code=1

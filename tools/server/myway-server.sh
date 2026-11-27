@@ -169,6 +169,9 @@ cmd_update_game() {
     echo "═══ оновлення гри: збірка → публікація → перезапуск ($(date '+%d.%m %T'))"
     (cd "$repo" && tools/zibraty.sh)
     (cd "$repo" && tools/opublikuvaty.sh)
+    # Сервіс оновлень працює з коду репозиторію: після оновлення коду він має
+    # підхопити новий (27.11.2026 старий сервіс віддавав 404 на апдейтер).
+    systemctl --user try-restart myway-updates.service || true
     if is_active myway-game; then
         cmd_restart "$delay" "вийшла нова версія гри — після перезапуску апдейтер її завантажить"
     else
@@ -190,6 +193,7 @@ cmd_update_updater() {
     (cd "$repo" && tools/zibraty_updater.sh)
     build_dir="$(ls -1dt "$repo"/build/updater-*/ | head -1)"
     python3 -I "$repo/tools/onovlennia/publish.py" --config-only --updater-build "${build_dir%/}"
+    systemctl --user try-restart myway-updates.service || true
     "$repo/tools/vyklasty_wiki.sh"
     if is_active myway-game; then
         write_command "{\"дія\": \"повідомити\", \"текст\": $(json_str "Вийшов новий апдейтер v$new: відкрий апдейтер і натисни «Оновити апдейтер» (апдейтер v1–v2 — завантаж новий з http://192.168.1.34/myway/)")}"

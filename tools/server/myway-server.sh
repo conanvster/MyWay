@@ -188,10 +188,11 @@ cmd_update_updater() {
     git -C "$repo" commit --no-verify -q -m "Апдейтер v$new (myway-server.sh update-updater)" -- updater/project.godot \
         || say_err "підйом версії не закомічено — закоміть updater/project.godot сам"
     (cd "$repo" && tools/zibraty_updater.sh)
-    python3 -I "$repo/tools/onovlennia/publish.py" --config-only
+    build_dir="$(ls -1dt "$repo"/build/updater-*/ | head -1)"
+    python3 -I "$repo/tools/onovlennia/publish.py" --config-only --updater-build "${build_dir%/}"
     "$repo/tools/vyklasty_wiki.sh"
     if is_active myway-game; then
-        write_command "{\"дія\": \"повідомити\", \"текст\": $(json_str "Вийшов новий апдейтер v$new: завантаж його на http://192.168.1.34/myway/ — старий теж працює, але покаже попередження")}"
+        write_command "{\"дія\": \"повідомити\", \"текст\": $(json_str "Вийшов новий апдейтер v$new: відкрий апдейтер і натисни «Оновити апдейтер» (апдейтер v1–v2 — завантаж новий з http://192.168.1.34/myway/)")}"
     fi
     echo "✓ апдейтер v$new зібрано й викладено (версію закомічено; запуш, коли зручно)"
 }

@@ -36,8 +36,8 @@ PLATFORMS = ("linux", "macos", "windows")
 CHUNK = 1 << 20
 # Сервер гри переписує стан кожні 10 с; старіший за це — вважаємо, що його нема.
 STATUS_STALE = 30
-MANIFEST_RE = re.compile(r"^/manifest/(linux|macos|windows)\.json$")
-FILES_RE = re.compile(r"^/files/(linux|macos|windows)/(.+)$")
+MANIFEST_RE = re.compile(r"^/manifest/((?:updater-)?(?:linux|macos|windows))\.json$")
+FILES_RE = re.compile(r"^/files/((?:updater-)?(?:linux|macos|windows))/(.+)$")
 RANGE_RE = re.compile(r"^bytes=(\d*)-(\d*)$")
 
 

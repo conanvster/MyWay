@@ -313,6 +313,24 @@ func verify(manifest: Dictionary) -> Dictionary:
 
 
 ## Завантажити записи `need`. {"ok": true} або {"why"}.
+## Самооновлення апдейтера: `platform` тут — «updater-<система>», `install` —
+## тимчасова тека поруч із самим апдейтером. Той самий шлях, що й для гри:
+## маніфест, хеші, докачування, біт виконання, на Mac — карантин і підпис.
+func job_self_update() -> Dictionary:
+	_put(0, 0, "питаю новий апдейтер у %s" % _where())
+	var got := get_json("/manifest/%s.json" % platform)
+	if got.has("why"):
+		return {"why": "на сервері немає апдейтера для %s: %s" % [platform,
+				got["why"]]}
+	var fresh: Dictionary = got["data"]
+	var why := _manifest_problem(fresh)
+	if why != "":
+		return {"why": why}
+	var out := job_update(fresh, verify(fresh).get("need", []))
+	out["manifest"] = fresh
+	return out
+
+
 func job_update(manifest: Dictionary, need: Array) -> Dictionary:
 	fetched.clear()
 	resumed.clear()

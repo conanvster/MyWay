@@ -96,6 +96,10 @@ def launch_of(platform, top):
         return {"launch": "MyWay.x86_64"}
     if platform == "windows":
         return {"launch": "MyWay.exe"}
+    if platform == "updater-linux":
+        return {"launch": "MyWay-Updater.x86_64"}
+    if platform == "updater-windows":
+        return {"launch": "MyWay-Updater.exe"}
     apps = [n for n in sorted(os.listdir(top)) if n.endswith(".app")]
     if not apps:
         sys.exit("‼ у збірці macos немає .app")
@@ -107,6 +111,51 @@ def launch_of(platform, top):
     if not found:
         sys.exit("‼ у Info.plist немає CFBundleExecutable")
     return {"launch": "%s/Contents/MacOS/%s" % (app, found.group(1)), "app": app}
+
+
+def publish_updater(build, updates, number):
+    """Апдейтер — як ще одна «платформа»: files/updater-<система>/ і маніфест.
+    Слово замовника 27.11.2026: «чи може апдейтер автоматично оновлюватись?»
+    Архіви з tools/zibraty_updater.sh розпаковуються з бітами виконання."""
+    import glob
+    import zipfile
+    build = os.path.realpath(build)
+    stamp = os.path.basename(build).replace("updater-", "", 1)
+    version = {"version": "v%d · %s" % (number, stamp), "commit": stamp,
+               "date": datetime.date.today().isoformat()}
+    for platform in PLATFORMS:
+        found = sorted(glob.glob(os.path.join(build, "MyWay-Updater-%s-*.zip" % platform)))
+        if not found:
+            sys.exit("‼ у %s немає архіву апдейтера для %s" % (build, platform))
+        name = "updater-" + platform
+        files_root = os.path.join(updates, "files")
+        fresh = os.path.join(files_root, ".new-" + name)
+        stale = os.path.join(files_root, ".old-" + name)
+        live = os.path.join(files_root, name)
+        for leftover in (fresh, stale):
+            if os.path.lexists(leftover):
+                shutil.rmtree(leftover)
+        os.makedirs(fresh)
+        with zipfile.ZipFile(found[-1]) as archive:
+            for info in archive.infolist():
+                target = os.path.realpath(os.path.join(fresh, info.filename))
+                if os.path.commonpath([target, os.path.realpath(fresh)]) != os.path.realpath(fresh):
+                    sys.exit("‼ %s: шлях за межі теки — %s" % (found[-1], info.filename))
+                archive.extract(info, fresh)
+                mode = (info.external_attr >> 16) & 0o777
+                if mode and not info.is_dir():
+                    os.chmod(target, mode)
+        if platform == "linux":
+            os.chmod(os.path.join(fresh, "MyWay-Updater.x86_64"), 0o755)
+        manifest = make_manifest(name, fresh, number, version)
+        if os.path.isdir(live):
+            os.rename(live, stale)
+        os.rename(fresh, live)
+        write_json(os.path.join(updates, "manifest", name + ".json"), manifest)
+        if os.path.isdir(stale):
+            shutil.rmtree(stale)
+        print("  ✓ апдейтер для %s: %d файлів, %.1f МБ" % (
+            platform, len(manifest["files"]), manifest["total"] / 1e6))
 
 
 def build_version(build):
@@ -155,6 +204,11 @@ def main():
     parser.add_argument("--min-release", type=int,
                         help="мінімальний випуск клієнта (типово = поточний)")
     parser.add_argument("--manifest-only", choices=PLATFORMS)
+    parser.add_argument("--updater-build",
+                        help="тека збірки апдейтера (build/updater-…): з --config-only "
+                             "ще й роздавати сам апдейтер для самооновлення")
+    parser.add_argument("--updater-page", default="http://192.168.1.34/myway/",
+                        help="де гравцям брати апдейтер вручну")
     parser.add_argument("--config-only", action="store_true",
                         help="лише оновити updater_version у config.json "
                              "(після нової збірки апдейтера), файли не чіпати")
@@ -174,6 +228,9 @@ def main():
             sys.exit("‼ %s ще немає — спершу повна публікація" % config_path)
         old = config.get("updater_version")
         config["updater_version"] = updater_version(repo)
+        config["updater_page"] = args.updater_page
+        if args.updater_build:
+            publish_updater(args.updater_build, updates, config["updater_version"])
         config["published"] = datetime.datetime.now().isoformat(timespec="seconds")
         write_json(config_path, config)
         print("✓ updater_version %s → %s (старі апдейтери покажуть «вийшла нова "

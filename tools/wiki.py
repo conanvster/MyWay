@@ -289,6 +289,7 @@ footer{max-width:1280px;margin:0 auto;padding:0 16px 2rem;color:var(--muted);
   background:var(--muted)}
 .status .dot.on{background:#2e9d5b;box-shadow:0 0 0 4px rgba(46,157,91,.18)}
 .status .dot.off{background:#c0503f}
+.status .dot.soon{background:#d99a22;box-shadow:0 0 0 4px rgba(217,154,34,.2)}
 .status b{font-size:1.05rem}
 .st-sub,.st-who{display:block;font-size:.85rem;color:var(--muted)}
 .st-who{color:var(--ink);margin-top:.15rem}
@@ -463,6 +464,11 @@ def значок_3д(річ):
       head.textContent="Сервер працює · онлайн "+n+" "+plural(n)+(s["максимум"]?" з "+s["максимум"]:"");
       sub.textContent=(s["світ"]||"")+" · версія "+(s["версія"]||"?")+" · працює "+since(s["запущено"]||0)
         +(s["у меню"]?" · ще "+s["у меню"]+" у меню входу":"");
+      var z=s["зупинка"]||{};
+      if(z["о"]){var left=Math.max(0,Math.round(z["о"]-Date.now()/1000));
+        dot.className="dot soon";
+        head.textContent+=" · перезапуск через "+(left>=60?Math.ceil(left/60)+" хв":left+" с");
+        if(z["чому"]) sub.textContent=z["чому"]+" · "+sub.textContent;}
       who.textContent=(s["гравці"]||[]).map(function(p){
         return p["ім'я"]+(p["рівень"]?" ("+p["рівень"]+")":"");}).join(", ");
     }).catch(function(){

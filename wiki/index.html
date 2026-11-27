@@ -40,6 +40,11 @@
       head.textContent="Сервер працює · онлайн "+n+" "+plural(n)+(s["максимум"]?" з "+s["максимум"]:"");
       sub.textContent=(s["світ"]||"")+" · версія "+(s["версія"]||"?")+" · працює "+since(s["запущено"]||0)
         +(s["у меню"]?" · ще "+s["у меню"]+" у меню входу":"");
+      var z=s["зупинка"]||{};
+      if(z["о"]){var left=Math.max(0,Math.round(z["о"]-Date.now()/1000));
+        dot.className="dot soon";
+        head.textContent+=" · перезапуск через "+(left>=60?Math.ceil(left/60)+" хв":left+" с");
+        if(z["чому"]) sub.textContent=z["чому"]+" · "+sub.textContent;}
       who.textContent=(s["гравці"]||[]).map(function(p){
         return p["ім'я"]+(p["рівень"]?" ("+p["рівень"]+")":"");}).join(", ");
     }).catch(function(){

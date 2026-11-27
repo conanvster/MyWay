@@ -99,6 +99,13 @@ func attack(me: int) -> bool:
 	# Зброя тупиться від кожного удару, що влучив (слово замовника
 	# 21.09.2026), а на нулі ламається на матеріали (П-234). Монстрів не
 	# стосується: у них речей немає.
+	# Попередження про міцність (П-294): на 25 %, 10 % і 5 % — у чат, і
+	# торба оновлюється, щоб смужка на значку зброї була правдою.
+	var blade: Item = a.worn_in("зброя") if me > 0 and a.has_method("worn_in") \
+			else null
+	var was := -1.0
+	if blade != null and blade.durability_max > 0:
+		was = float(blade.durability) / float(blade.durability_max)
 	if me > 0 and a.wear_weapon(smith.wear_per_hit()):
 		var broke: Dictionary = smith.break_weapon(a, goods)
 		if not broke.is_empty() and bool(broke.get("торба повна", false)):
@@ -115,6 +122,16 @@ func attack(me: int) -> bool:
 					% [me, broke["назва"], broke["лишила"]])
 			if on_bag_changed.is_valid():
 				on_bag_changed.call(me)
+	elif was > 0.0 and blade.durability > 0:
+		var now := float(blade.durability) / float(blade.durability_max)
+		for mark: float in [0.25, 0.1, 0.05]:
+			if was > mark and now <= mark:
+				_link.notice(me, "⚠ «%s»: міцність %d/%d (%d %%) — полагодь у коваля, на нулі зламається"
+						% [blade.title(), blade.durability, blade.durability_max,
+						roundi(now * 100.0)])
+				if on_bag_changed.is_valid():
+					on_bag_changed.call(me)
+				break
 	# Удар по монстру додає загрози: саме за нею він обирає, кого бити.
 	if side(a.target_id) < 0 and side(me) > 0:
 		victim.add_threat(me, hit + victim.threat_per_hit)
@@ -623,8 +640,14 @@ func _reward(me: int, killer: Node, victim: Node) -> void:
 	# Бос понад свою таблицю дає рунну есенцію свого грейду — інгредієнт
 	# для зачарування в коваля («дропаються з босів», 21.09.2026). Не
 	# рядком у `mobs.json`: бос — це роль у підземеллі, а не вид.
-	if victim.get("is_boss"):
-		var rule: Dictionary = smith.rules.get("есенція з боса", {})
+	# Не лише боси (П-296): главар охорони святині — частіше, будь-який
+	# монстр — зрідка; правило — у smith.json.
+	var rule_name := "есенція з боса" if victim.get("is_boss") \
+			else "есенція з главаря" if victim.get("is_chief") \
+			else "есенція рідко"
+	# Лише монстри (у них є `is_boss`): гравець за гравця есенції не дає.
+	if "is_boss" in victim:
+		var rule: Dictionary = smith.rules.get(rule_name, {})
 		if randf() <= float(rule.get("шанс", 0.0)) * mult:
 			var essence := "рунна есенція %s" \
 					% goods.grade_for_level(victim.level)

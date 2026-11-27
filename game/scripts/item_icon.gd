@@ -105,7 +105,49 @@ func show_item(kind: String, slot: String, grade: String,
 	queue_redraw()
 
 
+## Міцність зброї смужкою внизу значка (П-294, слово замовника 27.11.2026:
+## «немає візуалізації що зброя вже майже зламалась»). −1 — без смужки.
+var _wear := -1.0
+
+
+func set_wear(part: float) -> void:
+	_wear = part
+	queue_redraw()
+
+
+## Частка міцності з ряду торби (`"міцність": [є, з]`), −1 — не зношується.
+static func wear_of(row: Dictionary) -> float:
+	var worn: Array = row.get("міцність", [0, 0])
+	if worn.size() < 2 or int(worn[1]) <= 0:
+		return -1.0
+	return clampf(float(worn[0]) / float(worn[1]), 0.0, 1.0)
+
+
+## Рядок для підказки: «міцність 230/1000 (23 %) — полагодь у коваля».
+static func wear_text(row: Dictionary) -> String:
+	var part := wear_of(row)
+	if part < 0.0:
+		return ""
+	var worn: Array = row["міцність"]
+	return "міцність %d/%d (%d %%)%s" % [int(worn[0]), int(worn[1]),
+			roundi(part * 100.0), " — полагодь у коваля" if part < 0.25 else ""]
+
+
+func _draw_wear() -> void:
+	if _wear < 0.0:
+		return
+	var side: float = minf(size.x, size.y)
+	var off := Vector2((size.x - side) * 0.5, (size.y - side) * 0.5)
+	var bar := Rect2(off + Vector2(side * 0.08, side * 0.9),
+			Vector2(side * 0.84, maxf(2.0, side * 0.07)))
+	draw_rect(bar, Color(0, 0, 0, 0.75))
+	var colour := Color(0.35, 0.85, 0.35) if _wear >= 0.25 \
+			else Color(0.95, 0.8, 0.2) if _wear >= 0.1 else Color(0.95, 0.25, 0.2)
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * _wear, bar.size.y)), colour)
+
+
 func clear_item() -> void:
+	_wear = -1.0
 	_shape = ""
 	_tex = null
 	_letter = ""
@@ -157,6 +199,7 @@ func _draw() -> void:
 		draw_texture_rect(_tex, Rect2(off, Vector2(side, side)), false)
 		draw_rect(Rect2(off, Vector2(side, side)), _tint, false, LINE)
 		_draw_letter()
+		_draw_wear()
 		return
 	var fill := Color(_tint.r * FILL_DIM, _tint.g * FILL_DIM,
 			_tint.b * FILL_DIM, 0.95)
@@ -177,6 +220,7 @@ func _draw() -> void:
 		"артефакт": _eye(side, off, fill)
 		_: _lump(side, off, fill)
 	_draw_letter()
+	_draw_wear()
 
 
 ## Замкнена фігура: заливка темнішим, обрис кольором грейду.

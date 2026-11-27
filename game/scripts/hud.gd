@@ -1056,8 +1056,11 @@ func _fill_body(things: Array) -> void:
 			icon.modulate = Color(1, 1, 1, 1)
 			icon.show_item(str(row.get("вид", "")), slot,
 					str(row.get("грейд", "E")), _art_name(row))
-			press.tooltip_text = "%s\n%s\n%s\nнатисни, щоб зняти" % [
-					str(row["назва"]), slot, str(row.get("стати", ""))]
+			icon.set_wear(ItemIcon.wear_of(row))
+			press.tooltip_text = "%s\n%s\n%s\n%sнатисни, щоб зняти" % [
+					str(row["назва"]), slot, str(row.get("стати", "")),
+					(ItemIcon.wear_text(row) + "\n") if ItemIcon.wear_of(row) >= 0.0
+					else ""]
 			press.disabled = false
 			_cell_look(press, true)
 
@@ -1114,6 +1117,7 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 		_cell_look(press, true)
 		icon.show_item(str(row.get("вид", "")), str(row.get("слот", "")),
 				str(row.get("грейд", "")), _art_name(row))
+		icon.set_wear(ItemIcon.wear_of(row))
 		if row.has("номер"):
 			var at: int = int(row["номер"])
 			var places: Array = row.get("комірки", [])
@@ -1121,7 +1125,8 @@ func _fill_bag(things: Array, stacks: Array) -> void:
 			press.tooltip_text = "%s\n%s\n%s\n%s" % [name,
 					"·".join(PackedStringArray(places)) if not places.is_empty()
 							else "не вдягається",
-					str(row.get("стати", "")),
+					str(row.get("стати", "")) + ("\n" + ItemIcon.wear_text(row)
+							if ItemIcon.wear_of(row) >= 0.0 else ""),
 					"натисни, щоб вдягти" if not places.is_empty() else ""]
 			if places.is_empty():
 				press.disabled = true
@@ -1945,6 +1950,13 @@ func show_smith(at: int, title: String, rows: Array, money: int) -> void:
 		var none := _text(13, _smith_list)
 		none.text = "нема ні зброї, ні обладунку, ні прикрас"
 	for row: Dictionary in rows:
+		if row.has("підказка"):
+			var hint := _text(12, _smith_list)
+			hint.text = str(row["підказка"])
+			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			hint.custom_minimum_size = Vector2(330, 0)
+			hint.modulate = Color(0.85, 0.85, 0.7)
+			continue
 		_smith_list.add_child(_smith_row(row))
 	_smith_box.visible = true
 	_smith_box._keep_on_screen()
@@ -3135,6 +3147,15 @@ func _select_guild_skill(key: String) -> void:
 				% str(row["гілка"])
 	if str(row.get("опис", "")) != "":
 		_guild_detail_info.text += "\n\n%s" % str(row["опис"])
+	# Звідки руна (П-293): без цього гравець не знав, де її шукати.
+	if str(row.get("джерело", "дерево")) != "синтез" \
+			and str(row.get("руна вивчення", "")) != "" and level < max_level:
+		var rune := str(row["руна вивчення"]) if not known \
+				else str(row["руна підняття"])
+		var from := str(row.get("звідки руна вивчення" if not known
+				else "звідки руна підняття", ""))
+		if from != "":
+			_guild_detail_info.text += "\n\n%s: %s" % [rune, from]
 	if not open:
 		var req: String = str(row.get("передумова", ""))
 		var req_name := req

@@ -173,6 +173,8 @@ func respawn(slot: int) -> int:
 	if lifted:
 		m.set_meta(LIFT, [zone.level_set, zone.boost])
 	m.is_boss = zone.boss
+	if "is_chief" in m:
+		m.is_chief = zone.chief
 	# Штраф світу за незачищені підземелля (Ф7) — і на тих, хто
 	# з'являється вже після нього.
 	if _world.has_method("penalize"):

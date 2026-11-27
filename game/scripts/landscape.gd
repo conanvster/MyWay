@@ -2065,6 +2065,7 @@ func _guard_zone(shrine: Shrine, name: String, kind: int, count: int,
 	zone.aggressive = angry
 	zone.respawn_after = back
 	zone.respawn_spread = 20.0
+	zone.chief = name.begins_with("Главар")
 	shrine.add_child(zone)
 	var shape := CollisionShape3D.new()
 	var ball := CylinderShape3D.new()

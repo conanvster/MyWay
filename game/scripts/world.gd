@@ -2227,6 +2227,7 @@ func _bag_row(a: Node) -> Array:
 			"вдягнене": a.is_worn(at),
 			"де": str(where.get(at, "")),
 			"стати": ", ".join(lines),
+			"міцність": [item.durability, item.durability_max],
 		})
 	return out
 
@@ -2704,6 +2705,58 @@ func ask_smith(at: int) -> void:
 	_send_smith(id, at, who.title())
 
 
+## Звідки взяти річ — рядок для гравця (П-293, слово замовника 27.11.2026:
+## «не знаю де їх шукати», «не розумію де шукати ітеми щоб зачарувати»):
+## до трьох найнижчих за рівнем видів, з яких вона падає, і крамарі.
+var _sources_cache: Dictionary = {}
+
+
+func sources_text(name: String) -> String:
+	if name == "":
+		return ""
+	if _sources_cache.has(name):
+		return _sources_cache[name]
+	var who: Array = []
+	for key: Variant in data.mobs:
+		var mob: Variant = data.mobs[key]
+		if not mob is Dictionary:
+			continue
+		for row: Dictionary in mob.get("дроп", []):
+			if str(row.get("що", "")) == name:
+				who.append([int(mob.get("рівень", 0)), str(mob.get("назва", "?")),
+						float(row.get("шанс", 0.0))])
+				break
+	who.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var parts := PackedStringArray()
+	for one: Array in who.slice(0, 3):
+		parts.append("%s (%d рів., %d%%)" % [one[1], one[0],
+				maxi(1, roundi(one[2] * 100.0))])
+	if who.size() > 3:
+		parts.append("ще %d видів" % (who.size() - 3))
+	var shops := PackedStringArray()
+	var land: Node = get_node_or_null("Landscape")
+	if land != null:
+		for child in land.get_children():
+			if not child is NPC or not child.trades():
+				continue
+			for good: Variant in child.goods:
+				var good_name := str(good) if not good is Dictionary \
+						else str(good.get("що", good.get("річ", "")))
+				if good_name == name:
+					shops.append(child.title())
+					break
+	var text := ""
+	if not parts.is_empty():
+		text = "падає з: " + ", ".join(parts)
+	if not shops.is_empty():
+		text += ("; " if text != "" else "") + "продає: " \
+				+ ", ".join(shops.slice(0, 2))
+	if text == "":
+		text = "поки ніде не падає й не продається"
+	_sources_cache[name] = text
+	return text
+
+
 func _send_smith(id: int, at: int, title: String) -> void:
 	var a: Node = creatures.get(id)
 	if a == null:
@@ -2723,6 +2776,20 @@ func _send_smith(id: int, at: int, title: String) -> void:
 			"бракує": data.smith.missing_for(a, item, data.items),
 			"руна": Smith.rune_text(item.rune),
 			"магічна": data.smith.is_magic(item, data.items)})
+	# Підказка, звідки інгредієнти (П-293/П-296): есенція й метал грейдів
+	# тих речей, що в торбі.
+	var seen := {}
+	for row: Dictionary in rows:
+		seen[str(row["грейд"])] = true
+	var hint := PackedStringArray()
+	for grade: String in seen:
+		var metal := str(data.smith.rules.get("зачарування", {})
+				.get("матеріал", {}).get(grade, ""))
+		hint.append(("рунна есенція %s — боси підземель, главарі охорони " \
+				+ "святинь (часто), зрідка будь-який монстр %s; %s — %s") % [
+				grade, grade, metal, sources_text(metal)])
+	if not hint.is_empty():
+		rows.append({"підказка": "\n".join(hint)})
 	rpc_id(id, "client_smith", at, title, rows, Shop.money_of(a))
 
 
@@ -3370,6 +3437,8 @@ func _guild_rows(a: Node) -> Array:
 			"з рівня": skill.from_level,
 			"руна вивчення": skill.rune,
 			"руна підняття": Runes.level_rune_for(skill.grade),
+			"звідки руна вивчення": sources_text(skill.rune),
+			"звідки руна підняття": sources_text(Runes.level_rune_for(skill.grade)),
 			"досвід вивчення": skill.learn_cost,
 			"досвід підняття": Runes.raise_cost(skill, maxi(level, 1)),
 			"вкладка": skill.category,

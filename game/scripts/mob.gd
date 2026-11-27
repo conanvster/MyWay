@@ -50,6 +50,8 @@ var home := Vector3.ZERO
 var kind := 0
 ## Бос рівня підземелля (Ф6) — ставить спавнер із зони.
 var is_boss := false
+## Главар охорони святині — з нього есенція частіше (П-296, `combat.gd`).
+var is_chief := false
 ## Поселення, яке вартує (П-262); -1 — звичайний монстр. Ставить
 ## `Wardens.post_guards`.
 var settlement := -1

@@ -26,6 +26,40 @@ dw = don.matrix_world
 NAP = {}
 for b in don.data.bones:
     NAP[b.name] = ((dw @ b.tail_local) - (dw @ b.head_local)).normalized()
+# --донор-сітка <glb>: донор сам знятий не в спокої, а в позі свого скульпту (людина-чоловік «з
+# нуля»: 3-сітка/<модель>.glb, вершини в порядку «Тіло» донора) — поворот кожної кістки з
+# вершин, що на ній (вага > 0,6), найменшими квадратами (Кабш), напрям = поворот × напрям у спокої
+if "--донор-сітка" in A:
+    dt = next(o for o in dst.objects if o is not None and o.type == "MESH" and o.name.split(".")[0] == "Тіло")
+    BRd = np.array([dt.matrix_world @ v.co for v in dt.data.vertices])
+    pered = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=A[A.index("--донор-сітка") + 1])
+    sm = next(o for o in bpy.data.objects if o not in pered and o.type == "MESH")
+    import bmesh
+    bm_ = bmesh.new()
+    bm_.from_mesh(sm.data)
+    bmesh.ops.remove_doubles(bm_, verts=bm_.verts, dist=1e-5)   # як vvesty() в odiah_zona.py
+    bm_.to_mesh(sm.data)
+    bm_.free()
+    BVd = np.array([sm.matrix_world @ v.co for v in sm.data.vertices])
+    for o in [o for o in bpy.data.objects if o not in pered]:
+        bpy.data.objects.remove(o)
+    if len(BVd) != len(BRd):
+        raise SystemExit("[поза] ‼ сітка донора (%d) не та, що «Тіло» донора (%d)" % (len(BVd), len(BRd)))
+    gi = {g.index: g.name for g in dt.vertex_groups}
+    for k in KISTKY:
+        for bik in ("_l", "_r"):
+            nm = k + bik
+            if nm not in NAP:
+                continue
+            idx = [v.index for v in dt.data.vertices if any(gi[g.group] == nm and g.weight > 0.6 for g in v.groups)]
+            if len(idx) < 10:
+                continue
+            X, Y = BRd[idx] - BRd[idx].mean(0), BVd[idx] - BVd[idx].mean(0)
+            U, _, Vt = np.linalg.svd(X.T @ Y)
+            Rm = (U @ np.diag([1, 1, np.sign(np.linalg.det(U @ Vt))]) @ Vt).T
+            NAP[nm] = Vector(Rm @ np.array(NAP[nm])).normalized()
+            print("[поза] донор %s у позі скульпту: %d вершин" % (nm, len(idx)), flush=True)
 
 rig = next(o for o in bpy.data.objects if o.type == "ARMATURE" and o.library is None and o.name in bpy.context.scene.objects)
 aw = rig.matrix_world

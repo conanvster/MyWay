@@ -171,7 +171,18 @@ W /= np.maximum(W.sum(1, keepdims=True), 1e-6)
 t_kistka = np.array([hrupy[i] for i in W.argmax(1)])
 # без --сітка (модель не з референсу, а з MPFB): поза скульпту — це поза спокою самого тіла,
 # кадр зони — рендер моделі (tools/blender/kadr_tila.py)
-if "--сітка" in A:
+if "--сітка" in A and arg("--сітка", str, "").endswith(".npy"):
+    # 27.11.2026: тіло моделі в позі донора скульптів (tools/blender/poza_yak.py) — вершини в
+    # порядку «Тіло» моделі (ельфійка в Т-позі, скульпти жіночого сету — в А-позі MPFB)
+    ss = tilo.copy()
+    ss.data = tilo.data.copy()
+    ss.matrix_world.identity()
+    bpy.context.scene.collection.objects.link(ss)
+    ss.parent = None
+    ss.modifiers.clear()
+    ss.data.vertices.foreach_set("co", np.load(os.path.abspath(arg("--сітка", str, ""))).astype(np.float32).ravel())
+    ss.data.update()
+elif "--сітка" in A:
     ss = vvesty(os.path.abspath(arg("--сітка", str, "")))
 else:
     ss = tilo.copy()

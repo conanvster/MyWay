@@ -51,6 +51,10 @@ func _ready() -> void:
 			or OS.get_cmdline_user_args().has("--демо"):
 		_enter_world()
 		return
+	# Тут сторінку бачить живий гравець — і лише тут ставимо його розмір
+	# вікна й масштаб (проби й сервер сюди не доходять, див. вище).
+	if not GameSettings.active:
+		GameSettings.apply_saved(get_window())
 	_build()
 	_probe = HTTPRequest.new()
 	add_child(_probe)

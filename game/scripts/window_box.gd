@@ -30,6 +30,10 @@ const GOTHIC_GOLD_DIM := Color(0.5, 0.4, 0.2)
 const STUD := 6.0
 static var _gothic_font: FontVariation
 
+## Вікно відпустили після перетягування — щоб запам'ятати, де воно.
+signal moved
+signal folded_changed(on: bool)
+
 ## Куди класти вміст. Координати всередині — від нуля, тож вміст не знає
 ## ні про заголовок, ні про поля.
 var body: Control
@@ -223,6 +227,7 @@ func set_folded(on: bool) -> void:
 	if keep_bottom:
 		position.y += was - size.y
 	_keep_on_screen()
+	folded_changed.emit(on)
 
 
 ## Розкласти тло, заголовок, кнопки й обрис під розмір `whole`.
@@ -263,6 +268,8 @@ func toggle() -> void:
 func _on_title_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton \
 			and event.button_index == MOUSE_BUTTON_LEFT:
+		if _dragging and not event.pressed:
+			moved.emit()
 		_dragging = event.pressed
 		_grabbed = event.position
 	elif event is InputEventMouseMotion and _dragging:

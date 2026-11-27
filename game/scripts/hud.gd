@@ -128,6 +128,9 @@ var _coords_text: Label
 ## Пора доби й година (П-274): «вечір 19:40».
 var _clock_text: Label
 var _quest_box: Control
+var _vitals_box: Control
+var _coords_box: Control
+var _layout: HudLayout
 var _quest_text: Label
 
 
@@ -160,6 +163,8 @@ func setup(world: Node) -> void:
 	_build_guild()
 	_build_map()
 	_build_eye()
+	_build_settings()
+	_build_layout()
 	# Останнім: підтвердження має лежати ПОВЕРХ вікна, з якого його
 	# викликали, інакше «Так» довелось би шукати під прилавком.
 	_build_confirm()
@@ -265,27 +270,37 @@ func revived() -> void:
 ## працювати взагалі. Тому кнопки живуть у своєму вузлі, і саме він
 ## мишу ловить.
 var _menu_box: Control
+## Кнопки меню — стовпчиком по дві (27.11.2026). Одним рядком із шести
+## меню сягало середини низу й лягало на панель 1-7 уже у вікні 1728×972
+## (1152 точки при масштабі 1,5); по три в рядку «Налаштування» не влазило
+## в кнопку, а ширші кнопки знову діставали панелі.
+const MENU_COLUMNS := 2
+const MENU_BUTTON := Vector2(128, 30)
+const MENU_GAP := 6.0
 
 
 func _build_menu() -> void:
 	_menu_box = Control.new()
 	_menu_box.name = "Меню"
 	_menu_box.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_menu_box.position = Vector2(-460, -46)
 	_menu_box.mouse_filter = Control.MOUSE_FILTER_PASS
 	_root.add_child(_menu_box)
 
 	var buttons := [["Стати", _toggle_stats], ["Скіли", _toggle_skills],
 			["Речі", _toggle_things], ["Карта", _toggle_map],
-			["Вийти", _quit]]
-	# Кнопок стало п'ять — рядок їде лівіше рівно на одну ширину, щоб
-	# «Вийти» лишалась у тому самому куті, де до неї звикли.
-	_menu_box.position = Vector2(-460 - 112, -46)
+			["Налаштування", _toggle_settings], ["Вийти", _quit]]
+	var rows := ceili(buttons.size() / float(MENU_COLUMNS))
+	var step := MENU_BUTTON + Vector2(MENU_GAP, MENU_GAP)
+	# «Вийти» — останньою, у самому правому нижньому куті, як і було.
+	_menu_box.position = -Vector2(step.x * MENU_COLUMNS, step.y * rows) \
+			- Vector2(8, 8) + Vector2(MENU_GAP, MENU_GAP)
 	for i in buttons.size():
 		var press := Button.new()
 		press.text = str(buttons[i][0])
-		press.position = Vector2(i * 112, 0)
-		press.size = Vector2(104, 32)
+		press.position = Vector2(i % MENU_COLUMNS, i / MENU_COLUMNS) * step
+		press.size = MENU_BUTTON
+		press.focus_mode = Control.FOCUS_NONE
+		press.add_theme_font_size_override("font_size", 14)
 		press.pressed.connect(buttons[i][1])
 		_menu_box.add_child(press)
 
@@ -3168,6 +3183,7 @@ func _select_guild_skill(key: String) -> void:
 ## Свої здоров'я й мана — ліворуч угорі.
 func _build_vitals() -> void:
 	var box := Control.new()
+	_vitals_box = box
 	box.position = Vector2(16, 16)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(box)
@@ -3230,6 +3246,7 @@ func _build_vitals() -> void:
 ## а суто зручність для налагодження рельєфу).
 func _build_coords() -> void:
 	var box := Control.new()
+	_coords_box = box
 	box.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	box.position = Vector2(-166, 8)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3445,7 +3462,7 @@ func _build_cast() -> void:
 	_cast_box.position = Vector2(-WIDE * 0.5, -CELL - 62)
 	_cast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cast_box.visible = false
-	# Поверх «Логу»: на 1280×720 він налазить на середину низу (В-8).
+	# Поверх «Логу»: на вузькому вікні він може налазити на середину низу.
 	_cast_box.z_index = 1
 	_root.add_child(_cast_box)
 	_plate(Vector2(WIDE, 16), BACK, _cast_box)
@@ -3497,46 +3514,6 @@ func log_line(text: String) -> void:
 
 
 ## Скільки рядків у «Лозі» — для проб.
-## В-8: три розкладки «Логу», коли екран вузький і лог налазить на панель
-## (масштаб ×1,5: вікно 1280×720 — це 853 точки завширшки). Поки лише для
-## знімків на вибір замовника (`probes/log_look.gd`); у грі — як було.
-## «А» — лог вужчий і вищий, у вільному місці ліворуч від панелі;
-## «Б» — лог тієї самої ширини, піднятий над верхом панелі;
-## «В» — лог на місці, панель зсувається праворуч від нього.
-func place_log(variant: String) -> void:
-	var view := get_viewport().get_visible_rect().size
-	var wide := CELL * 7 + GAP * 6
-	var panel_left := (view.x - wide) * 0.5
-	var log_right := 12.0 + _log_box.size.x
-	var lift := (_strips - 1) * (CELL + GAP)
-	match variant:
-		"А":
-			var fit := maxf(160.0, panel_left - 12.0 - 12.0
-					- (_log_box.size.x - LOG_INNER.x))
-			var inner := Vector2(minf(LOG_INNER.x, fit), 210.0)
-			var lines := _log_text.text
-			_log_box.free()
-			_build_log(inner)
-			_log_text.text = lines
-			_log_box.offset_left = 12
-			_log_box.offset_top = -_log_box.custom_minimum_size.y - 12
-		"Б":
-			if log_right + 12.0 > panel_left:
-				_log_box.offset_top = -_log_box.custom_minimum_size.y \
-						- CELL - 16 - lift - 12
-			_log_box.offset_left = 12
-		"В":
-			var shift := maxf(0.0, log_right + 12.0 - panel_left)
-			for box: Control in [_cells[0]["cell"].get_parent(), _cast_box]:
-				box.offset_left += shift
-				box.offset_right += shift
-	var size := _log_box.custom_minimum_size
-	_log_box.offset_bottom = _log_box.offset_top + size.y
-	_log_box.offset_right = _log_box.offset_left + size.x
-	_messages.offset_top = _log_box.offset_top - 12 - MESSAGES * 20
-	_messages.offset_bottom = _messages.offset_top
-
-
 func log_count() -> int:
 	return _log_text.get_paragraph_count() - 1
 
@@ -3549,6 +3526,198 @@ func _build_messages() -> void:
 	_messages.position = Vector2(16, -_log_box.size.y - 24 - MESSAGES * 20)
 	_messages.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_messages)
+
+
+## Вікно «Налаштування» (слово замовника 27.11.2026): розмір вікна, повний
+## екран, масштаб показу — і розкладка блоків. Що вибрав, те й лишається:
+## пишеться в `user://settings.cfg` (`GameSettings`).
+const SETTINGS_INNER := Vector2(300, 236)
+const SETTINGS_ROW := 34.0
+
+var _settings_box: WindowBox
+var _settings_size: OptionButton
+var _settings_full: CheckBox
+var _settings_scale: OptionButton
+var _settings_lock: CheckBox
+var _settings_sizes: Array[Vector2i] = []
+
+
+func _build_settings() -> void:
+	_settings_box = WindowBox.new()
+	_settings_box.name = "ВікноНалаштувань"
+	_settings_box.setup("Налаштування", SETTINGS_INNER)
+	_settings_box.set_anchors_preset(Control.PRESET_CENTER)
+	_settings_box.position = -_settings_box.size * 0.5
+	_root.add_child(_settings_box)
+	var body := _settings_box.body
+	var y := 0.0
+
+	_settings_label("Розмір вікна", y, body)
+	_settings_size = OptionButton.new()
+	_settings_size.name = "Розмір"
+	_settings_size.focus_mode = Control.FOCUS_NONE
+	_settings_size.position = Vector2(140, y)
+	_settings_size.size = Vector2(160, 28)
+	_settings_size.item_selected.connect(func(i: int) -> void:
+			if i >= 0 and i < _settings_sizes.size():
+				GameSettings.set_window_size(get_window(), _settings_sizes[i]))
+	body.add_child(_settings_size)
+	y += SETTINGS_ROW
+
+	_settings_full = CheckBox.new()
+	_settings_full.name = "ПовнийЕкран"
+	_settings_full.text = "На весь екран"
+	_settings_full.focus_mode = Control.FOCUS_NONE
+	_settings_full.position = Vector2(0, y)
+	_settings_full.toggled.connect(func(on: bool) -> void:
+			GameSettings.set_fullscreen(get_window(), on)
+			_settings_size.disabled = on)
+	body.add_child(_settings_full)
+	y += SETTINGS_ROW
+
+	_settings_label("Масштаб показу", y, body)
+	_settings_scale = OptionButton.new()
+	_settings_scale.name = "Масштаб"
+	_settings_scale.focus_mode = Control.FOCUS_NONE
+	_settings_scale.position = Vector2(140, y)
+	_settings_scale.size = Vector2(160, 28)
+	for one in GameSettings.SCALES:
+		_settings_scale.add_item("×%s" % String.num(one, 2).replace(".", ","))
+	_settings_scale.item_selected.connect(func(i: int) -> void:
+			GameSettings.set_scale(get_window(), GameSettings.SCALES[i]))
+	body.add_child(_settings_scale)
+	y += SETTINGS_ROW + 8.0
+
+	_settings_lock = CheckBox.new()
+	_settings_lock.name = "Закріпити"
+	_settings_lock.text = "Закріпити розкладку"
+	_settings_lock.focus_mode = Control.FOCUS_NONE
+	_settings_lock.position = Vector2(0, y)
+	_settings_lock.toggled.connect(func(on: bool) -> void:
+			_layout.set_locked(on))
+	body.add_child(_settings_lock)
+	y += SETTINGS_ROW
+
+	var reset := Button.new()
+	reset.name = "Скинути"
+	reset.text = "Розкладку — як спершу"
+	reset.focus_mode = Control.FOCUS_NONE
+	reset.position = Vector2(0, y)
+	reset.size = Vector2(SETTINGS_INNER.x, 28)
+	reset.pressed.connect(_reset_layout)
+	body.add_child(reset)
+	y += SETTINGS_ROW + 4.0
+
+	var hint := _text(12, body)
+	hint.text = "Потримай мишу над блоком — з'явиться смужка: тягни " \
+			+ "за назву, «—» згортає. Вікна тягнуть за заголовок."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.position = Vector2(0, y)
+	hint.size = Vector2(SETTINGS_INNER.x, 40)
+	hint.modulate = Color(0.8, 0.8, 0.76)
+
+
+func _settings_label(caption: String, y: float, body: Control) -> void:
+	var label := _text(14, body)
+	label.text = caption
+	label.position = Vector2(0, y + 4.0)
+
+
+## Показати вікно з тим, що стоїть зараз (гравець міг перемкнути повний
+## екран клавішами вікна, мимо нас).
+func _toggle_settings() -> void:
+	_settings_box.toggle()
+	if not _settings_box.visible:
+		return
+	var window := get_window()
+	_settings_sizes = GameSettings.sizes_for_screen()
+	_settings_size.clear()
+	var now := window.size
+	var picked := -1
+	for i in _settings_sizes.size():
+		var one := _settings_sizes[i]
+		_settings_size.add_item("%d × %d" % [one.x, one.y])
+		if one == now:
+			picked = i
+	if picked < 0:
+		_settings_sizes.append(now)
+		_settings_size.add_item("%d × %d (зараз)" % [now.x, now.y])
+		picked = _settings_sizes.size() - 1
+	_settings_size.select(picked)
+	var full := window.mode == Window.MODE_FULLSCREEN \
+			or window.mode == Window.MODE_EXCLUSIVE_FULLSCREEN
+	_settings_full.set_pressed_no_signal(full)
+	_settings_size.disabled = full
+	var scale := window.content_scale_factor
+	var best := 0
+	for i in GameSettings.SCALES.size():
+		if absf(GameSettings.SCALES[i] - scale) \
+				< absf(GameSettings.SCALES[best] - scale):
+			best = i
+	_settings_scale.select(best)
+	_settings_lock.set_pressed_no_signal(_layout.locked)
+
+
+## Блоки показу стають рухливими, вікна пам'ятають, де їх лишили.
+var _window_home: Dictionary = {}
+
+
+func _build_layout() -> void:
+	_layout = HudLayout.new()
+	_layout.name = "Розкладка"
+	add_child(_layout)
+	_layout.setup(_root)
+	_layout.add("здоров'я", "Здоров'я", Control.PRESET_TOP_LEFT,
+			[_vitals_box])
+	_layout.add("ціль", "Ціль", Control.PRESET_CENTER_TOP, [_target_box])
+	_layout.add("координати", "Координати", Control.PRESET_TOP_RIGHT,
+			[_coords_box])
+	_layout.add("панель", "Панель", Control.PRESET_CENTER_BOTTOM,
+			[_cells[0]["cell"].get_parent(), _cast_box])
+	_layout.add("повідомлення", "Повідомлення", Control.PRESET_BOTTOM_LEFT,
+			[_messages])
+	_layout.add("меню", "Меню", Control.PRESET_BOTTOM_RIGHT, [_menu_box])
+	for box in _windows():
+		var key := String(box.name)
+		_window_home[key] = Vector2(box.offset_left, box.offset_top)
+		var saved: Variant = GameSettings.get_value("вікна", key, false)
+		if saved is Vector2:
+			_put_window(box, saved)
+		box.moved.connect(func() -> void:
+				GameSettings.set_value("вікна", key,
+						Vector2(box.offset_left, box.offset_top)))
+	if bool(GameSettings.get_value("вікна", "лог_згорнуто", false)):
+		_log_box.set_folded.call_deferred(true)
+	_log_box.folded_changed.connect(func(on: bool) -> void:
+			GameSettings.set_value("вікна", "лог_згорнуто", on))
+	_layout.finish()
+
+
+func _windows() -> Array[WindowBox]:
+	var out: Array[WindowBox] = []
+	for node in _root.get_children():
+		if node is WindowBox:
+			out.append(node)
+	return out
+
+
+## Поставити вікно відступами від його якоря, розміру не міняючи.
+func _put_window(box: WindowBox, at: Vector2) -> void:
+	var size := box.custom_minimum_size
+	box.offset_left = at.x
+	box.offset_top = at.y
+	box.offset_right = at.x + size.x
+	box.offset_bottom = at.y + size.y
+
+
+func _reset_layout() -> void:
+	_layout.reset()
+	GameSettings.forget("вікна")
+	for box in _windows():
+		var key := String(box.name)
+		if _window_home.has(key):
+			_put_window(box, _window_home[key])
+	_log_box.set_folded(false)
 
 
 # ── те, що надсилає сервер ────────────────────────────────────────────

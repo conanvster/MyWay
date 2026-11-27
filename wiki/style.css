@@ -136,6 +136,24 @@ dialog.ref3d-modal .close:hover{color:var(--ink)}
   text-align:center}
 footer{max-width:1280px;margin:0 auto;padding:0 16px 2rem;color:var(--muted);
   font-size:.8rem}
+.download{background:var(--paper);border:1px solid var(--rule);
+  border-left:4px solid var(--accent);border-radius:8px;padding:.4rem 1.2rem 1rem;
+  margin:1.2rem 0 1.6rem}
+.download h2{margin-top:.6rem}
+.dls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:.7rem;margin:.8rem 0}
+.dl{display:flex;flex-direction:column;gap:.15rem;padding:.75rem 1rem;
+  border:1px solid var(--rule);border-radius:6px;text-decoration:none;
+  color:var(--ink);background:var(--ground)}
+.dl b{font:600 1.15rem var(--display);letter-spacing:.03em}
+.dl span{font-size:.82rem;color:var(--muted)}
+.dl .sz{font-family:var(--mono)}
+.dl:hover{border-color:var(--accent)}
+.dl.mine{background:var(--accent);border-color:var(--accent)}
+.dl.mine b,.dl.mine span{color:var(--accent-ink)}
+.dl-meta{font-size:.85rem;color:var(--muted)}
+.steps{padding-left:1.3rem}
+.steps li{margin:.2rem 0}
 @media (max-width:640px){
   .card{grid-template-columns:1fr}
   .photo,.photos{max-width:260px}

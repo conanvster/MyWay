@@ -267,6 +267,24 @@ dialog.ref3d-modal .close:hover{color:var(--ink)}
   text-align:center}
 footer{max-width:1280px;margin:0 auto;padding:0 16px 2rem;color:var(--muted);
   font-size:.8rem}
+.download{background:var(--paper);border:1px solid var(--rule);
+  border-left:4px solid var(--accent);border-radius:8px;padding:.4rem 1.2rem 1rem;
+  margin:1.2rem 0 1.6rem}
+.download h2{margin-top:.6rem}
+.dls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:.7rem;margin:.8rem 0}
+.dl{display:flex;flex-direction:column;gap:.15rem;padding:.75rem 1rem;
+  border:1px solid var(--rule);border-radius:6px;text-decoration:none;
+  color:var(--ink);background:var(--ground)}
+.dl b{font:600 1.15rem var(--display);letter-spacing:.03em}
+.dl span{font-size:.82rem;color:var(--muted)}
+.dl .sz{font-family:var(--mono)}
+.dl:hover{border-color:var(--accent)}
+.dl.mine{background:var(--accent);border-color:var(--accent)}
+.dl.mine b,.dl.mine span{color:var(--accent-ink)}
+.dl-meta{font-size:.85rem;color:var(--muted)}
+.steps{padding-left:1.3rem}
+.steps li{margin:.2rem 0}
 @media (max-width:640px){
   .card{grid-template-columns:1fr}
   .photo,.photos{max-width:260px}
@@ -401,6 +419,60 @@ def значок_3д(річ):
 
 # ─────────────────────────── карта світу ───────────────────────────
 
+ПЛАТФОРМИ = [("windows", "Windows", "Windows 10/11, x86_64"),
+             ("macos", "macOS", "Apple Silicon та Intel"),
+             ("linux", "Linux", "x86_64")]
+
+
+def завантаження_html():
+    """Блок «Завантажити гру» на головній (П-291, слово замовника 27.11.2026:
+    «на головній буде додано розділ скачати апдейтер/лоадер»).
+
+    Архіви апдейтера й `zavantazhennia/info.json` кладе
+    `tools/vyklasty_wiki.sh` поруч із вікі на сервері; сторінка лише
+    посилається на сталі імена й підтягує версію, розміри та IP сервера
+    гри з info.json. Відкрита з диска (без info.json) — блок чесно каже,
+    що архівів поруч немає."""
+    кнопки = "".join(
+        '<a class="dl" data-os="%s" href="zavantazhennia/MyWay-Updater-%s.zip" '
+        'download><b>%s</b><span>%s</span><span class="sz" data-size="%s">'
+        '</span></a>' % (k, k, e(n), e(опис), k)
+        for k, n, опис in ПЛАТФОРМИ)
+    return """<section class="download" id="zavantazhyty" aria-labelledby="dl-h">
+<h2 id="dl-h">Завантажити гру</h2>
+<p>Завантаж <b>апдейтер</b> для своєї системи. Він сам завантажить гру, оновлюватиме її й запустить.</p>
+<div class="dls">%s</div>
+<p class="dl-meta" id="dl-meta">Версія апдейтера та адреса сервера з'являться тут, коли сторінку відкрито із сервера.</p>
+<ol class="steps">
+<li>Розпакуй архів і запусти <code>MyWay-Updater</code>.</li>
+<li>Введи <b>IP сервера</b>: <code id="dl-ip">той, що дав власник</code>.</li>
+<li>За бажанням обери теку, куди встановити гру, натисни <b>«Оновити»</b>, потім <b>«Грати»</b>.</li>
+<li>У грі створи персонажа або зайди наявним.</li>
+</ol>
+<p class="note"><b>macOS:</b> апдейтер не підписаний Apple. Першого разу відкрий його через правий клік → «Відкрити» (або «Усе одно відкрити» в «Приватності та безпеці»). <b>Windows:</b> якщо SmartScreen попередить — «Докладніше» → «Усе одно запустити».</p>
+<script>
+(function(){
+  var ua=navigator.userAgent, os=/Mac/.test(ua)?"macos":/Win/.test(ua)?"windows":/Linux|X11/.test(ua)?"linux":"";
+  if(os){var a=document.querySelector('.dl[data-os="'+os+'"]'); if(a) a.classList.add("mine");}
+  function mb(b){return (b/1048576).toFixed(0)+" МБ";}
+  fetch("zavantazhennia/info.json",{cache:"no-store"}).then(function(r){
+    if(!r.ok) throw 0; return r.json();
+  }).then(function(i){
+    (i.files||[]).forEach(function(f){
+      var s=document.querySelector('.sz[data-size="'+f.os+'"]'); if(s) s.textContent=mb(f.size);
+    });
+    var m="Апдейтер "+i.version+" · викладено "+i.date;
+    if(i.server) m+=" · сервер гри "+i.server;
+    document.getElementById("dl-meta").textContent=m;
+    if(i.server) document.getElementById("dl-ip").textContent=i.server;
+  }).catch(function(){
+    document.getElementById("dl-meta").textContent="Архівів поруч немає — сторінку відкрито не із сервера вікі.";
+  });
+})();
+</script>
+</section>""" % кнопки
+
+
 def карта(світ):
     м = світ.мапа
     os.makedirs(IMG, exist_ok=True)
@@ -436,6 +508,7 @@ def карта(світ):
                     ("монстрів на мапі", число(гнізд)),
                     ("святинь", len(м.get("святині", []))),
                     ("орієнтирів", len(м.get("орієнтири", [])))])]
+    тіло.append(завантаження_html())
     тіло.append('<div class="figs"><figure><img src="img/svit.jpg" '
                 'alt="Намальована карта світу" loading="lazy">'
                 '<figcaption>Аркуш карти — те саме, що вікно «Карта» в грі. '

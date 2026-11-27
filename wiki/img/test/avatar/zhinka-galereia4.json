@@ -1,0 +1,635 @@
+[
+ {
+  "№": 77,
+  "макро": {
+   "weight": 0.68,
+   "muscle": 0.92,
+   "proportions": 0.5,
+   "height": 0.74,
+   "age": 0.35,
+   "cupsize": 0.63
+  },
+  "цілі": {
+   "head-rectangular": 0.51,
+   "head-oval": 0.65,
+   "measure-neck-height-decr": 0.33,
+   "chin-height-decr": 0.42,
+   "head-scale-depth-decr": 0.2,
+   "measure-calf-circ-incr": 0.58,
+   "head-back-scale-depth-incr": 0.35,
+   "l-lowerleg-muscle-incr": 0.63,
+   "stomach-tone-incr": 0.52,
+   "torso-muscle-pectoral-incr": 0.8,
+   "l-upperleg-muscle-incr": 0.31,
+   "pelvis-tone-incr": 0.4,
+   "l-upperarm-shoulder-muscle-incr": 0.62,
+   "torso-muscle-dorsi-incr": 0.33,
+   "l-upperarm-muscle-incr": 0.84,
+   "l-lowerarm-muscle-incr": 0.57
+  }
+ },
+ {
+  "№": 78,
+  "макро": {
+   "weight": 0.46,
+   "muscle": 0.91,
+   "proportions": 0.53,
+   "height": 0.73,
+   "age": 0.41,
+   "cupsize": 0.64
+  },
+  "цілі": {
+   "head-round": 0.49,
+   "head-diamond": 0.24,
+   "hip-scale-horiz-incr": 0.07,
+   "measure-neck-height-incr": 0.17,
+   "measure-calf-circ-incr": 0.31,
+   "measure-upperleg-height-incr": 0.05,
+   "nose-scale-vert-incr": 0.49,
+   "torso-muscle-dorsi-incr": 0.45,
+   "l-upperarm-muscle-incr": 0.43,
+   "l-upperleg-muscle-incr": 0.98,
+   "l-lowerleg-muscle-incr": 0.34,
+   "torso-muscle-pectoral-incr": 0.48,
+   "l-upperarm-shoulder-muscle-incr": 0.85,
+   "l-lowerarm-muscle-incr": 0.58
+  }
+ },
+ {
+  "№": 79,
+  "макро": {
+   "weight": 0.47,
+   "muscle": 0.77,
+   "proportions": 0.62,
+   "height": 0.55,
+   "age": 0.4,
+   "cupsize": 0.89
+  },
+  "цілі": {
+   "head-square": 0.22,
+   "head-round": 0.28,
+   "measure-neck-circ-incr": 0.26,
+   "chin-prominent-incr": 0.46,
+   "torso-vshape-decr": 0.03,
+   "hip-scale-horiz-decr": 0.48,
+   "measure-neck-height-incr": 0.35,
+   "l-lowerleg-muscle-incr": 0.53,
+   "pelvis-tone-incr": 0.61,
+   "torso-muscle-pectoral-incr": 0.59,
+   "l-upperarm-shoulder-muscle-incr": 0.49,
+   "l-lowerarm-muscle-incr": 0.89,
+   "torso-muscle-dorsi-incr": 0.84,
+   "l-upperarm-muscle-incr": 0.36,
+   "stomach-tone-incr": 0.87
+  }
+ },
+ {
+  "№": 80,
+  "макро": {
+   "weight": 0.74,
+   "muscle": 0.97,
+   "proportions": 0.81,
+   "height": 0.67,
+   "age": 0.3,
+   "cupsize": 0.76
+  },
+  "цілі": {
+   "head-round": 0.53,
+   "head-oval": 0.77,
+   "measure-thigh-circ-decr": 0.56,
+   "measure-neck-height-decr": 0.06,
+   "chin-height-incr": 0.25,
+   "nose-scale-vert-incr": 0.2,
+   "l-cheek-bones-decr": 0.32,
+   "l-lowerarm-muscle-incr": 0.92,
+   "l-upperarm-shoulder-muscle-incr": 0.76,
+   "l-upperleg-muscle-incr": 0.63,
+   "torso-muscle-pectoral-incr": 0.5,
+   "pelvis-tone-incr": 0.58,
+   "stomach-tone-incr": 0.93,
+   "l-upperarm-muscle-incr": 0.55,
+   "l-lowerleg-muscle-incr": 0.56
+  }
+ },
+ {
+  "№": 81,
+  "макро": {
+   "weight": 0.66,
+   "muscle": 0.77,
+   "proportions": 0.78,
+   "height": 0.45,
+   "age": 0.37,
+   "cupsize": 0.8
+  },
+  "цілі": {
+   "head-triangular": 0.57,
+   "head-invertedtriangular": 0.71,
+   "measure-neck-circ-incr": 0.59,
+   "stomach-pregnant-incr": 0.46,
+   "forehead-scale-vert-incr": 0.28,
+   "nose-scale-vert-decr": 0.55,
+   "chin-prominent-incr": 0.38,
+   "stomach-tone-incr": 0.34,
+   "l-upperarm-muscle-incr": 0.68,
+   "l-lowerarm-muscle-incr": 0.69,
+   "l-upperleg-muscle-incr": 0.79,
+   "l-lowerleg-muscle-incr": 0.7,
+   "pelvis-tone-incr": 0.47
+  }
+ },
+ {
+  "№": 82,
+  "макро": {
+   "weight": 0.68,
+   "muscle": 0.9,
+   "proportions": 0.9,
+   "height": 0.42,
+   "age": 0.35,
+   "cupsize": 0.62
+  },
+  "цілі": {
+   "head-diamond": 0.52,
+   "head-triangular": 0.87,
+   "measure-neck-height-incr": 0.24,
+   "measure-thigh-circ-incr": 0.25,
+   "head-scale-horiz-decr": 0.26,
+   "head-back-scale-depth-incr": 0.17,
+   "buttocks-volume-decr": 0.49,
+   "l-upperarm-muscle-incr": 0.39,
+   "torso-muscle-pectoral-incr": 0.66,
+   "pelvis-tone-incr": 0.39,
+   "l-lowerleg-muscle-incr": 0.36
+  }
+ },
+ {
+  "№": 83,
+  "макро": {
+   "weight": 0.73,
+   "muscle": 0.96,
+   "proportions": 0.49,
+   "height": 0.38,
+   "age": 0.39,
+   "cupsize": 0.79
+  },
+  "цілі": {
+   "head-diamond": 0.49,
+   "head-round": 0.48,
+   "head-fat-incr": 0.32,
+   "chin-width-incr": 0.25,
+   "chin-height-incr": 0.49,
+   "measure-upperleg-height-decr": 0.03,
+   "torso-vshape-decr": 0.51,
+   "pelvis-tone-incr": 0.52,
+   "torso-muscle-dorsi-incr": 0.98,
+   "l-upperarm-shoulder-muscle-incr": 0.45,
+   "stomach-tone-incr": 0.43,
+   "torso-muscle-pectoral-incr": 0.33,
+   "l-lowerleg-muscle-incr": 0.88,
+   "l-upperleg-muscle-incr": 0.58,
+   "l-lowerarm-muscle-incr": 0.31
+  }
+ },
+ {
+  "№": 84,
+  "макро": {
+   "weight": 0.75,
+   "muscle": 0.92,
+   "proportions": 0.55,
+   "height": 0.39,
+   "age": 0.32,
+   "cupsize": 0.92
+  },
+  "цілі": {
+   "head-square": 0.66,
+   "head-triangular": 0.66,
+   "chin-prominent-decr": 0.45,
+   "measure-thigh-circ-decr": 0.06,
+   "torso-scale-horiz-decr": 0.51,
+   "forehead-scale-vert-incr": 0.11,
+   "torso-vshape-decr": 0.16,
+   "torso-muscle-dorsi-incr": 0.41,
+   "l-upperarm-muscle-incr": 0.38,
+   "l-lowerarm-muscle-incr": 0.49,
+   "l-lowerleg-muscle-incr": 0.48,
+   "stomach-tone-incr": 0.43,
+   "l-upperleg-muscle-incr": 0.58,
+   "pelvis-tone-incr": 0.71
+  }
+ },
+ {
+  "№": 85,
+  "макро": {
+   "weight": 0.79,
+   "muscle": 0.96,
+   "proportions": 0.72,
+   "height": 0.48,
+   "age": 0.49,
+   "cupsize": 0.74
+  },
+  "цілі": {
+   "head-rectangular": 0.39,
+   "head-diamond": 0.63,
+   "torso-scale-horiz-incr": 0.03,
+   "chin-height-decr": 0.29,
+   "head-fat-incr": 0.06,
+   "head-scale-vert-incr": 0.13,
+   "measure-upperleg-height-decr": 0.3,
+   "l-lowerleg-muscle-incr": 0.51,
+   "l-upperarm-muscle-incr": 0.6,
+   "pelvis-tone-incr": 0.97,
+   "torso-muscle-dorsi-incr": 0.71,
+   "stomach-tone-incr": 0.62,
+   "l-upperleg-muscle-incr": 0.38
+  }
+ },
+ {
+  "№": 86,
+  "макро": {
+   "weight": 0.56,
+   "muscle": 0.93,
+   "proportions": 0.61,
+   "height": 0.55,
+   "age": 0.33,
+   "cupsize": 0.87
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.61,
+   "head-diamond": 0.74,
+   "measure-neck-height-decr": 0.49,
+   "hip-scale-horiz-decr": 0.1,
+   "measure-upperarm-circ-decr": 0.38,
+   "measure-neck-circ-incr": 0.28,
+   "measure-calf-circ-incr": 0.44,
+   "l-lowerleg-muscle-incr": 0.45,
+   "l-upperarm-muscle-incr": 0.54,
+   "l-upperleg-muscle-incr": 0.64,
+   "torso-muscle-dorsi-incr": 0.64,
+   "pelvis-tone-incr": 0.36
+  }
+ },
+ {
+  "№": 87,
+  "макро": {
+   "weight": 0.76,
+   "muscle": 0.92,
+   "proportions": 0.88,
+   "height": 0.73,
+   "age": 0.39,
+   "cupsize": 1.0
+  },
+  "цілі": {
+   "head-diamond": 0.71,
+   "head-triangular": 0.62,
+   "torso-scale-horiz-incr": 0.37,
+   "buttocks-volume-incr": 0.44,
+   "head-scale-depth-decr": 0.58,
+   "chin-width-decr": 0.4,
+   "chin-height-decr": 0.02,
+   "l-lowerleg-muscle-incr": 0.4,
+   "stomach-tone-incr": 0.75,
+   "pelvis-tone-incr": 0.93,
+   "l-lowerarm-muscle-incr": 0.99,
+   "l-upperleg-muscle-incr": 0.78,
+   "torso-muscle-pectoral-incr": 0.63
+  }
+ },
+ {
+  "№": 88,
+  "макро": {
+   "weight": 0.74,
+   "muscle": 0.72,
+   "proportions": 0.82,
+   "height": 0.66,
+   "age": 0.37,
+   "cupsize": 0.69
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.62,
+   "head-oval": 0.28,
+   "measure-neck-height-decr": 0.14,
+   "chin-prominent-decr": 0.28,
+   "chin-width-incr": 0.37,
+   "chin-height-decr": 0.33,
+   "hip-scale-horiz-incr": 0.47,
+   "l-upperarm-muscle-incr": 0.69,
+   "stomach-tone-incr": 0.49,
+   "pelvis-tone-incr": 0.97,
+   "torso-muscle-pectoral-incr": 0.5,
+   "l-lowerarm-muscle-incr": 0.83
+  }
+ },
+ {
+  "№": 89,
+  "макро": {
+   "weight": 0.58,
+   "muscle": 0.98,
+   "proportions": 0.87,
+   "height": 0.47,
+   "age": 0.4,
+   "cupsize": 0.93
+  },
+  "цілі": {
+   "head-oval": 0.26,
+   "head-diamond": 0.79,
+   "torso-scale-horiz-decr": 0.17,
+   "forehead-scale-vert-decr": 0.24,
+   "measure-calf-circ-decr": 0.51,
+   "measure-upperarm-circ-incr": 0.32,
+   "measure-neck-height-decr": 0.13,
+   "torso-muscle-pectoral-incr": 0.84,
+   "stomach-tone-incr": 0.53,
+   "l-upperarm-shoulder-muscle-incr": 0.55,
+   "l-lowerarm-muscle-incr": 0.98,
+   "torso-muscle-dorsi-incr": 0.59,
+   "pelvis-tone-incr": 0.32,
+   "l-upperleg-muscle-incr": 0.58,
+   "l-lowerleg-muscle-incr": 0.77
+  }
+ },
+ {
+  "№": 90,
+  "макро": {
+   "weight": 0.46,
+   "muscle": 0.88,
+   "proportions": 0.7,
+   "height": 0.6,
+   "age": 0.34,
+   "cupsize": 0.83
+  },
+  "цілі": {
+   "head-diamond": 0.45,
+   "head-invertedtriangular": 0.45,
+   "measure-neck-circ-incr": 0.35,
+   "hip-scale-horiz-incr": 0.3,
+   "measure-upperarm-circ-decr": 0.23,
+   "nose-scale-vert-incr": 0.54,
+   "l-cheek-bones-incr": 0.32,
+   "pelvis-tone-incr": 0.99,
+   "torso-muscle-pectoral-incr": 0.84,
+   "l-upperarm-muscle-incr": 0.85,
+   "stomach-tone-incr": 0.86,
+   "l-upperarm-shoulder-muscle-incr": 0.7,
+   "l-upperleg-muscle-incr": 0.45,
+   "l-lowerarm-muscle-incr": 0.71
+  }
+ },
+ {
+  "№": 91,
+  "макро": {
+   "weight": 0.76,
+   "muscle": 0.84,
+   "proportions": 0.47,
+   "height": 0.71,
+   "age": 0.43,
+   "cupsize": 0.74
+  },
+  "цілі": {
+   "head-triangular": 0.62,
+   "head-rectangular": 0.39,
+   "nose-scale-vert-incr": 0.37,
+   "measure-waist-circ-incr": 0.38,
+   "head-back-scale-depth-incr": 0.22,
+   "forehead-scale-vert-decr": 0.0,
+   "chin-height-decr": 0.11,
+   "l-upperarm-shoulder-muscle-incr": 0.66,
+   "l-lowerarm-muscle-incr": 0.31,
+   "l-lowerleg-muscle-incr": 0.83,
+   "l-upperleg-muscle-incr": 0.43,
+   "torso-muscle-pectoral-incr": 0.4,
+   "torso-muscle-dorsi-incr": 0.92
+  }
+ },
+ {
+  "№": 92,
+  "макро": {
+   "weight": 0.69,
+   "muscle": 0.88,
+   "proportions": 0.46,
+   "height": 0.47,
+   "age": 0.41,
+   "cupsize": 0.87
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.33,
+   "head-rectangular": 0.83,
+   "nose-scale-horiz-incr": 0.37,
+   "hip-scale-horiz-decr": 0.21,
+   "stomach-pregnant-decr": 0.1,
+   "measure-neck-circ-decr": 0.19,
+   "chin-width-decr": 0.49,
+   "l-upperarm-muscle-incr": 0.66,
+   "l-upperarm-shoulder-muscle-incr": 0.98,
+   "stomach-tone-incr": 0.36,
+   "torso-muscle-pectoral-incr": 0.91,
+   "l-lowerleg-muscle-incr": 0.92,
+   "pelvis-tone-incr": 0.94,
+   "l-upperleg-muscle-incr": 0.6,
+   "l-lowerarm-muscle-incr": 0.47,
+   "torso-muscle-dorsi-incr": 0.92
+  }
+ },
+ {
+  "№": 93,
+  "макро": {
+   "weight": 0.75,
+   "muscle": 0.91,
+   "proportions": 0.59,
+   "height": 0.5,
+   "age": 0.5,
+   "cupsize": 0.9
+  },
+  "цілі": {
+   "head-rectangular": 0.76,
+   "head-invertedtriangular": 0.78,
+   "head-scale-depth-decr": 0.56,
+   "chin-prominent-decr": 0.44,
+   "measure-thigh-circ-incr": 0.48,
+   "buttocks-volume-incr": 0.2,
+   "forehead-scale-vert-incr": 0.44,
+   "l-lowerarm-muscle-incr": 0.83,
+   "torso-muscle-pectoral-incr": 0.64,
+   "l-upperleg-muscle-incr": 0.9,
+   "pelvis-tone-incr": 0.46,
+   "l-lowerleg-muscle-incr": 0.52,
+   "l-upperarm-muscle-incr": 0.87,
+   "torso-muscle-dorsi-incr": 0.67,
+   "stomach-tone-incr": 0.5
+  }
+ },
+ {
+  "№": 94,
+  "макро": {
+   "weight": 0.44,
+   "muscle": 0.85,
+   "proportions": 0.73,
+   "height": 0.4,
+   "age": 0.5,
+   "cupsize": 0.71
+  },
+  "цілі": {
+   "head-rectangular": 0.21,
+   "head-square": 0.84,
+   "measure-waist-circ-decr": 0.48,
+   "measure-upperarm-circ-incr": 0.18,
+   "measure-thigh-circ-incr": 0.21,
+   "measure-neck-circ-incr": 0.16,
+   "hip-scale-horiz-incr": 0.19,
+   "torso-muscle-dorsi-incr": 0.7,
+   "l-lowerarm-muscle-incr": 0.63,
+   "l-lowerleg-muscle-incr": 0.45
+  }
+ },
+ {
+  "№": 95,
+  "макро": {
+   "weight": 0.46,
+   "muscle": 0.91,
+   "proportions": 0.61,
+   "height": 0.72,
+   "age": 0.3,
+   "cupsize": 0.61
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.61,
+   "head-square": 0.53,
+   "buttocks-volume-incr": 0.23,
+   "head-scale-vert-decr": 0.22,
+   "l-cheek-bones-decr": 0.25,
+   "measure-calf-circ-decr": 0.4,
+   "measure-neck-circ-decr": 0.32,
+   "l-upperarm-muscle-incr": 0.51,
+   "torso-muscle-pectoral-incr": 0.65,
+   "l-upperarm-shoulder-muscle-incr": 0.86,
+   "l-lowerarm-muscle-incr": 0.93,
+   "stomach-tone-incr": 0.99,
+   "pelvis-tone-incr": 0.98
+  }
+ },
+ {
+  "№": 96,
+  "макро": {
+   "weight": 0.53,
+   "muscle": 0.75,
+   "proportions": 0.88,
+   "height": 0.67,
+   "age": 0.49,
+   "cupsize": 0.95
+  },
+  "цілі": {
+   "head-diamond": 0.66,
+   "head-oval": 0.64,
+   "torso-vshape-decr": 0.44,
+   "head-scale-horiz-decr": 0.35,
+   "measure-upperarm-circ-decr": 0.41,
+   "nose-scale-horiz-incr": 0.42,
+   "measure-neck-height-incr": 0.33,
+   "pelvis-tone-incr": 0.86,
+   "stomach-tone-incr": 0.58,
+   "l-upperarm-shoulder-muscle-incr": 0.53,
+   "l-upperarm-muscle-incr": 0.72,
+   "l-lowerarm-muscle-incr": 0.31
+  }
+ },
+ {
+  "№": 97,
+  "макро": {
+   "weight": 0.68,
+   "muscle": 0.91,
+   "proportions": 0.83,
+   "height": 0.66,
+   "age": 0.3,
+   "cupsize": 0.78
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.66,
+   "head-triangular": 0.59,
+   "hip-scale-horiz-incr": 0.26,
+   "measure-neck-circ-incr": 0.57,
+   "stomach-pregnant-incr": 0.12,
+   "nose-scale-horiz-incr": 0.35,
+   "head-scale-horiz-incr": 0.02,
+   "stomach-tone-incr": 0.89,
+   "torso-muscle-dorsi-incr": 0.67,
+   "pelvis-tone-incr": 0.73,
+   "l-lowerarm-muscle-incr": 0.69,
+   "torso-muscle-pectoral-incr": 0.34,
+   "l-upperarm-muscle-incr": 0.96
+  }
+ },
+ {
+  "№": 98,
+  "макро": {
+   "weight": 0.56,
+   "muscle": 0.71,
+   "proportions": 0.48,
+   "height": 0.4,
+   "age": 0.45,
+   "cupsize": 0.75
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.69,
+   "head-diamond": 0.8,
+   "l-cheek-bones-incr": 0.57,
+   "buttocks-volume-decr": 0.19,
+   "torso-scale-horiz-decr": 0.32,
+   "head-fat-incr": 0.05,
+   "hip-scale-horiz-decr": 0.49,
+   "l-lowerarm-muscle-incr": 0.51,
+   "l-upperarm-muscle-incr": 0.55,
+   "l-upperarm-shoulder-muscle-incr": 0.59,
+   "torso-muscle-pectoral-incr": 0.88
+  }
+ },
+ {
+  "№": 99,
+  "макро": {
+   "weight": 0.66,
+   "muscle": 0.86,
+   "proportions": 0.67,
+   "height": 0.74,
+   "age": 0.52,
+   "cupsize": 0.72
+  },
+  "цілі": {
+   "head-invertedtriangular": 0.87,
+   "head-rectangular": 0.76,
+   "nose-scale-vert-decr": 0.53,
+   "hip-scale-horiz-decr": 0.3,
+   "head-scale-horiz-decr": 0.11,
+   "measure-calf-circ-incr": 0.34,
+   "chin-width-incr": 0.22,
+   "torso-muscle-pectoral-incr": 0.31,
+   "stomach-tone-incr": 0.36,
+   "pelvis-tone-incr": 0.37,
+   "l-lowerleg-muscle-incr": 0.46,
+   "l-upperleg-muscle-incr": 0.72
+  }
+ },
+ {
+  "№": 100,
+  "макро": {
+   "weight": 0.44,
+   "muscle": 0.74,
+   "proportions": 0.6,
+   "height": 0.43,
+   "age": 0.54,
+   "cupsize": 0.81
+  },
+  "цілі": {
+   "head-oval": 0.28,
+   "head-rectangular": 0.39,
+   "nose-scale-vert-decr": 0.05,
+   "chin-prominent-incr": 0.27,
+   "measure-neck-circ-incr": 0.06,
+   "torso-scale-horiz-decr": 0.45,
+   "head-scale-vert-decr": 0.37,
+   "torso-muscle-dorsi-incr": 0.96,
+   "torso-muscle-pectoral-incr": 0.91,
+   "pelvis-tone-incr": 0.52,
+   "l-upperarm-muscle-incr": 0.6,
+   "l-upperleg-muscle-incr": 0.43,
+   "l-upperarm-shoulder-muscle-incr": 0.86,
+   "stomach-tone-incr": 0.94
+  }
+ }
+]

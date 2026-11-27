@@ -15,6 +15,39 @@
 <h1>Карта світу</h1>
 <p class="lead">Світ версії 2: один материк, море довкола, п'ять зон, що сильнішають від столиці. Назви міст і сіл тимчасові (П-173).</p>
 <div class="stats"><div><b>5 632</b><span>сторона світу, м</span></div><div><b>5</b><span>міст</span></div><div><b>4</b><span>сіл</span></div><div><b>967</b><span>зон появи</span></div><div><b>12 150</b><span>монстрів на мапі</span></div><div><b>33</b><span>святинь</span></div><div><b>16</b><span>орієнтирів</span></div></div>
+<section class="download" id="zavantazhyty" aria-labelledby="dl-h">
+<h2 id="dl-h">Завантажити гру</h2>
+<p>Завантаж <b>апдейтер</b> для своєї системи. Він сам завантажить гру, оновлюватиме її й запустить.</p>
+<div class="dls"><a class="dl" data-os="windows" href="zavantazhennia/MyWay-Updater-windows.zip" download><b>Windows</b><span>Windows 10/11, x86_64</span><span class="sz" data-size="windows"></span></a><a class="dl" data-os="macos" href="zavantazhennia/MyWay-Updater-macos.zip" download><b>macOS</b><span>Apple Silicon та Intel</span><span class="sz" data-size="macos"></span></a><a class="dl" data-os="linux" href="zavantazhennia/MyWay-Updater-linux.zip" download><b>Linux</b><span>x86_64</span><span class="sz" data-size="linux"></span></a></div>
+<p class="dl-meta" id="dl-meta">Версія апдейтера та адреса сервера з'являться тут, коли сторінку відкрито із сервера.</p>
+<ol class="steps">
+<li>Розпакуй архів і запусти <code>MyWay-Updater</code>.</li>
+<li>Введи <b>IP сервера</b>: <code id="dl-ip">той, що дав власник</code>.</li>
+<li>За бажанням обери теку, куди встановити гру, натисни <b>«Оновити»</b>, потім <b>«Грати»</b>.</li>
+<li>У грі створи персонажа або зайди наявним.</li>
+</ol>
+<p class="note"><b>macOS:</b> апдейтер не підписаний Apple. Першого разу відкрий його через правий клік → «Відкрити» (або «Усе одно відкрити» в «Приватності та безпеці»). <b>Windows:</b> якщо SmartScreen попередить — «Докладніше» → «Усе одно запустити».</p>
+<script>
+(function(){
+  var ua=navigator.userAgent, os=/Mac/.test(ua)?"macos":/Win/.test(ua)?"windows":/Linux|X11/.test(ua)?"linux":"";
+  if(os){var a=document.querySelector('.dl[data-os="'+os+'"]'); if(a) a.classList.add("mine");}
+  function mb(b){return (b/1048576).toFixed(0)+" МБ";}
+  fetch("zavantazhennia/info.json",{cache:"no-store"}).then(function(r){
+    if(!r.ok) throw 0; return r.json();
+  }).then(function(i){
+    (i.files||[]).forEach(function(f){
+      var s=document.querySelector('.sz[data-size="'+f.os+'"]'); if(s) s.textContent=mb(f.size);
+    });
+    var m="Апдейтер "+i.version+" · викладено "+i.date;
+    if(i.server) m+=" · сервер гри "+i.server;
+    document.getElementById("dl-meta").textContent=m;
+    if(i.server) document.getElementById("dl-ip").textContent=i.server;
+  }).catch(function(){
+    document.getElementById("dl-meta").textContent="Архівів поруч немає — сторінку відкрито не із сервера вікі.";
+  });
+})();
+</script>
+</section>
 <div class="figs"><figure><img src="img/svit.jpg" alt="Намальована карта світу" loading="lazy"><figcaption>Аркуш карти — те саме, що вікно «Карта» в грі. Аркуш покриває весь світ, 5 632 × 5 632 м.</figcaption></figure>
 <figure><img src="img/rozselennia.jpg" alt="Карта розселення монстрів" loading="lazy"><figcaption>Карта розселення: де стоять скупчення й святині (<code>tools/rozselennia.py</code>).</figcaption></figure>
 </div>
@@ -22,7 +55,7 @@
 <div class="wrap"><table><thead><tr><th>Зона</th><th>№</th><th>Хто живе</th><th>Рівні за опорними містами</th></tr></thead><tbody><tr><td class="nm">Початкова рівнина</td><td class="num">1</td><td>звірі та людиноподібні мутанти-звірі</td><td>Стільна 1–10 · Крайня Брама 10–30 · Лан 30–50</td></tr><tr><td class="nm">Гори заходу</td><td class="num">2</td><td>гірські: яструби, змії, козли, друїди-дерева, їхні мутанти й людиноподібні вище рангом</td><td>Гірський Поріг 50–60 · Скеляр 55–70</td></tr><tr><td class="nm">Попіл</td><td class="num">3</td><td>нечисть: скелети, вампіри та інші</td><td>Попелище 65–75</td></tr><tr><td class="nm">Пустка</td><td class="num">4</td><td>пустельні монстри й дракони</td><td>Тиха Пустка 70–80</td></tr><tr><td class="nm">Південна тераса</td><td class="num">5</td><td>не заселяти — під монстрів S і SS</td><td><span class="muted">не заселена</span></td></tr><tr><td class="nm">Крижана північ</td><td class="num">2</td><td>частина зони 2: крижані звірі, йєті, крижані енти</td><td>Гірський Поріг 50–60 · Скеляр 55–70</td></tr></tbody></table></div>
 <h2>Міста й села</h2>
 <p class="note">Майстер магії переносить між містами: 250 монет за кілометр по прямій, не менше 300.</p>
-<div class="wrap"><table><thead><tr><th>Назва</th><th>Що</th><th>Від столиці, м</th><th>Мешканці</th></tr></thead><tbody><tr><td class="nm">Стільна <span class="chip">столиця</span></td><td>місто</td><td class="num">0</td><td>Ліда — крамар, Горан — коваль, Мирон — священик, Зоряна — вартовий, Богдан — гільдмайстер, Ярина — завідувач складу, Юхим — майстер магії</td></tr><tr><td class="nm">Крайня Брама</td><td>місто</td><td class="num">1 101</td><td>Остап — крамар, Мальва — коваль, Радим — священик, Квітка — вартовий, Гафія — майстер магії</td></tr><tr><td class="nm">Гірський Поріг</td><td>місто</td><td class="num">3 315</td><td>Терень — гільдмайстер, Улана — завідувач складу, Гнат — крамар, Ружа — коваль, Прокіп — майстер магії</td></tr><tr><td class="nm">Попелище</td><td>місто</td><td class="num">2 586</td><td>Северин — священик, Досія — вартовий, Лаврін — гільдмайстер, Оляна — завідувач складу, Соломія — майстер магії</td></tr><tr><td class="nm">Тиха Пустка</td><td>місто</td><td class="num">995</td><td>Панас — крамар, Векла — коваль, Тиміш — священик, Наста — вартовий, Кузьма — майстер магії</td></tr><tr><td class="nm">Броди</td><td>село</td><td class="num">625</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Лан</td><td>село</td><td class="num">2 137</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Розтоки</td><td>село</td><td class="num">1 247</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Скеляр</td><td>село</td><td class="num">1 763</td><td><span class="muted">без мешканців</span></td></tr></tbody></table></div>
+<div class="wrap"><table><thead><tr><th>Назва</th><th>Що</th><th>Від столиці, м</th><th>Мешканці</th></tr></thead><tbody><tr><td class="nm">Стільна <span class="chip">столиця</span></td><td>місто</td><td class="num">0</td><td>Ліда — крамар, Горан — коваль, Мирон — священик, Зоряна — вартовий, Богдан — гільдмайстер, Ярина — завідувач складу, Юхим — майстер магії</td></tr><tr><td class="nm">Крайня Брама</td><td>місто</td><td class="num">1 101</td><td>Остап — крамар, Мальва — коваль, Радим — священик, Квітка — вартовий, Гафія — майстер магії, Одарка — гільдмайстер</td></tr><tr><td class="nm">Гірський Поріг</td><td>місто</td><td class="num">3 315</td><td>Терень — гільдмайстер, Улана — завідувач складу, Гнат — крамар, Ружа — коваль, Прокіп — майстер магії, Влас — священик</td></tr><tr><td class="nm">Попелище</td><td>місто</td><td class="num">2 586</td><td>Северин — священик, Досія — вартовий, Лаврін — гільдмайстер, Оляна — завідувач складу, Соломія — майстер магії, Химка — крамар, Тарас — коваль</td></tr><tr><td class="nm">Тиха Пустка</td><td>місто</td><td class="num">995</td><td>Панас — крамар, Векла — коваль, Тиміш — священик, Наста — вартовий, Кузьма — майстер магії, Марта — гільдмайстер</td></tr><tr><td class="nm">Броди</td><td>село</td><td class="num">625</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Лан</td><td>село</td><td class="num">2 137</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Розтоки</td><td>село</td><td class="num">1 247</td><td><span class="muted">без мешканців</span></td></tr><tr><td class="nm">Скеляр</td><td>село</td><td class="num">1 763</td><td><span class="muted">без мешканців</span></td></tr></tbody></table></div>
 <h2>Святині й підземелля</h2>
 <p class="note">Святиня — вхід у підземелля свого грейду. Відчиняє її ключ святині того ж грейду, що падає з монстрів поруч. Довкола кожної стоїть охорона купками з главарями.</p>
 <div class="wrap"><table><thead><tr><th>Грейд</th><th>Святинь</th><th>Від столиці, м</th><th>Рівень монстрів поруч</th><th>Вигляд</th></tr></thead><tbody><tr><td><span class="g g-E">E</span></td><td class="num">2</td><td class="num">567–1 455</td><td class="num">13–14</td><td>дерево, обеліск</td></tr><tr><td><span class="g g-D">D</span></td><td class="num">4</td><td class="num">1 101–2 180</td><td class="num">22–28</td><td>камінь, обеліск, руїни, скеля</td></tr><tr><td><span class="g g-C">C</span></td><td class="num">6</td><td class="num">1 837–2 870</td><td class="num">31–39</td><td>дерево, камінь, обеліск, руїни, скеля</td></tr><tr><td><span class="g g-B">B</span></td><td class="num">8</td><td class="num">2 417–3 518</td><td class="num">48–54</td><td>дерево, камінь, обеліск, руїни, скеля</td></tr><tr><td><span class="g g-A">A</span></td><td class="num">8</td><td class="num">480–3 221</td><td class="num">58–68</td><td>дерево, камінь, обеліск, руїни, скеля</td></tr><tr><td><span class="g g-S">S</span></td><td class="num">4</td><td class="num">1 360–2 530</td><td class="num">74–75</td><td>дерево, обеліск, руїни, скеля</td></tr><tr><td><span class="g g-SS">SS</span></td><td class="num">1</td><td class="num">3 275–3 275</td><td class="num">78–78</td><td>камінь</td></tr></tbody></table></div>

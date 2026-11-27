@@ -164,8 +164,30 @@ cmd_restart() {
     cmd_start
 }
 
+# Старі проміжні збірки — геть, лишити $2 найновіших теки за шаблоном $1.
+# 27.11.2026 кожне «Оновити гру» лишало в build/ 10–18 ГБ, і диск заповнився
+# на 100 % посеред пакування («zip I/O error: No space left on device»).
+prune_builds() {
+    local pattern="$1" keep="$2" old
+    ls -1dt "$repo"/build/$pattern/ 2>/dev/null | tail -n +"$((keep + 1))" | while read -r old; do
+        rm -rf "$old" && echo "  прибрано стару збірку $(basename "$old")"
+    done
+}
+
+# Чи вистачить місця: збірка трьох платформ — ~12 ГБ, публікація — ще ~7.
+need_space() {
+    local need_gb="$1" free_gb
+    free_gb=$(( $(df --output=avail -k "$repo" | tail -1) / 1024 / 1024 ))
+    if [ "$free_gb" -lt "$need_gb" ]; then
+        say_err "на диску вільно $free_gb ГБ, а треба щонайменше $need_gb — прибери місце (старі збірки в $repo/build)"
+        return 1
+    fi
+}
+
 cmd_update_game() {
     local delay="${1:-60}"
+    prune_builds 'myway-*' 1
+    need_space 25 || return 1
     echo "═══ оновлення гри: збірка → публікація → перезапуск ($(date '+%d.%m %T'))"
     # Нові текстури моделей (аватари, монстри) — стиснути до збірки: без цього
     # вони йдуть у гру 4K без стиснення (27.11.2026 пакет 3,2 ГБ, iMac гальмував).
@@ -174,6 +196,7 @@ cmd_update_game() {
         || say_err "імпорт текстур завершився з помилкою — $log_dir/import.log"
     (cd "$repo" && tools/zibraty.sh)
     (cd "$repo" && tools/opublikuvaty.sh)
+    prune_builds 'myway-*' 1
     # Сервіс оновлень працює з коду репозиторію: після оновлення коду він має
     # підхопити новий (27.11.2026 старий сервіс віддавав 404 на апдейтер).
     systemctl --user try-restart myway-updates.service || true
@@ -190,6 +213,7 @@ cmd_update_updater() {
     old="$(grep -oP '^config/version="\K\d+' "$project")"
     new=$((old + 1))
     echo "═══ оновлення апдейтера v$old → v$new ($(date '+%d.%m %T'))"
+    need_space 3 || return 1
     sed -i "s/^config\/version=\"$old\"/config\/version=\"$new\"/" "$project"
     # Підйом версії — окремим комітом лише цього файла (гачок check.sh займає
     # порт робочого сервера, тому --no-verify): інші незакомічені файли не чіпаємо.
@@ -200,6 +224,7 @@ cmd_update_updater() {
     python3 -I "$repo/tools/onovlennia/publish.py" --config-only --updater-build "${build_dir%/}"
     systemctl --user try-restart myway-updates.service || true
     "$repo/tools/vyklasty_wiki.sh"
+    prune_builds 'updater-*' 2
     if is_active myway-game; then
         write_command "{\"дія\": \"повідомити\", \"текст\": $(json_str "Вийшов новий апдейтер v$new: відкрий апдейтер і натисни «Оновити апдейтер» (апдейтер v1–v2 — завантаж новий з http://192.168.1.34/myway/)")}"
     fi

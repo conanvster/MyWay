@@ -526,6 +526,7 @@ var _preload_spots: Array = []
 
 func _start_preload() -> void:
 	SkinnedModel.background_loads = true
+	HitchLog.start(Net.build_version())
 	for zone: Dictionary in data.map.get("зони появи", []):
 		var look: Dictionary = data.for_kind(int(zone.get("вид", 0))) \
 				.get("вигляд", {})
@@ -569,6 +570,7 @@ func _preload_step(delta: float) -> void:
 			best = gap
 			pick = file if not SkinnedModel.is_loaded(file) else moves
 	if pick != "":
+		HitchLog.note("почав читати у фоні %s" % pick.get_file())
 		SkinnedModel.warm(pick)
 		_preload_now = pick
 
@@ -665,6 +667,8 @@ func _tick_range(delta: float) -> void:
 func _exit_tree() -> void:
 	if Net.is_server:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mark_path()))
+	else:
+		HitchLog.finish()
 
 
 ## Скільки коштує кадр сервера — щоб це було число, а не здогадка (P2).
@@ -747,6 +751,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	if not Net.is_server:
+		HitchLog.tick()
 		if day != null:
 			var mine: Node3D = creatures.get(multiplayer.get_unique_id()) \
 					if Net.connected() else null

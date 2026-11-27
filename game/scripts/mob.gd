@@ -175,7 +175,11 @@ func _apply_look() -> void:
 			# у неї рухи лежать не в самому файлі, як у сканів звірів.
 			skin.anim_path = moves
 			add_child(skin)
-			skin.build()
+			# Журнал підвисань (HitchLog): скільки коштує збирання моделі, і
+			# що наступний кадр — її перший показ.
+			HitchLog.timed("%s: збирання моделі" % made.get_file().get_basename(),
+					skin.build)
+			HitchLog.note("%s: перший показ" % made.get_file().get_basename())
 	var body := model()
 	if body == null:
 		return

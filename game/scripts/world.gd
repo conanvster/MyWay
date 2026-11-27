@@ -113,7 +113,7 @@ func _ready() -> void:
 	# будувати: інакше стартова сторінка секунду світила б зелене на
 	# чужу, стару мітку при вже зайнятому порті.
 	if Net.is_server:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mark_path()))
 	data = GameData.new()
 	data.load_all()
 	vision = Vision.new(creatures)
@@ -226,6 +226,7 @@ func _ready() -> void:
 			# Після спавнера: відновлене підземелля додає йому свої зони.
 			life.restore(_restore_dungeon, close_dungeon)
 		_mark_ready()
+		_start_status_file()
 		print("[світ] сервер чекає гравців")
 	else:
 		# Спавн просимо самі, коли сцена вже здатна приймати виклики.
@@ -233,11 +234,74 @@ func _ready() -> void:
 		# прийти раніше, ніж клієнт готовий, і загубитись.
 		multiplayer.connected_to_server.connect(
 				func() -> void: rpc_id(1, "announce_ready", Net.character))
-		multiplayer.connection_failed.connect(
-				func() -> void: print("[мережа] ‼ сервер не відповів"))
+		# Не відповів, обірвалось, не дочекались — вертаємо на стартову
+		# сторінку з причиною. Доти тут був лише рядок у консолі, а людина
+		# (тим паче на Mac, без терміналу) бачила порожній світ і нічого
+		# більше (P3, 26.11.2026).
+		multiplayer.connection_failed.connect(func() -> void:
+				_lost.call_deferred("сервер %s:%d не відповів" % [Net.host,
+						Net.port] + NOT_REACHED))
+		multiplayer.server_disconnected.connect(func() -> void:
+				_lost.call_deferred("з'єднання з сервером %s:%d обірвалось"
+						% [Net.host, Net.port]))
 		# І аж ТЕПЕР стукаємо: доки була стартова сторінка, світу не було,
 		# і пакети шукали б вузол, якого не існує.
-		Net.join()
+		if not Net.join():
+			_lost.call_deferred(Net.why_left)
+		else:
+			_wait_for_server()
+
+
+## Скільки чекати відповіді сервера. ENet сам здається лише за 5–30 с, і
+## весь цей час людина дивиться в порожнечу; сервер у тій самій мережі
+## відповідає за долі секунди, тож десяти секунд досить і з запасом.
+const CONNECT_WAIT := 10.0
+const NOT_REACHED := ". Перевір IP, чи запущено сервер і чи пускає " \
+		+ "його брандмауер UDP-порт"
+
+
+## Відлік до «не дочекались». Таймер — вузол світу, а не дерева: зник
+## світ — зник і таймер, і лямбда не кличе звільненого.
+func _wait_for_server() -> void:
+	var peer := multiplayer.multiplayer_peer
+	if peer is not ENetMultiplayerPeer:
+		return                    # проба поставила `Net.joined` сама
+	var clock := Timer.new()
+	clock.one_shot = true
+	clock.wait_time = CONNECT_WAIT
+	add_child(clock)
+	clock.timeout.connect(func() -> void:
+			if multiplayer.multiplayer_peer == peer \
+					and peer.get_connection_status() \
+					!= MultiplayerPeer.CONNECTION_CONNECTED:
+				_lost("за %d с сервер %s:%d не відповів"
+						% [CONNECT_WAIT, Net.host, Net.port] + NOT_REACHED))
+	clock.start()
+
+
+## Клієнт утратив сервер — назад на стартову сторінку, причину несемо
+## туди в `Net.why_left`. Те саме, що робить «Вийти» в HUD (`hud._quit`),
+## лише з причиною.
+##
+## Кличеться відкладено: `hud._quit` сам закриває з'єднання, Godot на це
+## теж каже «обірвалось», і без відкладення ми б удруге підвантажили
+## сторінку. Відкладений виклик бачить `Net.joined == false` і мовчить.
+func _lost(why: String) -> void:
+	if not Net.joined or not is_inside_tree() or is_queued_for_deletion():
+		return
+	print("[мережа] ‼ " + why)
+	Net.why_left = why
+	var peer := multiplayer.multiplayer_peer
+	if peer != null:
+		peer.close()
+	multiplayer.multiplayer_peer = null
+	Net.joined = false
+	var tree := get_tree()
+	var launcher: Node = load("res://scenes/launcher.tscn").instantiate()
+	launcher.tree_entered.connect(func() -> void:
+			tree.current_scene = launcher
+			queue_free(), CONNECT_ONE_SHOT)
+	tree.root.add_child.call_deferred(launcher)
 
 
 ## Мітка «світ збудовано». Її читає стартова сторінка.
@@ -253,18 +317,192 @@ func _ready() -> void:
 const READY_MARK := "user://сервер.json"
 
 
+## Сервер на нетиповому порту (`--порт`, пробний) кладе мітку окремо:
+## сторінка дивиться лише на типовий порт, і чужа мітка збила б її з
+## пантелику — показала б номер пробного сервера як номер справжнього, а
+## стерта при його запуску — сховала б справжній.
+func _mark_path() -> String:
+	return READY_MARK if Net.port == Net.PORT \
+			else "user://сервер-%d.json" % Net.port
+
+
+## Стан сервера для сторінки вікі `/myway/` (слово замовника 27.11.2026:
+## «на сторінці … покажи статус сервера та онлайн»). Кожні `STATUS_EVERY` с
+## сервер переписує файл, а сервіс оновлень (`tools/onovlennia/serve.py`)
+## віддає його як `/status.json`; файл старший за 30 с там означає «сервер
+## не відповідає». Пише лише справжній сервер (типовий порт, не полігон):
+## пробні сервери `check.sh` і проб інакше показували б гравцям чужий стан.
+## Шлях — `--статус <файл>`, типово `~/MyWay-сервер/status.json`.
+const STATUS_EVERY := 10.0
+var _status_path := ""
+var _status_since := 0
+
+
+func _start_status_file() -> void:
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--статус")
+	if at >= 0 and at + 1 < args.size():
+		_status_path = args[at + 1]
+	elif Net.port == Net.PORT and not args.has("--полігон"):
+		_status_path = OS.get_environment("HOME").path_join(
+				"MyWay-сервер/status.json")
+	if _status_path.is_empty():
+		return
+	DirAccess.make_dir_recursive_absolute(_status_path.get_base_dir())
+	_status_since = int(Time.get_unix_time_from_system())
+	at = args.find("--команда")
+	_command_path = args[at + 1] if at >= 0 and at + 1 < args.size() \
+			else _status_path.get_base_dir().path_join("команда.json")
+	# Стара команда від попереднього запуску не має зупинити новий сервер.
+	DirAccess.remove_absolute(_command_path)
+	var poll := Timer.new()
+	poll.wait_time = 1.0
+	poll.autostart = true
+	poll.timeout.connect(_tick_command)
+	add_child(poll)
+	var timer := Timer.new()
+	timer.wait_time = STATUS_EVERY
+	timer.autostart = true
+	timer.timeout.connect(_write_status)
+	add_child(timer)
+	_write_status()
+	print("[світ] стан для вікі: %s" % _status_path)
+
+
+func _write_status() -> void:
+	var online: Array = []
+	for id: int in _names:
+		if creatures.has(id):
+			var who: Node = creatures[id]
+			online.append({"ім'я": _names[id], "рівень": who.get("level")})
+	online.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return String(a["ім'я"]) < String(b["ім'я"]))
+	var text := JSON.stringify({
+			"світ": GameData.map_path().get_file(),
+			"порт": Net.port,
+			"версія": Net.build_version(),
+			"гравців": online.size(),
+			"у меню": maxi(_signed.size() - online.size(), 0),
+			"максимум": Net.MAX_PLAYERS,
+			"гравці": online,
+			"запущено": _status_since,
+			"зупинка": {} if _stop_at == 0 else {
+					"о": _stop_at, "чому": _stop_why},
+			"оновлено": int(Time.get_unix_time_from_system())}, " ")
+	# Через тимчасовий файл і перейменування: сервіс не прочитає півфайла.
+	var tmp := _status_path + ".tmp"
+	var file := FileAccess.open(tmp, FileAccess.WRITE)
+	if file == null:
+		print("[світ] ‼ стан для вікі не записано (%s): %s"
+				% [tmp, error_string(FileAccess.get_open_error())])
+		return
+	file.store_string(text)
+	file.close()
+	var err := DirAccess.rename_absolute(tmp, _status_path)
+	if err != OK:
+		print("[світ] ‼ стан для вікі не перейменовано: %s"
+				% error_string(err))
+
+
+## Керування сервером ззовні — значок у треї й `tools/server/myway-server.sh`
+## (слово замовника 27.11.2026: «не організована процедура перезапуску та
+## інформування про необхідність оновити лаунчер та гру … стартонути,
+## зупинити, оновити»). Команда — файл поруч зі станом:
+##   {"дія": "зупинка", "через": 60, "чому": "вийшла нова версія гри"}
+##   {"дія": "скасувати"}
+## Сервер забирає файл, попереджає всіх у грі відліком (`STOP_WARN`), у
+## мить зупинки зберігає кожного й виходить сам — без `kill`, тож нічого не
+## губиться. Скільки лишилось — і в status.json («зупинка»), і на вікі.
+const STOP_WARN := [600, 300, 120, 60, 30, 10, 5]
+const STOP_SAVE_WAIT := 3.0
+var _command_path := ""
+var _stop_at := 0
+var _stop_why := ""
+var _stop_warned: Array = []
+var _stopping := false
+
+
+func _tick_command() -> void:
+	if _stopping:
+		return
+	if FileAccess.file_exists(_command_path):
+		var raw := FileAccess.get_file_as_string(_command_path)
+		DirAccess.remove_absolute(_command_path)
+		var cmd: Variant = JSON.parse_string(raw)
+		if not cmd is Dictionary:
+			print("[світ] ‼ команда не JSON: %s" % raw.left(200))
+		elif cmd.get("дія") == "скасувати":
+			if _stop_at != 0:
+				_stop_at = 0
+				_stop_warned.clear()
+				link.to_all(&"client_notice", ["Перезапуск сервера скасовано"])
+				print("[світ] зупинку скасовано")
+				_write_status()
+		elif cmd.get("дія") == "повідомити":
+			var said := str(cmd.get("текст", "")).strip_edges()
+			if not said.is_empty():
+				link.to_all(&"client_notice", [said])
+				print("[світ] повідомлення гравцям: %s" % said)
+		elif cmd.get("дія") == "зупинка":
+			var after := maxi(int(cmd.get("через", 0)), 0)
+			_stop_at = int(Time.get_unix_time_from_system()) + after
+			_stop_why = str(cmd.get("чому", ""))
+			_stop_warned = STOP_WARN.filter(func(s: int) -> bool: return s > after)
+			print("[світ] зупинка через %d с: %s" % [after, _stop_why])
+			_warn_stop(after)
+			_write_status()
+		else:
+			print("[світ] ‼ невідома команда: %s" % raw.left(200))
+	if _stop_at == 0:
+		return
+	var left := _stop_at - int(Time.get_unix_time_from_system())
+	if left <= 0:
+		_stop_now()
+		return
+	for mark: int in STOP_WARN:
+		if left <= mark and not _stop_warned.has(mark):
+			_stop_warned.append(mark)
+			_warn_stop(left)
+			break
+
+
+func _warn_stop(left: int) -> void:
+	var when := "зараз" if left <= 0 else "через %s" % (
+			"%d хв" % maxi(roundi(left / 60.0), 1) if left >= 60 else "%d с" % left)
+	var text := "Сервер зупиняється %s" % when
+	if not _stop_why.is_empty():
+		text += ": %s" % _stop_why
+	text += ". Прогрес збережено. Далі заходь через апдейтер — він оновить гру, якщо треба."
+	link.to_all(&"client_notice", [text])
+	print("[світ] попередження гравцям: %s" % text)
+
+
+func _stop_now() -> void:
+	_stopping = true
+	_stop_at = 0
+	_warn_stop(0)
+	_save_everyone()
+	print("[світ] зберігаю %d гравців і зупиняюсь" % _names.size())
+	# Збереження йде запитами до бази — даємо їм дійти, тоді виходимо.
+	await get_tree().create_timer(STOP_SAVE_WAIT).timeout
+	DirAccess.remove_absolute(_status_path)
+	print("[світ] сервер зупинено командою")
+	get_tree().quit(0)
+
+
 func _mark_ready() -> void:
-	var file := FileAccess.open(READY_MARK, FileAccess.WRITE)
+	var mark := _mark_path()
+	var file := FileAccess.open(mark, FileAccess.WRITE)
 	if file == null:
 		print("[світ] ‼ не вдалось записати мітку %s: %s"
-				% [READY_MARK, error_string(FileAccess.get_open_error())])
+				% [mark, error_string(FileAccess.get_open_error())])
 		return
 	# «світ» — на якій мапі сервер збудований. Стартова сторінка звіряє його
 	# зі своїм і не пускає в гру, якщо не збіглось: інакше персонаж у
 	# чужому рельєфі під землею (слово замовника 11.09.2026).
 	file.store_string(JSON.stringify({
 			"номер": OS.get_process_id(),
-			"порт": Net.PORT,
+			"порт": Net.port,
 			"світ": GameData.map_path().get_file(),
 			"коли": int(Time.get_unix_time_from_system())}))
 
@@ -426,7 +664,7 @@ func _tick_range(delta: float) -> void:
 ## ЛИШЕ при зайнятому порті, а новий сервер стирає стару мітку в `_ready`.
 func _exit_tree() -> void:
 	if Net.is_server:
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(READY_MARK))
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mark_path()))
 
 
 ## Скільки коштує кадр сервера — щоб це було число, а не здогадка (P2).
@@ -661,9 +899,19 @@ func client_which_world(server_map: String) -> void:
 	# немає (слово замовника 11.09.2026). Тож не лишаємо його там, а
 	# перезапускаємо клієнт у світі сервера.
 	var user := Array(OS.get_cmdline_user_args())
+	# Прибираємо ОБИДВА прапорці й ставимо той, що в сервера. Доти
+	# прибирався лише `--світ2`: клієнт світу 2 до сервера світу 1
+	# перезапускався знову без `--світ1`, тобто у світі 2, — і так по колу.
+	user.erase("--світ1")
 	user.erase("--світ2")
-	if server_map == GameData.MAP2_PATH.get_file():
-		user.append("--світ2")
+	user.append("--світ2" if server_map == GameData.MAP2_PATH.get_file()
+			else "--світ1")
+	# Адресу, введену на сторінці, теж несемо: у рядку запуску її немає, і
+	# без неї перезапущений клієнт стукав би на 127.0.0.1.
+	if not user.has("--host"):
+		user.append_array(["--host", Net.host])
+	if not user.has("--порт"):
+		user.append_array(["--порт", str(Net.port)])
 	var engine := Array(OS.get_cmdline_args())
 	var cut := engine.find("--")
 	if cut >= 0:
@@ -671,7 +919,9 @@ func client_which_world(server_map: String) -> void:
 	# Шлях до гри — явно: рушій не повертає `--path` серед своїх
 	# аргументів, і без нього перезапущений клієнт, піднятий з кореня
 	# репозиторію (`run.sh`), відкрив би менеджер проєктів, а не гру.
-	if not engine.has("--path"):
+	# Зібраному клієнтові (Mac) `--path` не треба: гра в ньому вшита, а
+	# шлях змусив би його шукати проєкт у теці застосунку.
+	if OS.has_feature("editor") and not engine.has("--path"):
 		engine = ["--path", ProjectSettings.globalize_path("res://")] + engine
 	print("[світ] перезапускаю клієнт у світі сервера (%s). Щоб грати в "
 			% server_map + "іншому — зупини сервер на стартовій сторінці й "
@@ -723,12 +973,16 @@ func sign_in(login: String, password: String, register: bool = false) -> void:
 			print("[акаунт] %s увійшов, персонажів %d"
 					% [login, _signed[id]["персонажі"].size()]),
 			CONNECT_ONE_SHOT)
-	# Світ передаємо завжди: база віддає перелік персонажів лише того
-	# світу, у якому стоїть ЦЕЙ сервер (П-204). `register` світу не
-	# знає — новий акаунт однаково без персонажів.
-	store.call_rpc("register" if register else "login",
-			{"login": login, "password": password,
-			"world": GameData.world_key()})
+	# Світ — лише для входу: база віддає перелік персонажів того світу, у
+	# якому стоїть ЦЕЙ сервер (П-204). `register` світу не знає — новий
+	# акаунт однаково без персонажів. Доти світ ішов і в `register`, і
+	# PostgREST шукав `register(login, password, world)`, якої немає: 404,
+	# і «Завести акаунт» у грі відповідало «база не відповіла» (спіймано
+	# пробою remote_join 26.11.2026).
+	var args := {"login": login, "password": password}
+	if not register:
+		args["world"] = GameData.world_key()
+	store.call_rpc("register" if register else "login", args)
 
 
 ## Створити персонажа на своєму акаунті.
@@ -1755,6 +2009,9 @@ func _on_joined(id: int) -> void:
 	send_things(id)
 	rpc_id(id, "client_ground", ground.rows())
 	print("[світ] приєднався %d, усього %d" % [id, creatures.size()])
+	# Онлайн на сторінці вікі — одразу, не чекаючи 10-секундного такту.
+	if not _status_path.is_empty():
+		_write_status()
 
 
 ## Що показувати на сторінці «Стати». Збирає СЕРВЕР: у клієнта ні базових
@@ -3319,6 +3576,8 @@ func _on_left(id: int) -> void:
 		_trade_closed(other, "%s вийшов із гри" % _names.get(id, "гравець"))
 	_names.erase(id)
 	_signed.erase(id)
+	if not _status_path.is_empty():
+		call_deferred("_write_status")
 	_stats_mark.erase(id)
 	_skills_mark.erase(id)
 	_bag_mark.erase(id)

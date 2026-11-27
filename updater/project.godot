@@ -1,0 +1,28 @@
+; Апдейтер-лаунчер MyWay: окремий маленький проєкт (spec/апдейтер.md).
+
+config_version=5
+
+[application]
+
+config/name="MyWay Updater"
+; Ціле число. Публікація кладе його в config.json як updater_version:
+; новіша на сервері — апдейтер попереджає (сам себе не оновлює).
+config/version="1"
+run/main_scene="res://scenes/updater.tscn"
+config/use_custom_user_dir=true
+config/custom_user_dir_name="MyWay-Updater"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+; Друк одразу в журнал: release-збірка інакше тримає stdout у буфері.
+run/flush_stdout_on_print=true
+
+[display]
+
+window/size/viewport_width=760
+window/size/viewport_height=520
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+
+textures/vram_compression/import_etc2_astc=true

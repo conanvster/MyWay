@@ -5,9 +5,11 @@ game/.godot/
 # Локальні перевизначення налаштувань
 game/override.cfg
 
-# Складені збірки
+# Складені збірки (tools/zibraty.sh кладе в build/)
 build/
 export/
+# Версія збірки: tools/zibraty.sh кладе перед експортом і прибирає після
+game/versiia.json
 
 # Розпаковані паки моделей: у git не кладемо (див. game/моделі/ЯК-ДОДАТИ.md)
 асети/
@@ -49,3 +51,6 @@ game/models/own/avatary/elf-s808-mixamo/
 # сірі матеріали (перевірка `ResourceLoader.exists`).
 game/assets/baobab/
 art/monsters/_аркуш-каркас/
+
+# Каталог сервісу оновлень (tools/opublikuvaty.sh) — збірки клієнта, поза git
+/updates/

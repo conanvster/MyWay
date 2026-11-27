@@ -2459,19 +2459,13 @@ var _photo_ready: Dictionary = {}
 func _photo_pair(name_of: String) -> Array:
 	if _photo_ready.has(name_of):
 		return _photo_ready[name_of]
-	var picture := Image.new()
 	var path := "res://models/nature/photo/%s.png" % name_of
-	var raw := FileAccess.get_file_as_bytes(path)
-	var read := ERR_FILE_NOT_FOUND
-	if not raw.is_empty():
-		read = picture.load_png_from_buffer(raw)
-	else:
+	var picture := RawImage.read(path)
+	if picture == null:
 		# Картки зі сканів — у WebP: 6 МБ замість 25 у PNG.
 		path = path.get_basename() + ".webp"
-		raw = FileAccess.get_file_as_bytes(path)
-		if not raw.is_empty():
-			read = picture.load_webp_from_buffer(raw)
-	if read != OK:
+		picture = RawImage.read(path)
+	if picture == null:
 		print("[краєвид] ‼ немає %s" % path)
 		_photo_ready[name_of] = []
 		return []
@@ -2538,9 +2532,8 @@ const BARK := "res://models/nature/bark/Bark014_%s.jpg"
 
 
 static func _raw_texture(path: String, bright := 1.0) -> ImageTexture:
-	var raw := FileAccess.get_file_as_bytes(path)
-	var picture := Image.new()
-	if raw.is_empty() or picture.load_jpg_from_buffer(raw) != OK:
+	var picture := RawImage.read(path)
+	if picture == null:
 		print("[краєвид] ‼ немає %s" % path)
 		return null
 	if bright != 1.0:

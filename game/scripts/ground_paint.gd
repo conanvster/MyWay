@@ -637,9 +637,8 @@ static func _array(kind: String, is_normal: bool) -> Texture2DArray:
 	var images: Array[Image] = []
 	for layer: Array in LAYERS:
 		var path := WHERE % [layer[0], kind]
-		var raw := FileAccess.get_file_as_bytes(path)
-		var picture := Image.new()
-		if raw.is_empty() or picture.load_jpg_from_buffer(raw) != OK:
+		var picture := RawImage.read(path)
+		if picture == null:
 			print("[земля] ‼ немає %s — шар буде сірим" % path)
 			picture = Image.create_empty(SIDE, SIDE, false, Image.FORMAT_RGB8)
 			picture.fill(Color(0.5, 0.5, 1.0) if is_normal

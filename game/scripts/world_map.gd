@@ -293,16 +293,12 @@ func _texture(path: String) -> Texture2D:
 	if _sheets.has(path):
 		return _sheets[path]
 	var made: Texture2D = null
-	var raw := FileAccess.get_file_as_bytes(path)
-	if raw.is_empty():
+	# RawImage: у зібраній грі сирого .jpg немає — тоді з імпортованої.
+	var picture := RawImage.read(path)
+	if picture == null:
 		print("[карта] ‼ немає %s" % path)
 	else:
-		var picture := Image.new()
-		var err := picture.load_jpg_from_buffer(raw)
-		if err != OK:
-			print("[карта] ‼ %s не прочитався: %s" % [path, error_string(err)])
-		else:
-			made = ImageTexture.create_from_image(picture)
+		made = ImageTexture.create_from_image(picture)
 	# Плитка 1408² важить близько 8 МіБ у відеопамʼяті. Тримаємо
 	# небагато: за раз видно щонайбільше чотири, решта — минуле.
 	if _sheets.size() > 6:

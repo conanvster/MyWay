@@ -59,6 +59,28 @@ func _ready() -> void:
 		print(build_version())
 		get_tree().quit()
 		return
+	# Діагностика зібраного клієнта: чи читаються картинки, які гра бере
+	# байтами (карта, земля, фото дерев, кора) — див. RawImage.
+	if args.has("--перевірити-картинки"):
+		var bad := 0
+		var paths: Array[String] = ["res://data/svit2/karta/r1c1.jpg",
+				"res://models/ground/Grass004_Color.jpg",
+				"res://models/nature/bark/Bark014_Color.jpg"]
+		for name in DirAccess.get_files_at("res://models/nature/photo"):
+			var plain := name.trim_suffix(".import").trim_suffix(".remap")
+			if plain.get_extension() in ["png", "webp"]:
+				paths.append("res://models/nature/photo/" + plain)
+				break
+		for path in paths:
+			var picture := RawImage.read(path)
+			print("[картинки] %s %s" % ["✓" if picture != null else "✗", path
+					+ (" %dx%d" % [picture.get_width(), picture.get_height()]
+					if picture != null else "")])
+			bad += 0 if picture != null else 1
+		print("[картинки] %s" % ("усе читається" if bad == 0
+				else "не читається: %d" % bad))
+		get_tree().quit(1 if bad else 0)
+		return
 	if args.has("--server"):
 		is_server = true
 	address_from_args()

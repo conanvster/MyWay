@@ -36,6 +36,10 @@ const TICK_HZ := 20.0
 ## ділянку (П-63). Раз на секунду досить: гравець не перебігає сектор
 ## швидше, ніж за цей час.
 const STREAM_HZ := 1.0
+## Скільки мс на кадр будувати ділянки з черги (`landscape.stream_step`):
+## у грі — мало, щоб не смикало; під екраном завантаження — багато.
+const STREAM_BUDGET_MS := 6.0
+const LOADING_BUDGET_MS := 45.0
 
 ## Монстри живуть у від'ємних номерах, гравці — у додатних (номер
 ## з'єднання). Так одна таблиця тримає і тих, і тих. Словник спільний:
@@ -528,6 +532,11 @@ func _start_preload() -> void:
 	SkinnedModel.background_loads = true
 	GraphicsQuality.tune_viewport(get_viewport())
 	HitchLog.start(Net.build_version())
+	# Екран завантаження — лише живому гравцеві (стартова сторінка вмикає
+	# `GameSettings.active`); проби й знімки check.sh його не бачать.
+	# Показ — лише коли персонаж уже у світі: до того тут екран входу й
+	# вибору персонажа, і накрити його не можна (_tick_loading).
+	_loading_wanted = GameSettings.active
 	for zone: Dictionary in data.map.get("зони появи", []):
 		var look: Dictionary = data.for_kind(int(zone.get("вид", 0))) \
 				.get("вигляд", {})
@@ -574,6 +583,93 @@ func _preload_step(delta: float) -> void:
 		HitchLog.note("почав читати у фоні %s" % pick.get_file())
 		SkinnedModel.warm(pick)
 		_preload_now = pick
+
+
+## Стадії екрана завантаження (LoadingScreen): дочекатись свого персонажа →
+## збудувати ділянки довкола → обернути камеру на чотири боки, щоб
+## відеокарта зібрала шейдери всього довкола → кілька кадрів спокою → геть.
+## Застрягло довше за LOADING_GIVE_UP — пускаємо в гру як є, не тримаємо.
+const LOADING_GIVE_UP := 90.0
+const LOADING_TURN_FRAMES := 4
+var _loading: LoadingScreen = null
+var _loading_from := 0
+var _loading_stage := "персонаж"
+var _loading_frames := 0
+var _loading_total := 0
+var _loading_yaw := 0.0
+
+
+var _loading_wanted := false
+
+
+func _tick_loading() -> void:
+	if _loading == null and _loading_wanted:
+		var mine: Node = creatures.get(multiplayer.get_unique_id()) \
+				if Net.connected() else null
+		if mine != null:
+			_loading_wanted = false
+			_loading = LoadingScreen.new()
+			_loading.name = "ЕкранЗавантаження"
+			add_child(_loading)
+			_loading_from = Time.get_ticks_msec()
+			_loading_stage = "персонаж"
+			print("[світ] екран завантаження показано")
+	if _loading == null:
+		return
+	var waited := (Time.get_ticks_msec() - _loading_from) / 1000.0
+	var me: Node3D = creatures.get(multiplayer.get_unique_id()) \
+			if Net.connected() else null
+	var land: Node = get_node_or_null("Landscape")
+	var rig: Node = me.get_node_or_null("CameraRig") if me != null else null
+	if waited > LOADING_GIVE_UP:
+		_loading_done("не дочекались за %.0f с" % waited)
+		return
+	match _loading_stage:
+		"персонаж":
+			_loading.show_step("з'єднання зі світом…", 0.05)
+			if me != null:
+				if land != null and land.has_method("stream_to"):
+					land.stream_to(me.global_position, true)
+					_loading_total = maxi(land.stream_pending(), 1)
+				_loading_stage = "ділянки"
+		"ділянки":
+			var left: int = land.stream_pending() \
+					if land != null and land.has_method("stream_pending") else 0
+			_loading.show_step("будую місцевість: %d з %d" % [
+					_loading_total - left, _loading_total],
+					0.1 + 0.6 * (1.0 - float(left) / _loading_total))
+			if left == 0:
+				_loading_stage = "шейдери"
+				_loading_frames = 0
+				_loading_yaw = rig.yaw if rig != null else 0.0
+		"шейдери":
+			# Чотири боки по LOADING_TURN_FRAMES кадрів: що потрапило в
+			# кадр, те й зібралось.
+			var side := _loading_frames / LOADING_TURN_FRAMES
+			_loading.show_step("готую графіку…", 0.7 + 0.25 * side / 4.0)
+			if rig != null:
+				rig.yaw = _loading_yaw + side * PI * 0.5
+			_loading_frames += 1
+			if side >= 4:
+				if rig != null:
+					rig.yaw = _loading_yaw
+				_loading_stage = "спокій"
+				_loading_frames = 0
+		"спокій":
+			_loading.show_step("майже готово", 0.98)
+			_loading_frames += 1
+			if _loading_frames >= 5:
+				_loading_done("")
+
+
+func _loading_done(why: String) -> void:
+	var waited := (Time.get_ticks_msec() - _loading_from) / 1000.0
+	HitchLog.note("екран завантаження: %.1f с%s" % [waited,
+			(" — " + why) if why != "" else ""])
+	print("[світ] екран завантаження знято за %.1f с%s" % [waited,
+			(" (" + why + ")") if why != "" else ""])
+	_loading.queue_free()
+	_loading = null
 
 
 ## Полігон: закрита ділянка для перевірок (`-- --полігон`).
@@ -765,13 +861,18 @@ func _process(delta: float) -> void:
 		view.demo(delta)
 		view.repeat_held(delta)
 		_preload_step(delta)
+		var land_now: Node = get_node_or_null("Landscape")
+		if land_now != null and land_now.has_method("stream_step"):
+			land_now.stream_step(STREAM_BUDGET_MS if _loading == null
+					else LOADING_BUDGET_MS)
+		_tick_loading()
 		_since_stream += delta
 		if _since_stream >= 1.0 / STREAM_HZ:
 			_since_stream = 0.0
 			var me: Node = creatures.get(multiplayer.get_unique_id())
 			var land: Node = get_node_or_null("Landscape")
 			if me != null and land != null:
-				land.stream_to(me.global_position)
+				land.stream_to(me.global_position, true)
 		return
 
 	_since_tick += delta

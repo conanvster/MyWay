@@ -286,15 +286,28 @@ const STREAM_UNLOAD_AFTER := 12.0
 ## Кличе клієнт (`world.gd`) періодично зі своєю позицією. Сервер це
 ## НЕ кличе ніколи — у нього все побудовано одразу (`build()` без
 ## `stream`), і `_streaming` лишається `false`.
-func stream_to(pos: Vector3) -> void:
+func stream_to(pos: Vector3, queued := false) -> void:
 	if not _streaming:
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	var want := _wanted_sectors(pos)
+	var missing: Array[String] = []
 	for key: String in want:
 		_sector_seen_at[key] = now
 		if not _loaded_sectors.get(key, false):
-			HitchLog.timed("ділянка %s" % key, _load_sector.bind(key))
+			missing.append(key)
+	if _grid > 0 and queued:
+		# Світ 2: не всі разом, а чергою, найближчі першими — `stream_step`
+		# щокадру бере з неї, скільки влазить у бюджет. Раніше після появи
+		# чи телепорту 25 ділянок будувались в одному кадрі: на iMac 11 с
+		# стоп-кадру (журнал замовника 27.11.2026).
+		missing.sort_custom(func(a: String, b: String) -> bool:
+				return _patch_gap(a, pos) < _patch_gap(b, pos))
+		_stream_queue = missing
+	else:
+		# Проби (знімки) й світ 1 — одразу, як і раніше.
+		for key: String in missing:
+			_load_sector(key)
 	var known: Array = _tree_specs.keys()
 	for key: String in _fence_specs.keys():
 		if not known.has(key):
@@ -304,6 +317,45 @@ func stream_to(pos: Vector3) -> void:
 			continue
 		if now - float(_sector_seen_at.get(key, now)) > STREAM_UNLOAD_AFTER:
 			_unload_sector(key)
+
+
+## Черга ділянок на побудову (світ 2), найближча — перша.
+var _stream_queue: Array[String] = []
+
+
+## Побудувати з черги стільки ділянок, скільки влазить у `budget_ms`
+## (щонайменше одну). Кличе клієнт щокадру; під екраном завантаження —
+## з більшим бюджетом.
+func stream_step(budget_ms: float) -> void:
+	if _stream_queue.is_empty():
+		return
+	var from := Time.get_ticks_usec()
+	var made := 0
+	while not _stream_queue.is_empty():
+		var key: String = _stream_queue.pop_front()
+		if _loaded_sectors.get(key, false):
+			continue
+		_load_sector(key)
+		made += 1
+		if (Time.get_ticks_usec() - from) / 1000.0 >= budget_ms:
+			break
+	if made > 0:
+		HitchLog.note("ділянок: %d, %.0f мс (у черзі ще %d)" % [made,
+				(Time.get_ticks_usec() - from) / 1000.0, _stream_queue.size()])
+
+
+func stream_pending() -> int:
+	return _stream_queue.size()
+
+
+## Відстань від гравця до середини ділянки «ділянка x:z».
+func _patch_gap(key: String, pos: Vector3) -> float:
+	var parts := key.trim_prefix("ділянка ").split(":")
+	if parts.size() != 2:
+		return 0.0
+	var mid := Vector2((float(parts[0]) + 0.5) * PATCH,
+			(float(parts[1]) + 0.5) * PATCH)
+	return mid.distance_to(Vector2(pos.x, pos.z))
 
 
 ## Свій сектор завжди, і сусідній через межу x=0/z=0, якщо до неї

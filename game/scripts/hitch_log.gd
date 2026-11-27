@@ -13,7 +13,7 @@ const SLOW_MS := 50.0
 const FILE := "user://pidvysannia.log"
 ## Скільки останніх подій тримати: підвисання видно на НАСТУПНОМУ кадрі
 ## після того, що його спричинило.
-const KEEP := 12
+const KEEP := 30
 
 static var _events: Array[String] = []
 static var _last_usec := 0

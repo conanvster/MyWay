@@ -17,8 +17,11 @@ run/flush_stdout_on_print=true
 
 [display]
 
-window/size/viewport_width=760
-window/size/viewport_height=520
+window/size/viewport_width=900
+window/size/viewport_height=640
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/dpi/allow_hidpi=true
 
 [rendering]
 

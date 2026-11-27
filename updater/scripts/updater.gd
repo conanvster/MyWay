@@ -93,6 +93,7 @@ func _ready() -> void:
 	var old := _arg("--стара-тека")
 	legacy_dir = old if old != "" else ProjectSettings.globalize_path(
 			"user://client").path_join(platform)
+	_fit_window()
 	_build()
 	if platform == "":
 		_fail("ця система (%s) не підтримується: є клієнт лише для Linux, "
@@ -134,6 +135,40 @@ static func default_dir() -> String:
 	return ProjectSettings.globalize_path("user://client")
 
 
+## Вікно під щільність екрана. Слово замовника 27.11.2026 (знімок з Mac):
+## «в порівнянні з іншим інтерфейсом маленький — збільши і шрифт і розмір».
+## На Retina рушій малює в справжніх пікселях, тож без множника все вдвічі
+## дрібніше. Розтяжка `canvas_items` (project.godot) масштабує весь
+## інтерфейс від BASE_SIZE: тут лише ставимо розмір вікна = BASE_SIZE ×
+## множник екрана (macOS/Wayland — screen_get_scale, Windows — DPI/96).
+## Більше вікно мишею — більший інтерфейс.
+const BASE_SIZE := Vector2i(900, 640)
+const BASE_FONT := 19
+
+
+func _fit_window() -> void:
+	var look := Theme.new()
+	look.default_font_size = BASE_FONT
+	theme = look
+	if DisplayServer.get_name() == "headless":
+		return
+	var screen := DisplayServer.window_get_current_screen()
+	var factor := DisplayServer.screen_get_scale(screen)
+	if OS.get_name() == "Windows":
+		factor = DisplayServer.screen_get_dpi(screen) / 96.0
+	factor = clampf(snappedf(factor, 0.25), 1.0, 3.0)
+	var usable := DisplayServer.screen_get_usable_rect(screen)
+	var want := Vector2(BASE_SIZE) * factor
+	# Не більше 90 % екрана — на маленькому ноутбуці вікно не вилізе за край.
+	var fit := minf(1.0, minf(usable.size.x * 0.9 / want.x, usable.size.y * 0.9 / want.y))
+	var win_size := Vector2i(want * fit)
+	var win := get_window()
+	win.min_size = Vector2i(Vector2(win_size) * 0.7)
+	win.size = win_size
+	win.position = usable.position + (usable.size - win_size) / 2
+	print("[апдейтер] екран ×%.2f → вікно %s" % [factor, win_size])
+
+
 func _build() -> void:
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -146,7 +181,7 @@ func _build() -> void:
 
 	var title := Label.new()
 	title.text = "MyWay — оновлення й запуск"
-	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_font_size_override("font_size", 28)
 	box.add_child(title)
 
 	var row := HBoxContainer.new()
@@ -181,7 +216,7 @@ func _build() -> void:
 	_dir_button.pressed.connect(_pick_dir)
 	dir_row.add_child(_dir_button)
 	_dir_info = _label(box)
-	_dir_info.add_theme_font_size_override("font_size", 13)
+	_dir_info.add_theme_font_size_override("font_size", 16)
 	_dir_info.modulate = Color(1, 1, 1, 0.75)
 
 	_status = _label(box)
@@ -213,17 +248,17 @@ func _build() -> void:
 	box.add_child(buttons)
 	_update = Button.new()
 	_update.text = "Оновити"
-	_update.custom_minimum_size = Vector2(160, 40)
+	_update.custom_minimum_size = Vector2(200, 52)
 	_update.pressed.connect(_on_update)
 	buttons.add_child(_update)
 	_play = Button.new()
 	_play.text = "Грати"
-	_play.custom_minimum_size = Vector2(160, 40)
+	_play.custom_minimum_size = Vector2(200, 52)
 	_play.pressed.connect(play)
 	buttons.add_child(_play)
 
 	_where = _label(box)
-	_where.add_theme_font_size_override("font_size", 12)
+	_where.add_theme_font_size_override("font_size", 15)
 	_where.modulate = Color(1, 1, 1, 0.5)
 	_where.text = "апдейтер v%d" % own_version()
 

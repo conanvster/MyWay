@@ -1617,9 +1617,10 @@ const LOOPING_MOVES := {
 ## Одноразовий рух (влучання, смерть, блок) показ стану кличе щокадру —
 ## перезапускати його можна лише на `restart` (новий удар), інакше він
 ## застигав на першому кадрі (знайдено 07.11.2026).
-func show_move(name: String, reverse := false, restart := false) -> void:
+func show_move(name: String, reverse := false, restart := false,
+		from_part := 0.0) -> void:
 	_play_if_has([_stand_in(name)], LOOPING_MOVES.get(name, false), reverse,
-			restart)
+			restart, from_part)
 
 
 ## Свій рух, коли він є; інакше замінник зі `STAND_INS`.
@@ -1774,7 +1775,7 @@ func _bend(name: String, by: float) -> void:
 ## нечітку відповідність за кінцівкою, для наборів на кшталт скелета
 ## («SkeletonArmature|Skeleton_Idle»), де точного варіанта нема взагалі.
 func _play_if_has(names: Array, loop: bool = true,
-		reverse: bool = false, restart: bool = true) -> void:
+		reverse: bool = false, restart: bool = true, from_part := 0.0) -> void:
 	if _player == null:
 		return
 	var have := _player.get_animation_list()
@@ -1799,6 +1800,14 @@ func _play_if_has(names: Array, loop: bool = true,
 			_player.play(found)
 		_player.get_animation(found).loop_mode = Animation.LOOP_LINEAR \
 				if loop else Animation.LOOP_NONE
+		# `play()` того самого руху, що ще йде, його НЕ перезапускає — грає
+		# далі. Тож на частих ударах (баф) один замах тягнувся, а під нього
+		# проходило до 4 ударів (слово замовника 27.11.2026: «виглядає не
+		# природньо коли за один удар по логам проходить до 4 ударів»).
+		# Новий удар — справді з початку, або з `from_part` довжини руху.
+		if restart and not loop and not reverse:
+			_player.seek(_player.get_animation(found).length
+					* clampf(from_part, 0.0, 0.95), true)
 		_current_name = found
 		_current_reverse = reverse
 		return

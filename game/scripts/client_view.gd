@@ -47,6 +47,10 @@ const JOG_REF := JOG_SPEED
 const SWING_REF := 1.2
 const TEMPO_MIN := 0.6
 const TEMPO_MAX := 3.0
+## Частий удар (баф): з якої частини руху найпізніше починати (сам удар у
+## кліпах — близько середини) і наскільки тоді можна прискорити залишок.
+const IMPACT_FROM_MAX := 0.45
+const FAST_STRIKE_TEMPO_MAX := 4.0
 ## Каст — до ×4: рух касту сканів 2,28 с, а сильні бафи ріжуть читання до
 ## 0,6 с; далі рух коротшає лише до межі.
 const CAST_TEMPO_MAX := 4.0
@@ -595,7 +599,18 @@ func swung(id: int, armed: bool, gap: float = 0.0) -> void:
 	elif a.has_method("held_kind") and a.held_kind() == "лук" \
 			and body.has_move("Bow_Shot"):
 		move = "Bow_Shot"
-	body.show_move(move, false, true)
+	# Темп — щоб увесь рух уклався в паузу між ударами (див. нижче). Коли
+	# пауза коротша навіть за рух утричі швидше (баф на атаку), рух
+	# починається не з замаху, а ближче до самого удару: кожен удар з логів
+	# — окремий видимий удар (слово замовника 27.11.2026: «за один удар по
+	# логам проходить до 4 ударів»). Далі за IMPACT_FROM_MAX не різати —
+	# сам удар у кліпах близько середини.
+	var clip: float = body.move_length(move)
+	var whole: float = clip if clip > 0.0 else SWING_REF
+	var from_part := 0.0
+	if gap > 0.0 and whole / gap > TEMPO_MAX:
+		from_part = clampf(1.0 - gap * TEMPO_MAX / whole, 0.0, IMPACT_FROM_MAX)
+	body.show_move(move, false, true, from_part)
 	# Спершу сам удар не менше STRIKE_HOLD (П-162), і лише ПІСЛЯ нього —
 	# COMBAT_STANCE стійки; інакше стійка перебивала б удар одразу на
 	# наступному кадрі, і його не встигали побачити.
@@ -606,13 +621,13 @@ func swung(id: int, armed: bool, gap: float = 0.0) -> void:
 	# тривалості кліпа: у сканів удар 1,52 с і на паузі 1,2 с обривався
 	# посередині). Паузу ріжуть спритність і бафи (`Stats.attack_cooldown`).
 	var tempo := 1.0
-	var clip: float = body.move_length(move)
+	var left := whole * (1.0 - from_part)
 	if gap > 0.0:
-		tempo = clampf((clip if clip > 0.0 else SWING_REF) / gap,
-				1.0, TEMPO_MAX)
+		tempo = clampf(left / gap, 1.0, FAST_STRIKE_TEMPO_MAX
+				if from_part > 0.0 else TEMPO_MAX)
 	body.set_tempo(tempo)
 	st["темп_удару"] = tempo
-	var hold := maxf(STRIKE_HOLD, clip) / tempo
+	var hold := maxf(STRIKE_HOLD * (1.0 - from_part), left) / tempo
 	var now := Time.get_ticks_msec() / 1000.0
 	st["удар_до"] = now + hold
 	st["бій_до"] = now + hold + COMBAT_STANCE

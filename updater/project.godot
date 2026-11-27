@@ -7,7 +7,7 @@ config_version=5
 config/name="MyWay Updater"
 ; Ціле число. Публікація кладе його в config.json як updater_version:
 ; новіша на сервері — апдейтер попереджає (сам себе не оновлює).
-config/version="3"
+config/version="4"
 run/main_scene="res://scenes/updater.tscn"
 config/use_custom_user_dir=true
 config/custom_user_dir_name="MyWay-Updater"

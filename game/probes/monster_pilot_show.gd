@@ -14,6 +14,9 @@ const PILOT := [
 	["кабанолюд-громила", 2.2, "res://models/own/гнол-мисливець.glb"],
 	["драконід-воїн", 2.0, "res://models/own/імп.glb"],
 	["гнол-шаман", 2.42, "res://models/own/гнол-мисливець.glb"],
+	["гуль", 1.9, "res://models/own/зомбі.glb"],
+	["вовкулака", 2.2, "res://models/own/гнол-мисливець.glb"],
+	["упир", 2.0, "res://models/own/зомбі.glb"],
 ]
 const MOVES := ["Idle", "Walk", "Run", "Attack", "Attack2", "Cast", "Hit", "Hit2", "Death", "Death2"]
 const LOOP_SHOW := 3.0     ## скільки показувати рух, що повторюється (стоїть, іде, біжить, каст)
@@ -23,7 +26,7 @@ var _new: Array = []       ## [SkinnedModel, Label3D]
 var _old: Array = []
 var _cam: Camera3D
 var _turn := 0.0
-var _dist := 15.0
+var _dist := 22.0
 var _move_i := 0
 var _left := 0.0
 var _paused := false
@@ -98,7 +101,7 @@ func _go() -> void:
 	root.add_child(ground)
 
 	for i in PILOT.size():
-		var x := (i - 1) * STEP_X
+		var x := (i - (PILOT.size() - 1) / 2.0) * STEP_X
 		var name: String = PILOT[i][0]
 		var h: float = PILOT[i][1]
 		var m := _model(DIR + name + ".glb", Vector3(x, 0, 0), h)

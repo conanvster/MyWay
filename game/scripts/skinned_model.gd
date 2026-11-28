@@ -208,6 +208,8 @@ func build() -> void:
 					var mat: BaseMaterial3D = src.duplicate()
 					mat.set_meta("base_albedo", src.albedo_color)
 					m.set_surface_override_material(i, mat)
+	if _skeleton != null:
+		_body_springs()
 	_prepare_look()
 	_find_blink()
 	if not held.is_empty():
@@ -216,6 +218,62 @@ func build() -> void:
 		_play_if_has(["Idle"])
 	# Одяг сховано, доки нічого не вдягнуто.
 	wear({}, null)
+
+
+## Пружини тіла монстра (П-297, 28.11.2026, крок «2 — живі хвіст, тканина, вуха»): ланцюжки
+## кісток `<вид>_<n>` з `tools/blender/monstr_rig.py` — хвіст тягнеться за тілом, поли й вуха
+## гойдаються. Анімація задає «спокій» ланцюжка, пружина — відставання й коливання поверх.
+## [жорсткість, опір, тяжіння, радіус]
+const BODY_SPRINGS := {
+	"tail": [0.55, 0.35, 0.25, 0.04],
+	"cloth_f": [0.35, 0.55, 1.0, 0.03],
+	"cloth_b": [0.35, 0.55, 1.0, 0.03],
+	"ear_l": [0.8, 0.4, 0.1, 0.01],
+	"ear_r": [0.8, 0.4, 0.1, 0.01],
+	"mane": [0.5, 0.5, 0.6, 0.02],
+}
+
+
+func _body_springs() -> void:
+	var chains := {}          ## префікс → найбільший номер
+	for i in _skeleton.get_bone_count():
+		var n := _skeleton.get_bone_name(i)
+		var cut := n.rfind("_")
+		if cut <= 0:
+			continue
+		var pre := n.substr(0, cut)
+		var num := n.substr(cut + 1)
+		if BODY_SPRINGS.has(pre) and num.is_valid_int():
+			chains[pre] = maxi(chains.get(pre, 0), int(num))
+	if chains.is_empty():
+		return
+	var sim := SpringBoneSimulator3D.new()
+	sim.name = "Тіло-пружини"
+	_skeleton.add_child(sim)
+	sim.set_setting_count(chains.size())
+	var i := 0
+	for pre: String in chains:
+		var k: Array = BODY_SPRINGS[pre]
+		sim.set_root_bone_name(i, "%s_1" % pre)
+		sim.set_end_bone_name(i, "%s_%d" % [pre, chains[pre]])
+		sim.set_extend_end_bone(i, true)
+		sim.set_end_bone_length(i, 0.05)
+		sim.set_stiffness(i, k[0])
+		sim.set_drag(i, k[1])
+		sim.set_gravity(i, k[2])
+		sim.set_radius(i, k[3])
+		sim.set_enable_all_child_collisions(i, true)
+		i += 1
+	# поли не проходять крізь стегна
+	for b: String in ["thigh_l", "thigh_r", "calf_l", "calf_r"]:
+		if _skeleton.find_bone(b) == -1:
+			continue
+		var cap := SpringBoneCollisionCapsule3D.new()
+		cap.set_bone_name(b)
+		cap.set_radius(0.09)
+		cap.set_height(0.45)
+		cap.set_position_offset(Vector3(0, 0.2, 0))
+		sim.add_child(cap)
 
 
 ## Зачіски окремими файлами поруч із моделлю (П6, 06.11.2026,
@@ -1520,6 +1578,10 @@ func _fit(body: Node) -> void:
 		var mesh: MeshInstance3D = child
 		if mesh.mesh == null:
 			continue
+		# зброя в руці монстра (`Тримає-…`, П-297) — не зріст: молот над головою зменшував модель
+		if mesh.name.begins_with(HELD_PREFIX) or (mesh.get_parent() != null
+				and mesh.get_parent().name.begins_with(HELD_PREFIX)):
+			continue
 		var here: Transform3D = from_body * mesh.global_transform
 		# Лише свої скани: у наборів кістяк буває масштабований інакше
 		# за вершини, і там правдиві межі — якраз «з кістками».
@@ -1571,10 +1633,20 @@ static func _true_aabb(view: MeshInstance3D) -> AABB:
 func animate(speed: float, backward: bool = false) -> void:
 	_speed = speed
 	if _player != null:
-		if speed > 0.35:
+		# Удар чи влучання ще йде — не перебивати ходою (до П-297 монстр
+		# щокадру перемикався на Idle і замах обривався на першому кадрі).
+		if _busy_left > 0.0:
+			return
+		# Біг монстра (П-297, 28.11.2026): свій `Run` — лише коли справді
+		# женеться; блукання й підхід лишаються ходою.
+		if speed > RUN_FROM and has_move("Run"):
+			_play_if_has(["Run"], true, backward)
+		elif speed > 0.35:
 			_play_if_has(["Walk", "Running", "Run", "Flying"], true, backward)
 		else:
 			_play_if_has(["Idle"])
+			_offset_idle()
+		_player.speed_scale = _own_tempo
 		return
 	_swing_bones(speed)
 
@@ -1582,7 +1654,66 @@ func animate(speed: float, backward: bool = false) -> void:
 func swing() -> void:
 	_swing_left = SWING_TIME
 	if _player != null:
-		_play_if_has(["Attack", "Punch"], false)
+		var attack := variant("Attack")
+		_play_if_has([attack, "Attack", "Punch"], false)
+		_hold_current()
+
+
+## Одноразовий рух монстра (удар, влучання) — тримати, доки не скінчиться.
+func hold_move(name: String) -> void:
+	show_move(name, false, true)
+	_hold_current()
+
+
+func is_busy() -> bool:
+	return _busy_left > 0.0
+
+
+func _hold_current() -> void:
+	if _player != null and _player.is_playing():
+		_busy_left = _player.current_animation_length \
+				/ maxf(0.1, absf(_player.speed_scale))
+
+
+## Варіативність рухів монстрів (П-297, слово замовника 28.11.2026: «мене
+## трохи бентежить що у всих монстрів буде однакові рухи»). Між видами
+## різняться самі кліпи (запечені конвеєром); тут — дешеві відмінності
+## між особинами одного виду: свій темп (±8 %), своя фаза стояння (зграя
+## не дихає хором) і варіант удару/влучання/смерті навмання з тих, що є
+## у файлі (`Attack`, `Attack2`, `Attack3`…).
+const RUN_FROM := 3.0
+const OWN_TEMPO_SPREAD := 0.08
+const VARIANTS := 3
+var _own_tempo := 1.0 + randf_range(-OWN_TEMPO_SPREAD, OWN_TEMPO_SPREAD)
+var _idle_offset_done := false
+var _busy_left := 0.0
+var _chosen: Dictionary = {}
+
+
+## Один із варіантів руху (`base`, `base2`, `base3`), що є в моделі;
+## `keep` — той самий для цієї особини назавжди (смерть: щоб труп, який
+## побачив новий гравець, лежав так само).
+func variant(base: String, keep := false) -> String:
+	if keep and _chosen.has(base):
+		return _chosen[base]
+	var have: Array = []
+	for i in VARIANTS:
+		var name := base if i == 0 else base + str(i + 1)
+		if has_move(name):
+			have.append(name)
+	var pick: String = have.pick_random() if not have.is_empty() else base
+	if keep:
+		_chosen[base] = pick
+	return pick
+
+
+func _offset_idle() -> void:
+	if _idle_offset_done or not _player.is_playing():
+		return
+	_idle_offset_done = true
+	var length := _player.current_animation_length
+	if length > 0.0:
+		_player.seek(randf() * length, true)
 
 
 ## Рухи, що тримаються (loop) — решта програються раз і завершуються самі
@@ -1606,7 +1737,7 @@ const HAIR_CHOSEN := "hair_chosen"
 
 const LOOPING_MOVES := {
 	"Idle": true, "Walk": true, "Jog_Fwd": true, "Swim_Fwd": true,
-	"Sword_Idle": true, "Spell_Simple_Idle": true,
+	"Sword_Idle": true, "Spell_Simple_Idle": true, "Run": true, "Cast": true,
 }
 
 
@@ -1730,6 +1861,7 @@ func _process(delta: float) -> void:
 	if face_alive:
 		_face_alive(delta)
 	_swing_left = maxf(0.0, _swing_left - delta)
+	_busy_left = maxf(0.0, _busy_left - delta)
 	if _player == null and _skeleton != null:
 		var rate := clampf(_speed, 0.0, 6.0) * 2.2 if _speed > 0.35 \
 				else IDLE_PHASE_SPEED

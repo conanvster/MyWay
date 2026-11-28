@@ -487,7 +487,8 @@ func death_move() -> String:
 		return ""
 	for name: String in ["Death01", "Death"]:
 		if mesh.has_move(name):
-			return name
+			# варіант смерті — свій у кожної особини й сталий (П-297)
+			return mesh.variant(name, true)
 	return ""
 
 

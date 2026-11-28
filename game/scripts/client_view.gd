@@ -446,8 +446,36 @@ func smooth(delta: float) -> void:
 		# швидкості), щоб нічого монстрам не зламати.
 		if body is SkinnedModel and a.has_method("apply_sex"):
 			_human_state(id, a, body, speed, moved, delta)
+		elif body is SkinnedModel and a.is_alive():
+			_monster_state(id, a, body, speed, moved)
 		elif a.is_alive():
 			body.animate(speed, _backward(id, a, moved))
+
+
+## Показ монстра (П-297, 28.11.2026: «стоїть, біжить, б'є, кастує, реакція на
+## удар, смерть»). Модель без потрібного руху (`Cast`, `Hit`) іде старим
+## шляхом — хода/стояння, як було, нічого не ламаючи. Удар ставить
+## `SkinnedModel.swing()` (world.gd), смерть — `creature.lay_down()`.
+func _monster_state(id: int, a: Node3D, body: SkinnedModel, speed: float,
+		moved: Vector3) -> void:
+	var st: Dictionary = _anim.get(id, {})
+	var now := Time.get_ticks_msec() / 1000.0
+	var last_hp: int = st.get("hp", a.hp)
+	# влучання — не посеред власного удару (інакше смикається)
+	if a.hp < last_hp and not a.is_casting() and not body.is_busy() \
+			and body.has_move("Hit"):
+		body.hold_move(body.variant("Hit"))
+	st["hp"] = a.hp
+	if body.is_busy():
+		_anim[id] = st
+		return
+	if a.is_casting() and body.has_move("Cast"):
+		body.show_move("Cast")
+		body.set_tempo(st.get("темп_касту", 1.0))
+		_anim[id] = st
+		return
+	_anim[id] = st
+	body.animate(speed, _backward(id, a, moved))
 
 
 ## Обличчям до цілі, ногами — куди їде: рух проти погляду (відступ у
@@ -646,7 +674,9 @@ func cast_started(id: int, seconds: float = 0.0) -> void:
 	var a: Node = _creatures.get(id)
 	var body: Node3D = a.model() if a != null else null
 	if body is SkinnedModel and seconds > 0.0:
-		var clip: float = body.move_length("Spell_Simple_Idle")
+		# монстр — свій `Cast` (П-297), людина — набір UAL1
+		var clip: float = body.move_length("Spell_Simple_Idle"
+				if a.has_method("apply_sex") else "Cast")
 		if clip > 0.0:
 			st["темп_касту"] = clampf(clip / seconds, TEMPO_MIN, CAST_TEMPO_MAX)
 	_anim[id] = st

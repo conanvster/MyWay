@@ -95,10 +95,24 @@ if len(nyz.data.polygons) > CIL * 1.5:
 nyz.data.uv_layers.new(name="UV")
 for o in bpy.context.scene.objects:
     o.select_set(o is nyz)
+# голові — більше місця в текстурі (обличчя, 28.11.2026): перед розгорткою голова тимчасово
+# ×2,2 (острови Smart UV — за площею), після — назад
+import numpy as np
+co = np.zeros(len(nyz.data.vertices) * 3)
+nyz.data.vertices.foreach_get("co", co)
+co = co.reshape(-1, 3)
+zmax, zmin = co[:, 2].max(), co[:, 2].min()
+holova = co[:, 2] > zmax - 0.14 * (zmax - zmin)
+c_ = co[holova].mean(0)
+co2 = co.copy()
+co2[holova] = c_ + (co[holova] - c_) * 2.2
+nyz.data.vertices.foreach_set("co", co2.ravel())
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.uv.smart_project(angle_limit=1.15, island_margin=0.003)
 bpy.ops.object.mode_set(mode="OBJECT")
+nyz.data.vertices.foreach_set("co", co.ravel())
+nyz.data.update()
 img = bpy.data.images.new("npc-kolir", TEX, TEX)
 mat = bpy.data.materials.new("NPC")
 mat.use_nodes = True

@@ -117,6 +117,14 @@ def instr(r, s, poza, kut, pershyi):
               "from the same camera angle as the second image: " + ma.KUT_OPYS[kut] + "; show the "
               "parts visible from this side. The mannequin is only a pose guide: do not copy its "
               "body, face or shorts. Empty open hands: no tools, no weapon, nothing held. ")
+    if kut == 180:
+        # 28.11.2026, слово замовника: «деякі NPC із заду мають вигляд такий самий як спереду» —
+        # Qwen копіював перед (фартух, кишені, пряжку) на спину
+        tekst += ("This is the BACK of the person: nothing that is worn on the front may appear — "
+                  "no apron bib, no front pockets or pouches, no buckles, no amulets or pendants, "
+                  "no chest emblems; from behind an apron shows only its thin neck strap and the "
+                  "waist ties over the plain back of the shirt or dress. Show the back of the head "
+                  "and hair, the back of the garments and the heels of the boots. ")
     return tekst + ma.SVITLO
 
 

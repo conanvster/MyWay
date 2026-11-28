@@ -37,8 +37,13 @@ pids=()
 for v in "$@"; do
   O="art/monsters/$v-3d/3d"; A="art/monsters/$v-3d/аркуш"; mkdir -p "$O"
   echo "── $v: сітка й зброя (відеокарта)"
-  [ -f "$O/hmv-Т.glb" ] || $PY -u tools/comfyui/hunyuan_mv.py "$O/hmv-Т.glb" --спереду "$A/Т-0.png" \
-    --зліва "$A/Т-90.png" --ззаду "$A/Т-180.png" --сід 1 --роздільність 384 2>&1 | tail -2
+  # диспетчер буває віддає 502 (ComfyUI ще піднімається) — до 3 спроб
+  for t in 1 2 3; do
+    [ -f "$O/hmv-Т.glb" ] && break
+    [ "$t" -gt 1 ] && { echo "  повтор $t"; ~/gpu-broker/bin/gpu status 2>&1 | grep -E 'comfyui|Черга'; sleep 30; }
+    $PY -u tools/comfyui/hunyuan_mv.py "$O/hmv-Т.glb" --спереду "$A/Т-0.png" \
+      --зліва "$A/Т-90.png" --ззаду "$A/Т-180.png" --сід 1 --роздільність 384 2>&1 | tail -2
+  done
   [ -f "$O/hmv-Т.glb" ] || { echo "‼ $v: немає сітки"; continue; }
   [ -f "$O/зброя/зброя.json" ] || $PY -u tools/comfyui/zbroia_monstra.py "$v" "$O/зброя" 2>&1 | grep -E 'зброя «|готово'
   cpu_chastyna "$v" &

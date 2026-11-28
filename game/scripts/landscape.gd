@@ -1409,7 +1409,8 @@ func _one_city(city: Dictionary, first_dweller: int) -> int:
 	# Брук — камінь, і візерунок на ньому має бути дрібніший за земляний.
 	stone.set_surface_override_material(0,
 			_speckled(str(city.get("колір бруку", "#6e6459")), 4.0, 0.30))
-	stone.position = _on_ground(center) + Vector3(0, 0.06, 0)
+	# верх бруку — 3 см над землею (по ній ходять за `height_at`)
+	stone.position = _on_ground(center) + Vector3(0, -0.1 + 0.03, 0)
 	add_child(stone)
 
 	for house: Dictionary in city.get("будинки", []):

@@ -334,7 +334,8 @@ static func _streets(land: Landscape, holder: Node3D, place: Dictionary) -> void
 		cap.material_override = stones
 		var jx := float(xy[0])
 		var jz := float(xy[1])
-		cap.position = Vector3(jx, land.surface_y(jx, jz) + 0.005, jz)
+		# верх латки — 2,5 см над землею (між вулицею й площею)
+		cap.position = Vector3(jx, land.surface_y(jx, jz) - 0.05 + 0.025, jz)
 		cap.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		holder.add_child(cap)
 	var reach := float(place.get("площа", 16.0))
@@ -359,8 +360,11 @@ static func _streets(land: Landscape, holder: Node3D, place: Dictionary) -> void
 		view.rotation.y = -atan2(float(g[1]) - float(c[2]),
 				float(g[0]) - float(c[0]))
 	view.material_override = paint("stone_pathway_02", 3.0)
+	# Верх площі — 3 см над землею, вулиць — 2 см: створіння ходять по
+	# `height_at`, і з бруком на 8 см вище ступні гравця тонули в камені
+	# (28.11.2026, замовник: «ноги провалюються крізь цю бруківку»).
 	view.position = Vector3(float(c[0]), land.surface_y(float(c[0]),
-			float(c[2])) + 0.02, float(c[2]))
+			float(c[2])) - 0.06 + 0.03, float(c[2]))
 	holder.add_child(view)
 
 
@@ -373,7 +377,7 @@ static func _strip(land: Landscape, holder: Node3D, a: Vector2, b: Vector2,
 	view.mesh = mesh
 	view.material_override = look
 	var mid := (a + b) * 0.5
-	view.position = Vector3(mid.x, land.surface_y(mid.x, mid.y) + 0.0, mid.y)
+	view.position = Vector3(mid.x, land.surface_y(mid.x, mid.y) - 0.05 + 0.02, mid.y)
 	view.rotation.y = -atan2(b.y - a.y, b.x - a.x)
 	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	holder.add_child(view)

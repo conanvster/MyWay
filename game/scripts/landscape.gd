@@ -1732,6 +1732,22 @@ func resident_at(at: int) -> NPC:
 	return null
 
 
+## Шлях до моделі ремесла: назва — транслітерація «<ремесло>-<стать>», як
+## у tools/npc_3d.sh («коваль-чоловік» → koval-cholovik). «Крамарка» —
+## той самий аркуш, що «крамар», жінка.
+const _NPC_LAT := {"коваль": "koval", "крамар": "kramar", "крамарка": "kramar",
+		"священик": "sviashchenyk", "вартовий": "vartovyi",
+		"гільдмайстер": "hildmaister", "завідувач складу": "zaviduvach_skladu",
+		"майстер магії": "maister_mahii"}
+
+
+static func npc_model(craft: String, female: bool) -> String:
+	if not _NPC_LAT.has(craft):
+		return ""
+	var n: String = _NPC_LAT[craft] + ("-zhinka" if female else "-cholovik")
+	return "res://models/own/avatary/npc/%s/%s.gltf" % [n, n]
+
+
 ## Мешканець: капсула на своєму місці. Крамар ще й торгує (П-132).
 func _dweller(who: Dictionary, at: int) -> void:
 	var body := NPC.new()
@@ -1761,11 +1777,20 @@ func _dweller(who: Dictionary, at: int) -> void:
 	var is_female: bool = name_ends.ends_with("а") or name_ends.ends_with("я")
 	var made: String = AvatarScript.MODEL_FEMALE if is_female \
 			else AvatarScript.MODEL_MALE
+	# Своя модель ремесла в робочому одязі (28.11.2026, «зроби 3D моделі
+	# для гри, по закінченню заміни ними NPC в грі»): аркуш
+	# art/npc/<ремесло>-<стать> → tools/npc_3d.sh → models/own/avatary/npc/
+	# (там SkinnedModel сам розвертає модель і тримає суглоби скану). Скелет
+	# манекена, тож рухи UAL1 ті самі. Немає файлу — манекен, як було.
+	var own := npc_model(body.craft, is_female)
+	if ResourceLoader.exists(own):
+		made = own
 	var figure := SkinnedModel.new()
 	figure.name = "Mesh"
 	figure.path = made
 	figure.anim_path = AvatarScript.MODEL_ANIM
-	figure.height = 1.75
+	# Зріст з аркушів NPC: чоловік 1,75, жінка 1,68.
+	figure.height = 1.68 if is_female and made == own else 1.75
 	body.add_child(figure)
 	figure.build()
 	figure.show_move("Idle_Talking")

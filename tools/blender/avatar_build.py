@@ -76,6 +76,13 @@ if "--коліна" in ARGS:
     i_ = ARGS.index("--коліна")
     KOLINA = int(ARGS[i_ + 1])
     del ARGS[i_:i_ + 2]
+# --перед-скану ±1 (28.11.2026, NPC з Hunyuan3D-2mv): перед скана відомий (вісь Y glTF→Blender) —
+# пошук за ступнями плутають чоботи з каблуком (коваль вийшов спиною вперед)
+PERED_SKANU = None
+if "--перед-скану" in ARGS:
+    i_ = ARGS.index("--перед-скану")
+    PERED_SKANU = int(ARGS[i_ + 1])
+    del ARGS[i_:i_ + 2]
 KYSTI_SKANU = "--кисті-скану" in ARGS
 if KYSTI_SKANU:
     ARGS.remove("--кисті-скану")
@@ -161,6 +168,10 @@ def main():
     kistochky = [q.y for q in p if lo.z + vys * 0.05 < q.z < lo.z + vys * 0.08]
     pered_skanu = 1 if (sum(pidoshva) / len(pidoshva)
                         > sum(kistochky) / len(kistochky)) else -1
+    print("[аватар] перед скану за ступнями: %+d%s" % (pered_skanu, "" if PERED_SKANU is None else
+          ", задано %+d" % PERED_SKANU))
+    if PERED_SKANU is not None:
+        pered_skanu = PERED_SKANU
     if pered_skanu != pered_manekena:
         skan.rotation_euler = (0, 0, math.pi)
         zastosuvaty(skan)

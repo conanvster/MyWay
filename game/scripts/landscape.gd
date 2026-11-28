@@ -1791,6 +1791,13 @@ func _dweller(who: Dictionary, at: int) -> void:
 	figure.anim_path = AvatarScript.MODEL_ANIM
 	# Зріст з аркушів NPC: чоловік 1,75, жінка 1,68.
 	figure.height = 1.68 if is_female and made == own else 1.75
+	# Тіло NPC стоїть на «земля + 1 м» (центр капсули), а модель — ступнями
+	# в початку свого вузла: без зсуву мешканці висіли на метр у повітрі.
+	# Поворот із `svit2.py` (`_поворот_до`) дивиться на площу локальним +Z,
+	# модель — у −Z: без півоберту стояли спиною до площі (28.11.2026,
+	# замовник: «NPC повертуні спиною та висять у повітрі»).
+	figure.position.y = -1.0
+	figure.rotation.y = PI
 	body.add_child(figure)
 	figure.build()
 	figure.show_move("Idle_Talking")

@@ -54,8 +54,9 @@ func _process(delta: float) -> void:
 
 ## Ім'я над головою — той самий прийом, що й `Creature.show_tag` (П-126),
 ## тільки NPC не Creature, і зріст завжди 1,75 (модель людини, П-162), не
-## `body_height()`. Клич ПІСЛЯ того, як Mesh уже додано.
-const TAG_HEIGHT := 2.15
+## `body_height()`. Клич ПІСЛЯ того, як Mesh уже додано. Тіло NPC — центр
+## капсули на метр над землею (Mesh опущено на −1), тож 1,15 = 2,15 над ступнями.
+const TAG_HEIGHT := 1.15
 
 
 func show_name() -> void:
